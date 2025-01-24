@@ -7,9 +7,9 @@ import 'package:flutter/material.dart';
 // - 3: 已斩
 
 class QuestionGridPage extends StatelessWidget {
-  final String quizCategoryName;
+  final String chapterName;
 
-  const QuestionGridPage({super.key, required this.quizCategoryName});
+  const QuestionGridPage({super.key, required this.chapterName});
 
   @override
   Widget build(BuildContext context) {
@@ -19,7 +19,7 @@ class QuestionGridPage extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(quizCategoryName),
+        title: Text(chapterName),
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),

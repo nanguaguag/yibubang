@@ -9,7 +9,6 @@ class SubjectsListPage extends StatefulWidget {
 
 class _SubjectsListPageState extends State<SubjectsListPage> {
   Future<List<Subject>> subjects = fetchAllSubjects();
-  Set<String> selectedItems = <String>{};
 
   @override
   Widget build(BuildContext context) {
@@ -19,7 +18,7 @@ class _SubjectsListPageState extends State<SubjectsListPage> {
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () {
-            Navigator.pop(context); // 返回上一页
+            Navigator.pop(context);
           },
         ),
       ),
@@ -43,19 +42,22 @@ class _SubjectsListPageState extends State<SubjectsListPage> {
               itemBuilder: (context, index) {
                 return ListTile(
                   title: Text(subjectsList[index].name),
-                  tileColor: selectedItems.contains(subjectsList[index].id)
-                      ? Colors.blue.shade100
+                  tileColor: subjectsList[index].selected == 1
+                      ? Colors.blue.shade50
                       : null,
                   onTap: () {
                     setState(() {
-                      if (selectedItems.contains(subjectsList[index].id)) {
-                        selectedItems.remove(subjectsList[index].id); // 取消选择
+                      toggleSubjectSelected(subjectsList[index].id); // 在数据库中修改
+                      if (subjectsList[index].selected == 1) {
+                        subjectsList[index].selected = 0;
+                      } else if (subjectsList[index].selected == 0) {
+                        subjectsList[index].selected = 1;
                       } else {
-                        selectedItems.add(subjectsList[index].id); // 选择该项
+                        subjectsList[index].selected = 0;
                       }
                     });
                   },
-                  trailing: selectedItems.contains(subjectsList[index].id)
+                  trailing: subjectsList[index].selected == 1
                       ? const Icon(Icons.check_circle, color: Colors.green)
                       : const Icon(Icons.check_circle_outline),
                 );

@@ -1,3 +1,5 @@
+import 'database_helper.dart';
+
 class Chapter {
   String id;
   String name;
@@ -22,4 +24,16 @@ class Chapter {
       subjectId: map['subject_id'],
     );
   }
+}
+
+Future<List<Chapter>> fetchChaptersWithSubjectId(String subjectId) async {
+  List<Map<String, dynamic>> chaptersData = await DatabaseHelper()
+      .getByCondition('Chapter', 'subject_id = ?', [subjectId]);
+  List<Chapter> chapters = chaptersData.map((e) => Chapter.fromMap(e)).toList();
+
+  // chapters.forEach((chapters) {
+  //   print('Chapters ID: ${chapters.id}, Name: ${chapters.name}');
+  // });
+
+  return chapters;
 }

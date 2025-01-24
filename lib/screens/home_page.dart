@@ -15,13 +15,7 @@ class _HomePageState extends State<HomePage> {
 
   // List of screens corresponding to the tabs
   final List<Widget> _screens = [
-    ChoosedSubjectsPage(quizCategories: const [
-      '口腔颌面外科学',
-      '病理学',
-      '诊断学',
-      '内科学',
-      '外科学',
-    ]),
+    ChoosedSubjectsPage(),
     MyPage(),
   ];
 
@@ -41,7 +35,7 @@ class _HomePageState extends State<HomePage> {
         items: const <BottomNavigationBarItem>[
           BottomNavigationBarItem(
             icon: Icon(Icons.book),
-            label: AppStrings.quizCategoryTitle,
+            label: AppStrings.selectedSubjectsTitle,
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.person),
