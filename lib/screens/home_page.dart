@@ -1,28 +1,28 @@
 import 'package:flutter/material.dart';
 import '../constants/app_strings.dart';
-import '../screens/quiz_screen.dart';
-import '../screens/my_screen.dart';
+import '../screens/choosed_subjects_page.dart';
+import '../screens/my_page.dart';
 
-class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+class HomePage extends StatefulWidget {
+  const HomePage({super.key});
 
   @override
-  _HomeScreenState createState() => _HomeScreenState();
+  _HomePageState createState() => _HomePageState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomePageState extends State<HomePage> {
   int _selectedIndex = 0; // 默认主页为题库页
 
   // List of screens corresponding to the tabs
   final List<Widget> _screens = [
-    QuizScreen(quizCategories: const [
+    ChoosedSubjectsPage(quizCategories: const [
       '口腔颌面外科学',
       '病理学',
       '诊断学',
       '内科学',
       '外科学',
     ]),
-    MyScreen(),
+    MyPage(),
   ];
 
   void _onItemTapped(int index) {
@@ -45,7 +45,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.person),
-            label: AppStrings.myScreenTitle,
+            label: AppStrings.myPageTitle,
           ),
         ],
       ),

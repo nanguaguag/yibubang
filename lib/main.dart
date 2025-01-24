@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'screens/home_screen.dart';
-import 'screens/question_grid_screen.dart';
+import 'screens/home_page.dart';
+import 'screens/question_grid_page.dart';
 import 'constants/app_strings.dart';
 
 void main() {
@@ -20,7 +20,7 @@ class yibubang extends StatelessWidget {
         primarySwatch: Colors.blue,
         visualDensity: VisualDensity.adaptivePlatformDensity,
       ),
-      home: HomeScreen(),
+      home: const HomePage(),
     );
   }
 }

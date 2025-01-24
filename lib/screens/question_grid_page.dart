@@ -1,18 +1,20 @@
 import 'package:flutter/material.dart';
-import '../constants/app_strings.dart';
+
+// Question Status: 题目状态
+// - 0: 未做
+// - 1: 正确
+// - 2: 错误
+// - 3: 已斩
 
 class QuestionGridPage extends StatelessWidget {
   final String quizCategoryName;
 
-  QuestionGridPage({required this.quizCategoryName});
+  const QuestionGridPage({super.key, required this.quizCategoryName});
 
   @override
   Widget build(BuildContext context) {
-    // 模拟题目的状态（1: 正确, 0: 错误, -1: 未做）
     final List<int> questions = List.generate(99, (index) {
-      if (index % 4 == 0) return 0; // 错误
-      if (index % 3 == 0) return 1; // 正确
-      return -1; // 未做
+      return index % 3;
     });
 
     return Scaffold(
@@ -42,10 +44,12 @@ class QuestionGridPage extends StatelessWidget {
 
                 if (questionState == 1) {
                   buttonColor = Colors.lightGreen; // 正确
+                } else if (questionState == 2) {
+                  buttonColor = Colors.red.shade600; // 错误
                 } else if (questionState == 0) {
-                  buttonColor = Colors.red; // 错误
-                } else {
                   buttonColor = Colors.white70; // 未做
+                } else {
+                  buttonColor = Colors.white70;
                 }
 
                 return ElevatedButton(
@@ -53,7 +57,7 @@ class QuestionGridPage extends StatelessWidget {
                   style: ElevatedButton.styleFrom(
                     padding: EdgeInsets.zero,
                     foregroundColor:
-                        questionState == -1 ? Colors.black : Colors.white,
+                        questionState == 0 ? Colors.black : Colors.white,
                     backgroundColor: buttonColor, // 背景颜色
                     minimumSize: const Size(buttonSize, buttonSize), // 固定按钮大小
                     shape: const RoundedRectangleBorder(
