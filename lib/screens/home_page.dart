@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../constants/app_strings.dart';
+import '../common/app_strings.dart';
 import '../screens/choosed_subjects_page.dart';
 import '../screens/my_page.dart';
 
@@ -15,8 +15,8 @@ class _HomePageState extends State<HomePage> {
 
   // List of screens corresponding to the tabs
   final List<Widget> _screens = [
-    ChoosedSubjectsPage(),
-    MyPage(),
+    const ChoosedSubjectsPage(),
+    const MyPage(),
   ];
 
   void _onItemTapped(int index) {

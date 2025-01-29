@@ -26,14 +26,17 @@ class Chapter {
   }
 }
 
-Future<List<Chapter>> fetchChaptersWithSubjectId(String subjectId) async {
+void sortChaptersById(List<Chapter> chapters) {
+  // 将一个 List<Chapter> 按照 id 转成数字后的大小排序
+  chapters.sort((a, b) => int.parse(a.id).compareTo(int.parse(b.id)));
+}
+
+Future<List<Chapter>> fetchChaptersBySubjectId(String subjectId) async {
   List<Map<String, dynamic>> chaptersData = await DatabaseHelper()
       .getByCondition('Chapter', 'subject_id = ?', [subjectId]);
   List<Chapter> chapters = chaptersData.map((e) => Chapter.fromMap(e)).toList();
 
-  // chapters.forEach((chapters) {
-  //   print('Chapters ID: ${chapters.id}, Name: ${chapters.name}');
-  // });
+  sortChaptersById(chapters);
 
   return chapters;
 }

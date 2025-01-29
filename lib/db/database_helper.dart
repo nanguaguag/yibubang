@@ -100,6 +100,7 @@ class DatabaseHelper {
         filter_type TEXT,
         cut_question TEXT,
         user_answer TEXT,
+        status INTEGER NOT NULL,
         FOREIGN KEY(chapter_id) REFERENCES Chapter(id),
         FOREIGN KEY(chapter_parent_id) REFERENCES Subject(id)
     );

@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
-import '../constants/app_strings.dart';
+import '../common/app_strings.dart';
 
 // 我的页面，展示用户的收藏/评论/笔记
 
 class MyPage extends StatelessWidget {
+  const MyPage({super.key});
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(

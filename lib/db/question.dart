@@ -1,18 +1,21 @@
+import 'database_helper.dart';
+import 'chapter.dart';
+
 class Question {
   String id;
-  String? year;
+  String? year; // 年份
   String? unit;
-  String? title;
+  String? title; // 题目标题
   String? publicTitle;
-  String? titleImg;
+  String? titleImg; // 标题图片
   String? number;
   String? publicNumber;
   String? restore;
   String? restoreImg;
-  String? explain;
+  String? explain; // 解答
   String? explainImg;
   String? answer;
-  String? option; // JSON data stored as a string
+  String? option; // 选项信息, JSON data stored as a string
   String? score;
   String? scoreDescribe;
   String? nativeAppId;
@@ -54,6 +57,7 @@ class Question {
   String? filterType;
   String? cutQuestion;
   String? userAnswer;
+  int? status;
 
   Question({
     required this.id,
@@ -111,6 +115,7 @@ class Question {
     this.filterType,
     this.cutQuestion,
     this.userAnswer,
+    this.status,
   });
 
   // Convert a Question to a map
@@ -171,6 +176,7 @@ class Question {
       'filter_type': filterType,
       'cut_question': cutQuestion,
       'user_answer': userAnswer,
+      'status': status,
     };
   }
 
@@ -232,6 +238,27 @@ class Question {
       filterType: map['filter_type'],
       cutQuestion: map['cut_question'],
       userAnswer: map['user_answer'],
+      status: map['status'],
     );
   }
+}
+
+void sortQuestionsById(List<Question> questions) {
+  // 将一个 List<Chapter> 按照 id 转成数字后的大小排序
+  questions.sort((a, b) => int.parse(a.id).compareTo(int.parse(b.id)));
+}
+
+Future<List<Question>> getQuestionsFromChapter(Chapter chapter) async {
+  List<Map<String, dynamic>> questionsData =
+      await DatabaseHelper().getByCondition(
+    'Question',
+    'chapter_parent_id = ? AND chapter_id = ?',
+    [chapter.subjectId, chapter.id],
+  );
+  List<Question> questions =
+      questionsData.map((e) => Question.fromMap(e)).toList();
+
+  sortQuestionsById(questions);
+
+  return questions;
 }

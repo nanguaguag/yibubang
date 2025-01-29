@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../constants/app_strings.dart';
+import '../common/app_strings.dart';
 import '../db/subject.dart';
 
 class SubjectsListPage extends StatefulWidget {
