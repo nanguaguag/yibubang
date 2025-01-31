@@ -71,7 +71,8 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
               MaterialPageRoute(
                 builder: (context) => QuestionDetailPage(
                   chapter: widget.chapter,
-                  question: questions[index],
+                  questions: questions,
+                  questionIndex: index,
                 ),
               ),
             );

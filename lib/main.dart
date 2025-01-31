@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'screens/home_page.dart';
-import 'screens/question_grid_page.dart';
 import 'common/app_strings.dart';
 import 'package:get/get.dart';
 
