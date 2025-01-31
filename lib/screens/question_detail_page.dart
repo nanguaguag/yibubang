@@ -73,6 +73,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
               return CheckboxListTile(
                 title: Text("${option['key']}. ${option['title']}"),
                 value: _selectedAnswer[questionIndex].contains(option['key']),
+                controlAffinity: ListTileControlAffinity.leading,
                 onChanged: (bool? value) {
                   setState(() {
                     bool checked = _selectedAnswer[questionIndex].contains(
@@ -152,19 +153,22 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
       children: List.generate(optionJson.length, (index) {
         final Map<String, dynamic> option = optionJson[index];
         return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Row(
             children: [
-              Padding(
-                padding: const EdgeInsets.all(10.0),
-                child: Icon(option['icon'], color: option['color']),
+              Icon(
+                option['icon'],
+                color: option['color'],
               ),
               Expanded(
-                child: Text(
-                  "${option['key']}. ${option['title']}",
-                  style: TextStyle(
-                    fontSize: 18,
-                    color: option['color'],
+                child: Padding(
+                  padding: const EdgeInsets.all(12.0),
+                  child: Text(
+                    "${option['key']}. ${option['title']}",
+                    style: TextStyle(
+                      fontSize: 16.5,
+                      color: option['color'],
+                    ),
                   ),
                 ),
               ),
@@ -175,7 +179,8 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     );
   }
 
-  Widget buildRestore(String restoreText) {
+  Widget buildAnalysis(String title, IconData icon, String analysisText) {
+    Color orangeAccent = Color(0xFFB39D6B);
     return Container(
       color: Color(0xFFF9F4E9), // 设置背景颜色 #f9f4e9
       padding: const EdgeInsets.all(16.0),
@@ -185,30 +190,26 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Icon(
-                Icons.location_on, // 坐标图标
-                color: Color(0xFFB39D6B), // 图标颜色
-                size: 24,
-              ),
+              Icon(icon, color: orangeAccent, size: 24),
               SizedBox(width: 6), // 图标与文字间距
               Text(
-                '考点还原', // 标题文字
+                title, // 标题文字
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
-                  color: Color(0xFFB39D6B), // 标题颜色
+                  color: orangeAccent, // 标题颜色
                 ),
               ),
             ],
           ),
           SizedBox(height: 6), // 标题与内容间距
           Divider(
-            color: Color(0xAAB39D6B), // 分割线颜色
+            color: orangeAccent, // 分割线颜色
             thickness: 1, // 分割线厚度
           ),
           SizedBox(height: 6), // 分割线与内容间距
           Text(
-            restoreText,
+            analysisText,
             style: TextStyle(
               fontSize: 16,
               height: 1.8,
@@ -270,9 +271,17 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
             ],
           ),
           SizedBox(height: 30),
-          buildRestore(question.restore ?? ''),
+          buildAnalysis(
+            '考点还原',
+            Icons.location_on_outlined,
+            question.restore ?? '',
+          ),
           SizedBox(height: 10),
-          buildRestore(question.explain ?? ''),
+          buildAnalysis(
+            '答案解析',
+            Icons.lightbulb_outlined,
+            question.explain ?? '',
+          ),
         ],
       ),
     );
