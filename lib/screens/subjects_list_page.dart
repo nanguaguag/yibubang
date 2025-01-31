@@ -27,7 +27,7 @@ class _SubjectsListPageState extends State<SubjectsListPage> {
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             // 正在加载时显示进度条
-            return const Center(child: CircularProgressIndicator());
+            return const Center(child: LinearProgressIndicator());
           } else if (snapshot.hasError) {
             // 出现错误时显示错误信息
             return Center(child: Text('加载失败: ${snapshot.error}'));

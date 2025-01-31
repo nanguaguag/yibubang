@@ -262,3 +262,19 @@ Future<List<Question>> getQuestionsFromChapter(Chapter chapter) async {
 
   return questions;
 }
+
+Future<void> updateQuestion(
+  Question question,
+  String userAnswer,
+) async {
+  // 更新问题状态和用户答案
+  await DatabaseHelper().update(
+    'Question',
+    {
+      'status': question.status,
+      'user_answer': userAnswer,
+    },
+    'id = ?',
+    [question.id],
+  );
+}

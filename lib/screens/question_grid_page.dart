@@ -21,6 +21,15 @@ class QuestionGridPage extends StatefulWidget {
 }
 
 class _QuestionGridPageState extends State<QuestionGridPage> {
+  late Future<List<Question>> allQuestions;
+
+  @override
+  void initState() {
+    super.initState();
+    // 初始化 Future 在 initState 中，这样可以访问 widget
+    allQuestions = getQuestionsFromChapter(widget.chapter);
+  }
+
   // 显示加载进度条
   Widget _buildLoadingIndicator() {
     return const Center(child: CircularProgressIndicator());
@@ -37,7 +46,10 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
   }
 
   Widget buildQuestionGrid(
-      List<Question> questions, int crossAxisCount, double buttonSize) {
+    List<Question> questions,
+    int crossAxisCount,
+    double buttonSize,
+  ) {
     return GridView.builder(
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: crossAxisCount,
@@ -65,8 +77,8 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
         }
 
         return ElevatedButton(
-          onPressed: () {
-            Navigator.push(
+          onPressed: () async {
+            await Navigator.push(
               context,
               MaterialPageRoute(
                 builder: (context) => QuestionDetailPage(
@@ -76,6 +88,11 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
                 ),
               ),
             );
+            setState(() {
+              allQuestions = getQuestionsFromChapter(
+                widget.chapter,
+              );
+            });
           },
           style: ElevatedButton.styleFrom(
             padding: EdgeInsets.zero,
@@ -94,9 +111,6 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
 
   @override
   Widget build(BuildContext context) {
-    Future<List<Question>> allQuestions =
-        getQuestionsFromChapter(widget.chapter);
-
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.chapter.name),
@@ -121,7 +135,10 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
                   final int crossAxisCount =
                       (constraints.maxWidth / buttonSize).floor();
                   return buildQuestionGrid(
-                      snapshot.data!, crossAxisCount, buttonSize);
+                    snapshot.data!,
+                    crossAxisCount,
+                    buttonSize,
+                  );
                 },
               );
             }

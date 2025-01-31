@@ -1,3 +1,4 @@
+import 'package:fluttertoast/fluttertoast.dart';
 import 'package:flutter/material.dart';
 import 'dart:convert';
 import '../db/question.dart';
@@ -30,7 +31,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     }
   }
 
-  Widget submitBtn(int questionIndex) {
+  Widget submitButton(int questionIndex) {
     return Align(
       alignment: Alignment.bottomCenter,
       child: SizedBox(
@@ -38,7 +39,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
         height: 60.0, // 按钮的高度
         child: ElevatedButton(
           onPressed: () {
-            _submitAnswer(questionIndex);
+            submitAnswer(questionIndex);
           },
           child: const Text(
             '提交',
@@ -49,7 +50,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     );
   }
 
-  Widget optionsList(int questionIndex) {
+  Widget checkableOptionsList(int questionIndex) {
     final List<dynamic> optionJson = getOptionJson(questionIndex);
     return Expanded(
       child: ListView.builder(
@@ -95,6 +96,202 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     );
   }
 
+  Widget unansweredQuestion(int questionIndex) {
+    final Question question = widget.questions[questionIndex];
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            question.typeStr ?? '未知题型',
+            style: const TextStyle(
+              fontSize: 16,
+              color: Colors.grey,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            question.title ?? '',
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 10),
+          checkableOptionsList(questionIndex),
+          submitButton(questionIndex),
+        ],
+      ),
+    );
+  }
+
+  Widget buildOptions(int questionIndex) {
+    final List<dynamic> optionJson = getOptionJson(questionIndex);
+    final String answer = widget.questions[questionIndex].answer ?? '';
+    final String userAnswer = _selectedAnswer[questionIndex];
+    for (Map<String, dynamic> option in optionJson) {
+      final String key = option['key'];
+      final bool answerContains = answer.contains(key);
+      final bool userAnswerContains = userAnswer.contains(key);
+      if (answerContains && userAnswerContains) {
+        option['color'] = Colors.green;
+        option['icon'] = Icons.check_circle;
+      } else if (answerContains && !userAnswerContains) {
+        option['color'] = Colors.red;
+        option['icon'] = Icons.check_circle;
+      } else if (!answerContains && userAnswerContains) {
+        option['color'] = Colors.red;
+        option['icon'] = Icons.cancel;
+      } else {
+        option['color'] = Colors.grey;
+        option['icon'] = Icons.circle_outlined;
+      }
+    }
+    return Column(
+      children: List.generate(optionJson.length, (index) {
+        final Map<String, dynamic> option = optionJson[index];
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          child: Row(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(10.0),
+                child: Icon(option['icon'], color: option['color']),
+              ),
+              Expanded(
+                child: Text(
+                  "${option['key']}. ${option['title']}",
+                  style: TextStyle(
+                    fontSize: 18,
+                    color: option['color'],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      }),
+    );
+  }
+
+  Widget buildRestore(String restoreText) {
+    return Container(
+      color: Color(0xFFF9F4E9), // 设置背景颜色 #f9f4e9
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.location_on, // 坐标图标
+                color: Color(0xFFB39D6B), // 图标颜色
+                size: 24,
+              ),
+              SizedBox(width: 6), // 图标与文字间距
+              Text(
+                '考点还原', // 标题文字
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFFB39D6B), // 标题颜色
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: 6), // 标题与内容间距
+          Divider(
+            color: Color(0xAAB39D6B), // 分割线颜色
+            thickness: 1, // 分割线厚度
+          ),
+          SizedBox(height: 6), // 分割线与内容间距
+          Text(
+            restoreText,
+            style: TextStyle(
+              fontSize: 16,
+              height: 1.8,
+              color: Colors.black87, // 内容文字颜色
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget answeredQuestion(int questionIndex) {
+    final Question question = widget.questions[questionIndex];
+    final String userAnswer = _selectedAnswer[questionIndex];
+    final String answer = question.answer ?? '';
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: ListView(
+        shrinkWrap: true, // 让外层 ListView 适应内容
+        physics: ClampingScrollPhysics(), // 正常滚动
+        children: [
+          Text(
+            question.typeStr ?? '未知题型',
+            style: const TextStyle(
+              fontSize: 16,
+              color: Colors.grey,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            question.title ?? '',
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 10),
+          buildOptions(questionIndex),
+          const SizedBox(height: 10),
+          Text(
+            '答案：正确答案 ${question.answer}, 你的答案 $userAnswer',
+            style: TextStyle(
+              fontSize: 14,
+              color: sortString(userAnswer) == sortString(answer)
+                  ? Colors.green
+                  : Colors.red,
+            ),
+          ),
+          SizedBox(height: 10),
+          Row(
+            children: [
+              Text('难度'),
+              SizedBox(width: 10),
+              Icon(Icons.star, color: Colors.orange),
+              Icon(Icons.star, color: Colors.orange),
+              Icon(Icons.star_border),
+              Icon(Icons.star_border),
+              Icon(Icons.star_border),
+            ],
+          ),
+          SizedBox(height: 30),
+          buildRestore(question.restore ?? ''),
+          SizedBox(height: 10),
+          buildRestore(question.explain ?? ''),
+        ],
+      ),
+    );
+  }
+
+  Widget buildQuestion(int questionIndex) {
+    final Question question = widget.questions[questionIndex];
+    switch (question.status) {
+      case 0:
+        return unansweredQuestion(questionIndex);
+      case 1:
+        return answeredQuestion(questionIndex);
+      case 2:
+        return answeredQuestion(questionIndex);
+      default:
+        return const Text('未知的题目状态');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -106,32 +303,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
         controller: PageController(initialPage: widget.questionIndex),
         itemCount: widget.questions.length,
         itemBuilder: (context, index) {
-          return Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  widget.questions[index].typeStr ?? '未知题型',
-                  style: const TextStyle(
-                    fontSize: 16,
-                    color: Colors.grey,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  widget.questions[index].title ?? '',
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 20),
-                optionsList(index),
-                submitBtn(index),
-              ],
-            ),
-          );
+          return buildQuestion(index);
         },
       ),
     );
@@ -166,11 +338,41 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     );
   }
 
-  void _submitAnswer(int questionIndex) {
+  String sortString(String str) {
+    // 将字符串转换为字符列表并排序
+    List<String> chars = str.split('')..sort();
+    // 将字符列表转换回字符串
+    String sortedStr = chars.join();
+    return sortedStr;
+  }
+
+  void submitAnswer(int questionIndex) {
+    final Question question = widget.questions[questionIndex];
     final String userAnswer = _selectedAnswer[questionIndex];
     //final List<dynamic> optionJson = getOptionJson(questionIndex);
-    final answer = widget.questions[questionIndex].answer;
-    //for (Map<String, dynamic> option in optionJson) {}
-    print(userAnswer);
+    final String answer = question.answer ?? '';
+    if (question.type == '1' && userAnswer.isEmpty) {
+      Fluttertoast.showToast(
+        msg: "不能不填答案哦~",
+        toastLength: Toast.LENGTH_SHORT,
+        gravity: ToastGravity.BOTTOM,
+      );
+    } else if (question.type == '2' && userAnswer.length <= 1) {
+      Fluttertoast.showToast(
+        msg: "多选题要选择多个选项哦~",
+        toastLength: Toast.LENGTH_SHORT,
+        gravity: ToastGravity.BOTTOM,
+      );
+    } else {
+      if (sortString(userAnswer) == sortString(answer)) {
+        question.status = 1;
+      } else {
+        question.status = 2;
+      }
+      updateQuestion(question, userAnswer);
+      setState(() {
+        widget.questions[questionIndex].status = question.status;
+      });
+    }
   }
 }

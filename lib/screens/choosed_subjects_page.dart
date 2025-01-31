@@ -46,7 +46,7 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
 
   // 显示加载进度条
   Widget _buildLoadingIndicator() {
-    return const Center(child: CircularProgressIndicator());
+    return const Center(child: LinearProgressIndicator());
   }
 
   // 显示错误信息
