@@ -33,10 +33,10 @@ jobs:
         with:
           type: 'zip'
           filename: yibubang-windows-release.zip
-          directory: build/windows/runner/Release
+          directory: build/windows/x64/runner/Release
       # 上传打包后的 zip 为工件
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: yibubang-windows-release
-          path: build/windows/runner/Release/yibubang-windows-release.zip
+          path: build/windows/x64/runner/Release/yibubang-windows-release.zip

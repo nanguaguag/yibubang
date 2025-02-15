@@ -64,27 +64,27 @@ jobs:
       - name: Upload Universal APK
         uses: actions/upload-artifact@v4
         with:
-          name: yibubang-apk
+          name: yibubang-universal-release-apk
           path: build/app/outputs/flutter-apk/app-release.apk
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: yibubang-apk
+          name: yibubang-debug-apk
           path: build/app/outputs/flutter-apk/app-debug.apk
       - name: Upload arm64 APK
         uses: actions/upload-artifact@v4
         with:
-          name: yibubang-apk
+          name: yibubang-arm64-v8a-release-apk
           path: build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
       - name: Upload arm32 APK
         uses: actions/upload-artifact@v4
         with:
-          name: yibubang-apk
+          name: yibubang-armabi-v7a-release-apk
           path: build/app/outputs/flutter-apk/app-armabi-v7a-release.apk
       - name: Upload x86_64 APK
         uses: actions/upload-artifact@v4
         with:
-          name: yibubang-apk
+          name: yibubang-x86_64-release-apk
           path: build/app/outputs/flutter-apk/app-x86_64-release.apk
       # Install firebase-tools globally
       - name: Install firebase-tools globally
