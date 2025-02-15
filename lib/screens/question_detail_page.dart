@@ -22,6 +22,9 @@ class QuestionDetailPage extends StatefulWidget {
 
 class _QuestionDetailPageState extends State<QuestionDetailPage> {
   List<String> _selectedAnswer = [];
+  List<String> modesList = ['练习模式', '快刷模式', '测试模式', '背题模式'];
+  int _selectedMode = 0;
+  //String? _selectedMode = '练习模式';
 
   @override
   void initState() {
@@ -73,6 +76,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
               return CheckboxListTile(
                 title: Text("${option['key']}. ${option['title']}"),
                 value: _selectedAnswer[questionIndex].contains(option['key']),
+                controlAffinity: ListTileControlAffinity.leading,
                 onChanged: (bool? value) {
                   setState(() {
                     bool checked = _selectedAnswer[questionIndex].contains(
@@ -96,29 +100,60 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     );
   }
 
-  Widget unansweredQuestion(int questionIndex) {
+  Widget questionHeaders(int questionIndex) {
     final Question question = widget.questions[questionIndex];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              question.typeStr ?? '未知题型',
+              style: const TextStyle(
+                fontSize: 16,
+                color: Colors.grey,
+              ),
+            ),
+            Spacer(),
+            Padding(
+              // 3: (22-16)/2
+              padding: EdgeInsets.fromLTRB(5, 0, 5, 3),
+              child: Text(
+                '${questionIndex + 1}',
+                style: TextStyle(
+                  fontSize: 22,
+                  color: Colors.black87,
+                ),
+              ),
+            ),
+            Text(
+              '/ ${widget.questions.length}',
+              style: TextStyle(
+                color: Colors.grey,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Text(
+          question.title ?? '',
+          style: const TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 10),
+      ],
+    );
+  }
+
+  Widget unansweredQuestion(int questionIndex) {
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            question.typeStr ?? '未知题型',
-            style: const TextStyle(
-              fontSize: 16,
-              color: Colors.grey,
-            ),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            question.title ?? '',
-            style: const TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 10),
+          questionHeaders(questionIndex),
           checkableOptionsList(questionIndex),
           submitButton(questionIndex),
         ],
@@ -152,19 +187,22 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
       children: List.generate(optionJson.length, (index) {
         final Map<String, dynamic> option = optionJson[index];
         return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Row(
             children: [
-              Padding(
-                padding: const EdgeInsets.all(10.0),
-                child: Icon(option['icon'], color: option['color']),
+              Icon(
+                option['icon'],
+                color: option['color'],
               ),
               Expanded(
-                child: Text(
-                  "${option['key']}. ${option['title']}",
-                  style: TextStyle(
-                    fontSize: 18,
-                    color: option['color'],
+                child: Padding(
+                  padding: const EdgeInsets.all(12.0),
+                  child: Text(
+                    "${option['key']}. ${option['title']}",
+                    style: TextStyle(
+                      fontSize: 16.5,
+                      color: option['color'],
+                    ),
                   ),
                 ),
               ),
@@ -175,7 +213,8 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     );
   }
 
-  Widget buildRestore(String restoreText) {
+  Widget buildAnalysis(String title, IconData icon, String analysisText) {
+    Color orangeAccent = Color(0xFFB39D6B);
     return Container(
       color: Color(0xFFF9F4E9), // 设置背景颜色 #f9f4e9
       padding: const EdgeInsets.all(16.0),
@@ -185,30 +224,26 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Icon(
-                Icons.location_on, // 坐标图标
-                color: Color(0xFFB39D6B), // 图标颜色
-                size: 24,
-              ),
+              Icon(icon, color: orangeAccent, size: 24),
               SizedBox(width: 6), // 图标与文字间距
               Text(
-                '考点还原', // 标题文字
+                title, // 标题文字
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
-                  color: Color(0xFFB39D6B), // 标题颜色
+                  color: orangeAccent, // 标题颜色
                 ),
               ),
             ],
           ),
           SizedBox(height: 6), // 标题与内容间距
           Divider(
-            color: Color(0xAAB39D6B), // 分割线颜色
+            color: orangeAccent, // 分割线颜色
             thickness: 1, // 分割线厚度
           ),
           SizedBox(height: 6), // 分割线与内容间距
           Text(
-            restoreText,
+            analysisText,
             style: TextStyle(
               fontSize: 16,
               height: 1.8,
@@ -230,22 +265,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
         shrinkWrap: true, // 让外层 ListView 适应内容
         physics: ClampingScrollPhysics(), // 正常滚动
         children: [
-          Text(
-            question.typeStr ?? '未知题型',
-            style: const TextStyle(
-              fontSize: 16,
-              color: Colors.grey,
-            ),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            question.title ?? '',
-            style: const TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 10),
+          questionHeaders(questionIndex),
           buildOptions(questionIndex),
           const SizedBox(height: 10),
           Text(
@@ -257,22 +277,30 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
                   : Colors.red,
             ),
           ),
-          SizedBox(height: 10),
-          Row(
-            children: [
-              Text('难度'),
-              SizedBox(width: 10),
-              Icon(Icons.star, color: Colors.orange),
-              Icon(Icons.star, color: Colors.orange),
-              Icon(Icons.star_border),
-              Icon(Icons.star_border),
-              Icon(Icons.star_border),
-            ],
-          ),
+          //SizedBox(height: 10),
+          //Row(
+          //  children: [
+          //    Text('难度'),
+          //    SizedBox(width: 10),
+          //    Icon(Icons.star, color: Colors.orange),
+          //    Icon(Icons.star, color: Colors.orange),
+          //    Icon(Icons.star_border),
+          //    Icon(Icons.star_border),
+          //    Icon(Icons.star_border),
+          //  ],
+          //),
           SizedBox(height: 30),
-          buildRestore(question.restore ?? ''),
+          buildAnalysis(
+            '考点还原',
+            Icons.location_on_outlined,
+            question.restore ?? '',
+          ),
           SizedBox(height: 10),
-          buildRestore(question.explain ?? ''),
+          buildAnalysis(
+            '答案解析',
+            Icons.lightbulb_outlined,
+            question.explain ?? '',
+          ),
         ],
       ),
     );
@@ -292,11 +320,73 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     }
   }
 
+  // 额外的图标按钮功能
+  void _onQuestionCutted() {
+    print('额外的按钮被点击了！');
+  }
+
+  void _onCalulateSatistics() {
+    print('另一个按钮被点击了！');
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.chapter.name),
+        actions: <Widget>[
+          // 额外的图标按钮 1
+          //IconButton(
+          //  icon: Icon(Icons.visibility_off),
+          //  onPressed: _onQuestionCutted,
+          //),
+          ElevatedButton(
+            onPressed: _onQuestionCutted,
+            style: ElevatedButton.styleFrom(
+              shape: CircleBorder(), //圆形
+              //padding: EdgeInsets.all(30), // 调整圆形按钮的大小
+              shadowColor: Colors.transparent, // 去掉阴影
+              elevation: 4, // 按钮阴影
+            ),
+            child: Padding(
+              padding: EdgeInsets.all(8),
+              child: Text(
+                "斩",
+                style: TextStyle(
+                  fontSize: 18,
+                  color: Colors.black,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+          IconButton(
+            icon: Icon(Icons.bar_chart),
+            onPressed: _onCalulateSatistics,
+          ),
+          PopupMenuButton<int>(
+            icon: Icon(Icons.more_vert),
+            onSelected: (value) {
+              setState(() {
+                _selectedMode = value;
+              });
+            },
+            itemBuilder: (context) {
+              return List.generate(modesList.length, (index) {
+                return PopupMenuItem<int>(
+                  value: index,
+                  child: Row(
+                    children: [
+                      Text(modesList[index]),
+                      SizedBox(width: 8),
+                      if (_selectedMode == index) Icon(Icons.check, size: 20),
+                    ],
+                  ),
+                );
+              }).toList();
+            },
+          ),
+        ],
         centerTitle: true,
       ),
       body: PageView.builder(
