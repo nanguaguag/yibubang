@@ -2,10 +2,12 @@
 # https://github.com/firebase/firebase-tools
 
 name: Deploy to Firebase Hosting on merge
+
 on:
   push:
     branches:
       - main
+
 jobs:
   # 设置 Flutter 环境
   setup-flutter:
@@ -18,33 +20,28 @@ jobs:
       - name: Cache Flutter SDK
         uses: actions/cache@v4
         with:
-          path: ~/.flutter
-          key: ${{ runner.os }}-flutter-${{ hashFiles('**/flutter_sdk_version') }}
-          restore-keys: |
-            ${{ runner.os }}-flutter-
+          path: /opt/hostedtoolcache/flutter
+          key: ${{ runner.os }}-flutter
       - name: Cache Flutter dependencies
         uses: actions/cache@v4
         with:
           path: ~/.pub-cache
           key: ${{ runner.os }}-pub-${{ hashFiles('**/pubspec.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pub-
+          restore-keys: ${{ runner.os }}-pub-
       # 缓存 Android SDK
       - name: Cache Android SDK
         uses: actions/cache@v4
         with:
           path: ~/.android
           key: android-sdk-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/*.properties') }}
-          restore-keys: |
-            android-sdk-${{ runner.os }}-
+          restore-keys: android-sdk-${{ runner.os }}-
       # 缓存 Gradle
       - name: Cache Gradle dependencies
         uses: actions/cache@v4
         with:
           path: ~/.gradle
           key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/*.properties') }}
-          restore-keys: |
-            gradle-${{ runner.os }}-
+          restore-keys: gradle-${{ runner.os }}-
       # 设置 Flutter 环境
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -59,58 +56,18 @@ jobs:
       # 编译 APK
       - name: Build APK
         run: flutter build apk
-      # 缓存 Flutter SDK
-      - name: Cache Flutter SDK
-        uses: actions/cache@v4
-        with:
-          path: ~/.flutter
-          key: ${{ runner.os }}-flutter-${{ hashFiles('**/flutter_sdk_version') }}
-          restore-keys: |
-            ${{ runner.os }}-flutter-
-      - name: Cache Flutter dependencies
-        uses: actions/cache@v4
-        with:
-          path: ~/.pub-cache
-          key: ${{ runner.os }}-pub-${{ hashFiles('**/pubspec.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pub-
-      # 缓存 Android SDK
-      - name: Cache Android SDK
-        uses: actions/cache@v4
-        with:
-          path: ~/.android
-          key: android-sdk-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/*.properties') }}
-          restore-keys: |
-            android-sdk-${{ runner.os }}-
-      # 缓存 Gradle
-      - name: Cache Gradle dependencies
-        uses: actions/cache@v4
-        with:
-          path: ~/.gradle
-          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/*.properties') }}
-          restore-keys: |
-            gradle-${{ runner.os }}-
       # 上传 APK 为工件
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: flutter-apk
           path: build/app/outputs/flutter-apk/app-*.apk
-  # 部署到 web
-  build_and_deploy:
-    needs: setup-flutter
-    runs-on: ubuntu-latest
-    steps:
-      # Step 1: Check out the repository
-      # - name: Checkout code
-      #   uses: actions/checkout@v4
-      # Step 2: Install firebase-tools globally
-      - run: pwd
+      # Install firebase-tools globally
       - name: Install firebase-tools globally
         run: npm install -g firebase-tools
       - uses: FirebaseExtended/action-hosting-deploy@v0
         with:
-          entryPoint: '.'
+          entryPoint: '/home/runner/work/yibubang/yibubang/'
           repoToken: ${{ secrets.GITHUB_TOKEN }}
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_YIBUBANG }}
           channelId: live
