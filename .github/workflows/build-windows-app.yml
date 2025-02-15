@@ -1,4 +1,4 @@
-name: Build macOS Flutter App
+name: Build Windows Flutter App
 
 on:
   push:
@@ -7,8 +7,8 @@ on:
 
 jobs:
   # 设置 Flutter 环境
-  build-macos-app:
-    runs-on: macos-latest
+  build-windows-app:
+    runs-on: windows-latest
     steps:
       # 检出代码
       - name: Checkout repository
@@ -17,12 +17,12 @@ jobs:
       - name: Cache Flutter SDK
         uses: actions/cache@v4
         with:
-          path: /Users/runner/hostedtoolcache/
+          path: C:\Users\runneradmin\.flutter\bin\flutter
           key: ${{ runner.os }}-flutter
       - name: Cache Flutter dependencies
         uses: actions/cache@v4
         with:
-          path: ~/.pub-cache
+          path: C:\Users\runneradmin\.pub-cache
           key: ${{ runner.os }}-pub-${{ hashFiles('**/pubspec.yaml') }}
           restore-keys: ${{ runner.os }}-pub-
       # 设置 Flutter 环境
@@ -37,11 +37,11 @@ jobs:
       - name: Run tests
         run: flutter test
       # 编译 .app
-      - name: Build macOS App (release)
-        run: flutter build macos --release
+      - name: Build Windows App (release)
+        run: flutter build windows --release
       # 上传 APK 为工件
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: flutter-macos-app
-          path: build/macos/Build/Products/Release/*.app
+          name: flutter-windows-app
+          path: build/windows/runner/Release/*.exe

@@ -10,7 +10,7 @@ on:
 
 jobs:
   # 设置 Flutter 环境
-  setup-flutter:
+  deploy-on-merge:
     runs-on: ubuntu-latest
     steps:
       # 检出代码
@@ -67,7 +67,6 @@ jobs:
         run: npm install -g firebase-tools
       - uses: FirebaseExtended/action-hosting-deploy@v0
         with:
-          entryPoint: '/home/runner/work/yibubang/yibubang/'
           repoToken: ${{ secrets.GITHUB_TOKEN }}
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_YIBUBANG }}
           channelId: live
