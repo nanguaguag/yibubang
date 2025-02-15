@@ -43,5 +43,5 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: flutter-macos-app
+          name: yibubang-macos-app-release
           path: build/macos/Build/Products/Release/*.app

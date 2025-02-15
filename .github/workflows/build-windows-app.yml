@@ -13,18 +13,6 @@ jobs:
       # 检出代码
       - name: Checkout repository
         uses: actions/checkout@v4
-      # 缓存 Flutter SDK
-      - name: Cache Flutter SDK
-        uses: actions/cache@v4
-        with:
-          path: C:\Users\runneradmin\.flutter\bin\flutter
-          key: ${{ runner.os }}-flutter
-      - name: Cache Flutter dependencies
-        uses: actions/cache@v4
-        with:
-          path: C:\Users\runneradmin\.pub-cache
-          key: ${{ runner.os }}-pub-${{ hashFiles('**/pubspec.yaml') }}
-          restore-keys: ${{ runner.os }}-pub-
       # 设置 Flutter 环境
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -36,12 +24,19 @@ jobs:
       # 运行测试
       - name: Run tests
         run: flutter test
-      # 编译 .app
+      # 编译 exe
       - name: Build Windows App (release)
         run: flutter build windows --release
-      # 上传 APK 为工件
+      # 打包 exe 和 dll
+      - name: Archive Release
+        uses: thedoctor0/zip-release@0.7.5
+        with:
+          type: 'zip'
+          filename: yibubang-windows-release.zip
+          directory: build/windows/runner/Release
+      # 上传打包后的 zip 为工件
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: flutter-windows-app
-          path: build/windows/runner/Release/*.exe
+          name: yibubang-windows-release
+          path: build/windows/runner/Release/yibubang-windows-release.zip

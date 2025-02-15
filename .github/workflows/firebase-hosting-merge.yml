@@ -54,14 +54,38 @@ jobs:
       - name: Run tests
         run: flutter test
       # 编译 APK
-      - name: Build APK
-        run: flutter build apk
+      - name: Build APK (release)
+        run: flutter build apk --release
+      - name: Build APK (debug)
+        run: flutter build apk --debug
+      - name: Build APK (split)
+        run: flutter build apk --release --split-per-abi
       # 上传 APK 为工件
-      - name: Upload APK
+      - name: Upload Universal APK
         uses: actions/upload-artifact@v4
         with:
-          name: flutter-apk
-          path: build/app/outputs/flutter-apk/app-*.apk
+          name: yibubang-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+      - name: Upload Debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: yibubang-apk
+          path: build/app/outputs/flutter-apk/app-debug.apk
+      - name: Upload arm64 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: yibubang-apk
+          path: build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+      - name: Upload arm32 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: yibubang-apk
+          path: build/app/outputs/flutter-apk/app-armabi-v7a-release.apk
+      - name: Upload x86_64 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: yibubang-apk
+          path: build/app/outputs/flutter-apk/app-x86_64-release.apk
       # Install firebase-tools globally
       - name: Install firebase-tools globally
         run: npm install -g firebase-tools
