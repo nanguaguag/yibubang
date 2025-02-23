@@ -1,3 +1,4 @@
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:flutter/material.dart';
 import 'dart:convert';
@@ -21,17 +22,30 @@ class QuestionDetailPage extends StatefulWidget {
 }
 
 class _QuestionDetailPageState extends State<QuestionDetailPage> {
+  int mode = 0;
   List<String> _selectedAnswer = [];
   List<String> modesList = ['练习模式', '快刷模式', '测试模式', '背题模式'];
-  int _selectedMode = 0;
-  //String? _selectedMode = '练习模式';
 
   @override
   void initState() {
+    loadSettings();
     super.initState();
     for (Question q in widget.questions) {
       _selectedAnswer.add(q.userAnswer ?? '');
     }
+  }
+
+  // 获取数据
+  Future<void> loadSettings() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    setState(() {
+      mode = prefs.getInt('mode') ?? 0;
+    });
+  }
+
+  Future<void> saveSettings() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('mode', mode);
   }
 
   Widget submitButton(int questionIndex) {
@@ -344,12 +358,13 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
             onPressed: _onQuestionCutted,
             style: ElevatedButton.styleFrom(
               shape: CircleBorder(), //圆形
-              //padding: EdgeInsets.all(30), // 调整圆形按钮的大小
+              backgroundColor: Colors.transparent, // 设置透明背景
               shadowColor: Colors.transparent, // 去掉阴影
               elevation: 4, // 按钮阴影
+              padding: EdgeInsets.all(0), // 去掉内边距
             ),
             child: Padding(
-              padding: EdgeInsets.all(8),
+              padding: EdgeInsets.all(7),
               child: Text(
                 "斩",
                 style: TextStyle(
@@ -368,8 +383,9 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
             icon: Icon(Icons.more_vert),
             onSelected: (value) {
               setState(() {
-                _selectedMode = value;
+                mode = value;
               });
+              saveSettings();
             },
             itemBuilder: (context) {
               return List.generate(modesList.length, (index) {
@@ -379,7 +395,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
                     children: [
                       Text(modesList[index]),
                       SizedBox(width: 8),
-                      if (_selectedMode == index) Icon(Icons.check, size: 20),
+                      if (mode == index) Icon(Icons.check, size: 20),
                     ],
                   ),
                 );

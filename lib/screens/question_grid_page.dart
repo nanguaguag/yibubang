@@ -1,3 +1,4 @@
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
 import 'question_detail_page.dart';
 import '../db/chapter.dart';
@@ -23,10 +24,10 @@ class QuestionGridPage extends StatefulWidget {
 class _QuestionGridPageState extends State<QuestionGridPage> {
   late Future<List<Question>> allQuestions;
   // 筛选选项
-  String selectedCut = '全部';
-  String selectedType = '全部';
-  String selectedCategory = '全部';
-  String selectedMode = '练习模式';
+  int cutType = 0;
+  int questionType = 0;
+  int category = 0;
+  int mode = 0;
 
   // 可选项
   final List<String> cutTypes = ['全部', '已斩', '未斩'];
@@ -39,6 +40,28 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
     super.initState();
     // 初始化 Future 在 initState 中，这样可以访问 widget
     allQuestions = getQuestionsFromChapter(widget.chapter);
+    loadSettings();
+  }
+
+  // 获取数据
+  Future<void> loadSettings() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    // 获取设置数据并更新状态
+    setState(() {
+      cutType = prefs.getInt('cutType') ?? 0;
+      questionType = prefs.getInt('questionType') ?? 0;
+      category = prefs.getInt('category') ?? 0;
+      mode = prefs.getInt('mode') ?? 0;
+    });
+  }
+
+  Future<void> saveSettings() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    // 保存设置数据
+    await prefs.setInt('cutType', cutType);
+    await prefs.setInt('questionType', questionType);
+    await prefs.setInt('category', category);
+    await prefs.setInt('mode', mode);
   }
 
   // 显示加载进度条
@@ -168,6 +191,7 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
                 ),
               ),
             );
+            loadSettings();
             setState(() {
               allQuestions = getQuestionsFromChapter(
                 widget.chapter,
@@ -197,54 +221,70 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
       ),
       endDrawer: Drawer(
         width: 360,
-        child: ListView(
-          padding: EdgeInsets.symmetric(vertical: 10),
-          children: <Widget>[
-            //UserAccountsDrawerHeader(
-            //  accountName: Text('John Doe'),
-            //  accountEmail: Text('johndoe@example.com'),
-            //  currentAccountPicture: CircleAvatar(
-            //    backgroundColor: Colors.orange,
-            //    child: Text('J'),
-            //  ),
-            //),
-            // 关闭按钮放置在侧边栏的顶部
-            Row(children: [
-              Padding(
-                padding: EdgeInsets.all(10),
-                child: Icon(Icons.tune),
-              ),
-              Text(
-                '筛选',
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.w600,
+        child: SafeArea(
+          child: ListView(
+            padding: EdgeInsets.symmetric(vertical: 10),
+            children: <Widget>[
+              //UserAccountsDrawerHeader(
+              //  accountName: Text('John Doe'),
+              //  accountEmail: Text('johndoe@example.com'),
+              //  currentAccountPicture: CircleAvatar(
+              //    backgroundColor: Colors.orange,
+              //    child: Text('J'),
+              //  ),
+              //),
+              // 关闭按钮放置在侧边栏的顶部
+              Row(children: [
+                Padding(
+                  padding: EdgeInsets.all(10),
+                  child: Icon(Icons.tune),
                 ),
-              ),
-              Spacer(),
-              Align(
-                alignment: Alignment.topRight,
-                child: IconButton(
-                  icon: Icon(Icons.close),
-                  onPressed: () {
-                    Navigator.pop(context); // 关闭侧边栏
-                  },
+                Text(
+                  '筛选',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-              ),
-            ]),
-            _buildFilterSection('斩题', cutTypes, selectedCut, (value) {
-              setState(() => selectedCut = value);
-            }),
-            _buildFilterSection('题型', questionTypes, selectedType, (value) {
-              setState(() => selectedType = value);
-            }),
-            _buildFilterSection('分类', categories, selectedCategory, (value) {
-              setState(() => selectedCategory = value);
-            }),
-            _buildFilterSection('模式', modes, selectedMode, (value) {
-              setState(() => selectedMode = value);
-            }),
-          ],
+                Spacer(),
+                Align(
+                  alignment: Alignment.topRight,
+                  child: IconButton(
+                    icon: Icon(Icons.close),
+                    onPressed: () {
+                      Navigator.pop(context); // 关闭侧边栏
+                    },
+                  ),
+                ),
+              ]),
+              _buildFilterSection('斩题', cutTypes, cutTypes[cutType], (value) {
+                saveSettings();
+                setState(() {
+                  cutType = cutTypes.indexOf(value);
+                });
+              }),
+              _buildFilterSection(
+                  '题型', questionTypes, questionTypes[questionType], (value) {
+                saveSettings();
+                setState(() {
+                  questionType = questionTypes.indexOf(value);
+                });
+              }),
+              _buildFilterSection('分类', categories, categories[category],
+                  (value) {
+                saveSettings();
+                setState(() {
+                  category = categories.indexOf(value);
+                });
+              }),
+              _buildFilterSection('模式', modes, modes[mode], (value) {
+                saveSettings();
+                setState(() {
+                  mode = modes.indexOf(value);
+                });
+              }),
+            ],
+          ),
         ),
       ),
       body: Column(

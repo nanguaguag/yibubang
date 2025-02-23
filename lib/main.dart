@@ -3,8 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'screens/home_page.dart';
 import 'common/app_strings.dart';
+import 'db/settings.dart';
 import 'package:get/get.dart';
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:sqflite_common_ffi_web/sqflite_ffi_web.dart';
@@ -16,7 +16,7 @@ Future main() async {
     // Use web implementation on the web.
     databaseFactory = databaseFactoryFfiWeb;
   } else {
-    // Use ffi on Linux and Windows.
+    // Use ffi on Linux and Windows and MacOS.
     if (Platform.isLinux || Platform.isWindows || Platform.isMacOS) {
       databaseFactory = databaseFactoryFfi;
       sqfliteFfiInit();
@@ -30,6 +30,7 @@ Future main() async {
     systemNavigationBarDividerColor: Colors.transparent, // 分割线颜色透明
   ));
 
+  await initSettings();
   runApp(const Yibubang());
 }
 

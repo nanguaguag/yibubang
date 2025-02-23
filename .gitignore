@@ -51,3 +51,5 @@ app.*.map.json
 # firebase
 .idea/
 .firebase/
+pubspec.lock
+.metadata
