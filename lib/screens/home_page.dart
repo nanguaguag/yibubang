@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:archive/archive.dart';
@@ -19,7 +20,8 @@ class _HomePageState extends State<HomePage> {
   int _selectedIndex = 0; // 默认主页为题库页
   bool isDownloading = false;
   double downloadProgress = 0.00; // 下载进度
-  String status = '点击按钮下载题库';
+  String statusText = '点击按钮下载题库';
+  Map<String, dynamic> updateData = {}; // 更新信息
 
   @override
   void initState() {
@@ -46,17 +48,28 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<bool> needToDownload() async {
-    String expectedMd5 = 'df03e2f020017eb7ca440fcd0698d7ff';
+    if (updateData.isEmpty) {
+      final Uri updateUrl = Uri.parse(
+        'https://files.melonhu.cn/yibubang/yibubang_update.json',
+      );
+      final updateResponse = await http.get(updateUrl);
+      if (updateResponse.statusCode != 200) {
+        print('请求失败，状态码: ${updateResponse.statusCode}');
+        return true;
+      }
+      // 在这里初始化 更新信息
+      updateData = jsonDecode(updateResponse.body);
+    }
+
     String appDocDir = await getDatabasesPath();
-    String filePath = '$appDocDir/question_data.zip';
+    String filePath = '$appDocDir/question_data.sqlite.zip';
     File file = File(filePath);
 
     if (await file.exists()) {
       String fileMd5 = await calculateMd5(file);
-      if (fileMd5 == expectedMd5) {
+      if (fileMd5 == updateData['latest_data_md5']) {
         return false;
       }
-      // await file.delete();
       return true;
     }
     return true;
@@ -69,20 +82,20 @@ class _HomePageState extends State<HomePage> {
 
     setState(() {
       isDownloading = true;
-      status = '正在下载题库...';
+      statusText = '正在下载题库...';
       downloadProgress = 0.00; // 初始化进度为0
     });
 
     // Step 1: Get the document directory
     String appDocDir = await getDatabasesPath();
-    String filePath = '$appDocDir/question_data.zip';
+    String filePath = '$appDocDir/question_data.sqlite.zip';
 
     // Create a file to store the downloaded ZIP
     File file = File(filePath);
 
     // Step 2: Download the ZIP file with progress
-    final url = 'https://files.melonhu.cn/question_data.sqlite.zip';
-    var request = http.Request('GET', Uri.parse(url));
+    final latestDataUrl = updateData['latest_data_url'];
+    var request = http.Request('GET', Uri.parse(latestDataUrl));
     var response = await request.send();
 
     // Step 3: Handle download progress
@@ -127,13 +140,13 @@ class _HomePageState extends State<HomePage> {
 
         setState(() {
           isDownloading = false;
-          status = '题库下载并解压完成';
+          statusText = '题库下载并解压完成';
         });
       },
       onError: (error) {
         setState(() {
           isDownloading = false;
-          status = '题库下载失败';
+          statusText = '题库下载失败';
         });
       },
     );
@@ -172,7 +185,7 @@ class _HomePageState extends State<HomePage> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text(status),
+                  Text(statusText),
                   SizedBox(height: 20),
                   buildProgress(),
                 ],

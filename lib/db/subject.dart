@@ -4,12 +4,29 @@ class Subject {
   String id;
   String name;
   int selected;
+  int correct;
+  int incorrect;
+  int total;
 
-  Subject({required this.id, required this.name, required this.selected});
+  Subject({
+    required this.id,
+    required this.name,
+    required this.selected,
+    required this.correct,
+    required this.incorrect,
+    required this.total,
+  });
 
   // Convert a Subject to a map
   Map<String, dynamic> toMap() {
-    return {'id': id, 'name': name};
+    return {
+      'id': id,
+      'name': name,
+      'selected': selected,
+      'correct': correct,
+      'incorrect': incorrect,
+      'total': total,
+    };
   }
 
   // Convert a map to a Subject
@@ -18,6 +35,9 @@ class Subject {
       id: map['id'],
       name: map['name'],
       selected: map['selected'],
+      correct: map['correct'],
+      incorrect: map['incorrect'],
+      total: map['total'],
     );
   }
 }
@@ -28,37 +48,33 @@ void insertSubject(Subject subject) async {
 }
 
 Future<List<Subject>> fetchSelectedSubjects() async {
-  List<Map<String, dynamic>> subjectsData =
-      await DatabaseHelper().getByCondition('Subject', 'selected = TRUE', []);
+  DatabaseHelper dbh = DatabaseHelper();
+  List<Map<String, dynamic>> subjectsData = await dbh.getByCondition(
+    'Subject',
+    'selected = TRUE',
+    [],
+  );
   List<Subject> subjects = subjectsData.map((e) => Subject.fromMap(e)).toList();
-
-  // subjects.forEach((subject) {
-  //   print('Subject ID: ${subject.id}, Name: ${subject.name}');
-  // });
 
   return subjects;
 }
 
 Future<List<Subject>> fetchAllSubjects() async {
-  List<Map<String, dynamic>> subjectsData =
-      await DatabaseHelper().getAll('Subject');
+  DatabaseHelper dbh = DatabaseHelper();
+  List<Map<String, dynamic>> subjectsData = await dbh.getAll('Subject');
   List<Subject> subjects = subjectsData.map((e) => Subject.fromMap(e)).toList();
-
-  // subjects.forEach((subject) {
-  //   print('Subject ID: ${subject.id}, Name: ${subject.name}');
-  // });
 
   return subjects;
 }
 
 void toggleSubjectSelected(String subjectId) async {
-  DatabaseHelper databaseHelper = DatabaseHelper();
+  DatabaseHelper dbh = DatabaseHelper();
   List<Map<String, dynamic>> subject =
-      await databaseHelper.getByCondition('Subject', 'id = ?', [subjectId]);
+      await dbh.getByCondition('Subject', 'id = ?', [subjectId]);
   if (subject.isNotEmpty) {
     bool currentSelected = subject.first['selected'] == 1;
     Map<String, dynamic> updatedData = {'selected': currentSelected ? 0 : 1};
-    await databaseHelper.update('Subject', updatedData, 'id = ?', [subjectId]);
+    await dbh.update('Subject', updatedData, 'id = ?', [subjectId]);
   } else {
     print("未找到对应的课程 subject_id = " + subjectId);
   }

@@ -24,7 +24,7 @@ class Question {
   String? identityId;
   String? chapterId; // Foreign Key
   String? chapterParentId; // Foreign Key
-  String? type;
+  String? type; // 题目类型（数字）
   String? partId;
   String? partParentId;
   String? sortChapter;
@@ -49,15 +49,16 @@ class Question {
   String? sourceFilter;
   String? showNumber;
   String? createdAt;
-  String? typeStr;
+  String? typeStr; // 题目类型（字符串）
   String? originType;
   String? sort;
-  String? isNew;
+  String? isNew; // 是否为新题
   String? outlinesMastery;
   String? filterType;
-  String? cutQuestion;
-  String? userAnswer;
-  int? status;
+  String? cutQuestion; // 是否已斩
+  String? userAnswer; // 用户答案
+  int status; // 题目状态
+  int collection; // 是否收藏
 
   Question({
     required this.id,
@@ -115,7 +116,8 @@ class Question {
     this.filterType,
     this.cutQuestion,
     this.userAnswer,
-    this.status,
+    required this.status,
+    required this.collection,
   });
 
   // Convert a Question to a map
@@ -177,6 +179,7 @@ class Question {
       'cut_question': cutQuestion,
       'user_answer': userAnswer,
       'status': status,
+      'status': collection,
     };
   }
 
@@ -239,6 +242,7 @@ class Question {
       cutQuestion: map['cut_question'],
       userAnswer: map['user_answer'],
       status: map['status'],
+      collection: map['collection'],
     );
   }
 }
@@ -263,16 +267,14 @@ Future<List<Question>> getQuestionsFromChapter(Chapter chapter) async {
   return questions;
 }
 
-Future<void> updateQuestion(
-  Question question,
-  String userAnswer,
-) async {
+Future<void> updateQuestion(Question question) async {
   // 更新问题状态和用户答案
   await DatabaseHelper().update(
     'Question',
     {
       'status': question.status,
-      'user_answer': userAnswer,
+      'collection': question.collection,
+      'user_answer': question.userAnswer,
     },
     'id = ?',
     [question.id],

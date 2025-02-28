@@ -174,8 +174,14 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
           case 2:
             buttonColor = Colors.red.shade600;
             break;
+          case 3:
+            buttonColor = Colors.orange;
+            break;
+          case 4:
+            buttonColor = Colors.black26;
+            break;
           default:
-            buttonColor = Colors.white70;
+            buttonColor = Colors.black26;
             break;
         }
 

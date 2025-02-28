@@ -126,6 +126,18 @@ class DatabaseHelper {
     return await db.query(table, where: condition, whereArgs: args);
   }
 
+  Future<int> getCountByCondition(
+      String table, String condition, List<dynamic> args) async {
+    final db = await database;
+    // 使用rawQuery来查询符合条件的记录数
+    final count = await db.rawQuery(
+      'SELECT COUNT(*) FROM $table WHERE $condition',
+      args,
+    );
+    // 返回查询结果中的第一个值
+    return Sqflite.firstIntValue(count) ?? 0;
+  }
+
   // Update a record
   Future<int> update(String table, Map<String, dynamic> data, String condition,
       List<dynamic> args) async {

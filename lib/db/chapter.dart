@@ -3,9 +3,19 @@ import 'database_helper.dart';
 class Chapter {
   String id;
   String name;
-  String? subjectId; // This is a foreign key reference to Subject table
+  String subjectId; // This is a foreign key reference to Subject table
+  int correct;
+  int incorrect;
+  int total;
 
-  Chapter({required this.id, required this.name, this.subjectId});
+  Chapter({
+    required this.id,
+    required this.name,
+    required this.subjectId,
+    required this.correct,
+    required this.incorrect,
+    required this.total,
+  });
 
   // Convert a Chapter to a map
   Map<String, dynamic> toMap() {
@@ -13,6 +23,9 @@ class Chapter {
       'id': id,
       'name': name,
       'subject_id': subjectId,
+      'correct': correct,
+      'incorrect': incorrect,
+      'total': total,
     };
   }
 
@@ -22,6 +35,9 @@ class Chapter {
       id: map['id'],
       name: map['name'],
       subjectId: map['subject_id'],
+      correct: map['correct'],
+      incorrect: map['incorrect'],
+      total: map['total'],
     );
   }
 }
@@ -32,8 +48,13 @@ void sortChaptersById(List<Chapter> chapters) {
 }
 
 Future<List<Chapter>> fetchChaptersBySubjectId(String subjectId) async {
-  List<Map<String, dynamic>> chaptersData = await DatabaseHelper()
-      .getByCondition('Chapter', 'subject_id = ?', [subjectId]);
+  DatabaseHelper dbh = DatabaseHelper();
+  List<Map<String, dynamic>> chaptersData = await dbh.getByCondition(
+    'Chapter',
+    'subject_id = ?',
+    [subjectId],
+  );
+
   List<Chapter> chapters = chaptersData.map((e) => Chapter.fromMap(e)).toList();
 
   sortChaptersById(chapters);

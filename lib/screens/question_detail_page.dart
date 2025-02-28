@@ -25,14 +25,25 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
   int mode = 0;
   List<String> _selectedAnswer = [];
   List<String> modesList = ['练习模式', '快刷模式', '测试模式', '背题模式'];
+  // 创建 PageController
+  PageController _pageController = PageController();
 
   @override
   void initState() {
     loadSettings();
     super.initState();
+    _pageController = PageController(initialPage: widget.questionIndex);
     for (Question q in widget.questions) {
       _selectedAnswer.add(q.userAnswer ?? '');
     }
+  }
+
+  // 控制翻到下一页的方法
+  void _nextPage() {
+    _pageController.nextPage(
+      duration: Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+    );
   }
 
   // 获取数据
@@ -49,6 +60,11 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
   }
 
   Widget submitButton(int questionIndex) {
+    // 如果是快刷/测试模式且为单选题，不显示提交按钮
+    if ((mode == 1 || mode == 2) &&
+        widget.questions[questionIndex].type == '1') {
+      return const SizedBox.shrink();
+    }
     return Align(
       alignment: Alignment.bottomCenter,
       child: SizedBox(
@@ -84,6 +100,10 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
                   setState(() {
                     _selectedAnswer[questionIndex] = value ?? '';
                   });
+                  if (mode == 1 || mode == 2) {
+                    // 快刷模式 && 测试模式, 单选题自动提交
+                    submitAnswer(questionIndex);
+                  }
                 },
               );
             case '2': // 多选题
@@ -177,13 +197,22 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
 
   Widget buildOptions(int questionIndex) {
     final List<dynamic> optionJson = getOptionJson(questionIndex);
-    final String answer = widget.questions[questionIndex].answer ?? '';
+    final Question question = widget.questions[questionIndex];
+    final String answer = question.answer ?? '';
     final String userAnswer = _selectedAnswer[questionIndex];
     for (Map<String, dynamic> option in optionJson) {
       final String key = option['key'];
       final bool answerContains = answer.contains(key);
       final bool userAnswerContains = userAnswer.contains(key);
-      if (answerContains && userAnswerContains) {
+      if ((mode == 3 && question.status == 0) || question.status == 4) {
+        if (answerContains) {
+          option['color'] = Colors.black87;
+          option['icon'] = Icons.check_circle;
+        } else {
+          option['color'] = Colors.grey;
+          option['icon'] = Icons.circle_outlined;
+        }
+      } else if (answerContains && userAnswerContains) {
         option['color'] = Colors.green;
         option['icon'] = Icons.check_circle;
       } else if (answerContains && !userAnswerContains) {
@@ -283,12 +312,10 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
           buildOptions(questionIndex),
           const SizedBox(height: 10),
           Text(
-            '答案：正确答案 ${question.answer}, 你的答案 $userAnswer',
+            '答案：正确答案 $answer, 你的答案 $userAnswer',
             style: TextStyle(
               fontSize: 14,
-              color: sortString(userAnswer) == sortString(answer)
-                  ? Colors.green
-                  : Colors.red,
+              color: question.status == 1 ? Colors.green : Colors.red,
             ),
           ),
           //SizedBox(height: 10),
@@ -320,15 +347,30 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     );
   }
 
+  Widget cuttedQuestion(int questionIndex) {
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Text("该题目已斩"),
+    );
+  }
+
   Widget buildQuestion(int questionIndex) {
     final Question question = widget.questions[questionIndex];
+    if (mode == 3) {
+      // 背题模式, 直接显示正确答案
+      return answeredQuestion(questionIndex);
+    }
     switch (question.status) {
-      case 0:
+      case 0: // 未作答
         return unansweredQuestion(questionIndex);
-      case 1:
+      case 1: // 正确作答
         return answeredQuestion(questionIndex);
-      case 2:
+      case 2: // 错误回答
         return answeredQuestion(questionIndex);
+      case 3: // 已斩题
+        return cuttedQuestion(questionIndex);
+      case 4: // 测试模式 - 已作答
+        return unansweredQuestion(questionIndex);
       default:
         return const Text('未知的题目状态');
     }
@@ -406,7 +448,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
         centerTitle: true,
       ),
       body: PageView.builder(
-        controller: PageController(initialPage: widget.questionIndex),
+        controller: _pageController,
         itemCount: widget.questions.length,
         itemBuilder: (context, index) {
           return buildQuestion(index);
@@ -457,6 +499,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     final String userAnswer = _selectedAnswer[questionIndex];
     //final List<dynamic> optionJson = getOptionJson(questionIndex);
     final String answer = question.answer ?? '';
+    question.userAnswer = userAnswer;
     if (question.type == '1' && userAnswer.isEmpty) {
       Fluttertoast.showToast(
         msg: "不能不填答案哦~",
@@ -469,16 +512,27 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
         toastLength: Toast.LENGTH_SHORT,
         gravity: ToastGravity.BOTTOM,
       );
-    } else {
-      if (sortString(userAnswer) == sortString(answer)) {
-        question.status = 1;
-      } else {
-        question.status = 2;
-      }
-      updateQuestion(question, userAnswer);
+    } else if (mode == 2) {
+      question.status = 4; // 测试模式 - 已作答
+      updateQuestion(question);
       setState(() {
         widget.questions[questionIndex].status = question.status;
       });
+      _nextPage();
+    } else {
+      if (sortString(userAnswer) == sortString(answer)) {
+        question.status = 1; // 回答正确
+      } else {
+        question.status = 2; // 回答错误
+      }
+      updateQuestion(question);
+      setState(() {
+        widget.questions[questionIndex].status = question.status;
+      });
+      if (question.status == 1 && mode == 1) {
+        // 快刷模式自动翻页 || 测试模式自动翻页
+        _nextPage();
+      }
     }
   }
 }
