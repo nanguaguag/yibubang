@@ -225,71 +225,65 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
       appBar: AppBar(
         title: Text(widget.chapter.name),
       ),
-      endDrawer: Drawer(
-        width: 360,
-        child: SafeArea(
-          child: ListView(
-            padding: EdgeInsets.symmetric(vertical: 10),
-            children: <Widget>[
-              //UserAccountsDrawerHeader(
-              //  accountName: Text('John Doe'),
-              //  accountEmail: Text('johndoe@example.com'),
-              //  currentAccountPicture: CircleAvatar(
-              //    backgroundColor: Colors.orange,
-              //    child: Text('J'),
-              //  ),
-              //),
-              // 关闭按钮放置在侧边栏的顶部
-              Row(children: [
-                Padding(
-                  padding: EdgeInsets.all(10),
-                  child: Icon(Icons.tune),
-                ),
-                Text(
-                  '筛选',
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.w600,
+      endDrawer: FractionallySizedBox(
+        widthFactor: 0.7, // 宽度占父容器的70%
+        child: Drawer(
+          child: SafeArea(
+            child: ListView(
+              padding: EdgeInsets.symmetric(vertical: 10),
+              children: <Widget>[
+                // 关闭按钮放置在侧边栏的顶部
+                Row(children: [
+                  Padding(
+                    padding: EdgeInsets.all(10),
+                    child: Icon(Icons.tune),
                   ),
-                ),
-                Spacer(),
-                Align(
-                  alignment: Alignment.topRight,
-                  child: IconButton(
-                    icon: Icon(Icons.close),
-                    onPressed: () {
-                      Navigator.pop(context); // 关闭侧边栏
-                    },
+                  Text(
+                    '筛选',
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-                ),
-              ]),
-              _buildFilterSection('斩题', cutTypes, cutTypes[cutType], (value) {
-                saveSettings();
-                setState(() {
-                  cutType = cutTypes.indexOf(value);
-                });
-              }),
-              _buildFilterSection(
-                  '题型', questionTypes, questionTypes[questionType], (value) {
-                saveSettings();
-                setState(() {
-                  questionType = questionTypes.indexOf(value);
-                });
-              }),
-              _buildFilterSection('分类', categories, categories[category],
-                  (value) {
-                saveSettings();
-                setState(() {
-                  category = categories.indexOf(value);
-                });
-              }),
-              _buildFilterSection('模式', modes, modes[mode], (value) {
-                saveSettings();
-                setState(() {
-                  mode = modes.indexOf(value);
-                });
-              }),
-            ],
+                  Spacer(),
+                  Align(
+                    alignment: Alignment.topRight,
+                    child: IconButton(
+                      icon: Icon(Icons.close),
+                      onPressed: () {
+                        Navigator.pop(context); // 关闭侧边栏
+                      },
+                    ),
+                  ),
+                ]),
+                _buildFilterSection('斩题', cutTypes, cutTypes[cutType], (value) {
+                  saveSettings();
+                  setState(() {
+                    cutType = cutTypes.indexOf(value);
+                  });
+                }),
+                _buildFilterSection(
+                    '题型', questionTypes, questionTypes[questionType], (value) {
+                  saveSettings();
+                  setState(() {
+                    questionType = questionTypes.indexOf(value);
+                  });
+                }),
+                _buildFilterSection('分类', categories, categories[category],
+                    (value) {
+                  saveSettings();
+                  setState(() {
+                    category = categories.indexOf(value);
+                  });
+                }),
+                _buildFilterSection('模式', modes, modes[mode], (value) {
+                  saveSettings();
+                  setState(() {
+                    mode = modes.indexOf(value);
+                  });
+                }),
+              ],
+            ),
           ),
         ),
       ),

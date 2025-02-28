@@ -46,7 +46,8 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
 
   // 显示加载进度条
   Widget _buildLoadingIndicator() {
-    return const Center(child: LinearProgressIndicator());
+    //return const Center(child: LinearProgressIndicator());
+    return Container(); // 不显示加载进度条
   }
 
   // 显示错误信息
@@ -72,14 +73,14 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
       title: Row(
         children: [
           Expanded(
-            flex: 8,
+            flex: 80, // 80%
             child: Text(
               subject.name,
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
           ),
           Expanded(
-            flex: 1,
+            flex: 20, // 20%
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
@@ -137,14 +138,14 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
       title: Row(
         children: [
           Expanded(
-            flex: 10,
+            flex: 85, // 75%
             child: Text(
               chapter.name,
               style: const TextStyle(fontSize: 14),
             ),
           ),
           Expanded(
-            flex: 1,
+            flex: 15, // 25%
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [

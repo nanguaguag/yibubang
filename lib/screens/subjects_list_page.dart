@@ -7,14 +7,50 @@ class SubjectsListPage extends StatefulWidget {
   _SubjectsListPageState createState() => _SubjectsListPageState();
 }
 
-class _SubjectsListPageState extends State<SubjectsListPage> {
+class _SubjectsListPageState extends State<SubjectsListPage>
+    with SingleTickerProviderStateMixin {
   Future<List<Subject>> subjectsFuture = fetchAllSubjects();
-  List<Subject> _allSubjects = []; // 保存完整数据
+  List<Subject> _allSubjects = []; // 完整数据列表
   List<Subject> filteredSubjects = [];
-  TextEditingController _searchController = TextEditingController();
+  final TextEditingController _searchController = TextEditingController();
   bool _isSearching = false;
+  AnimationController? _animationController;
+  Animation<Offset>? _slideAnimation;
 
-  // 动态筛选函数，直接使用_allSubjects作为数据源
+  @override
+  void initState() {
+    super.initState();
+    // 获取数据后保存到_allSubjects和filteredSubjects中
+    subjectsFuture.then((data) {
+      setState(() {
+        _allSubjects = data;
+        filteredSubjects = data;
+      });
+    });
+    // 初始化动画控制器
+    _animationController = AnimationController(
+      duration: const Duration(milliseconds: 200),
+      vsync: this,
+    );
+    _slideAnimation = Tween<Offset>(
+      begin: const Offset(1, 0),
+      end: const Offset(0, 0),
+    ).animate(
+      CurvedAnimation(
+        parent: _animationController!,
+        curve: Curves.easeInOut,
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _animationController?.dispose();
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  // 根据输入内容过滤数据
   void _filterSearchResults(String query) {
     setState(() {
       if (query.isEmpty) {
@@ -29,15 +65,59 @@ class _SubjectsListPageState extends State<SubjectsListPage> {
     });
   }
 
-  @override
-  void initState() {
-    super.initState();
-    subjectsFuture.then((data) {
-      setState(() {
-        _allSubjects = data;
-        filteredSubjects = data;
-      });
-    });
+  // 构建带高亮效果的文本组件
+  Widget _buildHighlightedText(String text, String query) {
+    // 定义基本样式和高亮样式
+    TextStyle normalStyle = const TextStyle(
+      fontSize: 15,
+      color: Colors.black,
+      decoration: TextDecoration.none,
+    );
+    TextStyle highlightStyle = const TextStyle(
+      fontSize: 15,
+      color: Colors.red,
+      fontWeight: FontWeight.bold,
+      decoration: TextDecoration.none,
+    );
+
+    if (query.isEmpty) {
+      return Text(text, style: normalStyle);
+    }
+    String lowerText = text.toLowerCase();
+    String lowerQuery = query.toLowerCase();
+    List<TextSpan> spans = [];
+    int start = 0;
+    int index = lowerText.indexOf(lowerQuery);
+    while (index != -1) {
+      // 添加匹配之前的文本
+      if (index > start) {
+        spans.add(
+          TextSpan(
+            text: text.substring(start, index),
+            style: normalStyle,
+          ),
+        );
+      }
+      // 添加匹配的文本，并进行高亮显示
+      spans.add(
+        TextSpan(
+          text: text.substring(index, index + query.length),
+          style: highlightStyle,
+        ),
+      );
+      start = index + query.length;
+      index = lowerText.indexOf(lowerQuery, start);
+    }
+    // 添加剩余文本
+    if (start < text.length) {
+      spans.add(
+        TextSpan(
+          text: text.substring(start),
+          style: normalStyle,
+        ),
+      );
+    }
+    return RichText(text: TextSpan(children: spans));
   }
 
   @override
@@ -50,16 +130,24 @@ class _SubjectsListPageState extends State<SubjectsListPage> {
             Navigator.pop(context);
           },
         ),
-        // 使用AnimatedSwitcher在标题与搜索框之间切换
-        title: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 300),
-          transitionBuilder: (Widget child, Animation<double> animation) {
-            return FadeTransition(opacity: animation, child: child);
-          },
-          child: _isSearching
-              ? TextField(
-                  key: const ValueKey('searchField'),
+        title: Stack(
+          children: [
+            // 默认标题，当不处于搜索状态时显示
+            Visibility(
+              visible: !_isSearching,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(AppStrings.subjectsListTitle),
+              ),
+            ),
+            // 搜索框，使用SlideTransition实现从右侧滑入效果
+            Visibility(
+              visible: _isSearching,
+              child: SlideTransition(
+                position: _slideAnimation!,
+                child: TextField(
                   controller: _searchController,
+                  autofocus: true, // 自动聚焦
                   onChanged: _filterSearchResults,
                   style: const TextStyle(color: Colors.black54),
                   decoration: const InputDecoration(
@@ -67,19 +155,18 @@ class _SubjectsListPageState extends State<SubjectsListPage> {
                     hintStyle: TextStyle(color: Colors.grey),
                     border: InputBorder.none,
                   ),
-                )
-              : Text(
-                  AppStrings.subjectsListTitle,
-                  key: const ValueKey('title'),
                 ),
+              ),
+            ),
+          ],
         ),
         actions: [
           IconButton(
             // 使用AnimatedSwitcher对图标进行动画切换
             icon: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 100),
+              duration: const Duration(milliseconds: 200),
               transitionBuilder: (Widget child, Animation<double> animation) {
-                return RotationTransition(turns: animation, child: child);
+                return FadeTransition(opacity: animation, child: child);
               },
               child: _isSearching
                   ? const Icon(Icons.close, key: ValueKey('closeIcon'))
@@ -88,8 +175,13 @@ class _SubjectsListPageState extends State<SubjectsListPage> {
             onPressed: () {
               setState(() {
                 if (_isSearching) {
+                  // 隐藏搜索框，反向动画
+                  _animationController!.reverse();
                   _searchController.clear();
                   _filterSearchResults('');
+                } else {
+                  // 显示搜索框，执行正向动画
+                  _animationController!.forward();
                 }
                 _isSearching = !_isSearching;
               });
@@ -116,7 +208,11 @@ class _SubjectsListPageState extends State<SubjectsListPage> {
               itemBuilder: (context, index) {
                 Subject subject = filteredSubjects[index];
                 return ListTile(
-                  title: Text(subject.name),
+                  // 使用_highlightedText来显示匹配字符的高亮效果
+                  title: _buildHighlightedText(
+                    subject.name,
+                    _searchController.text,
+                  ),
                   tileColor: subject.selected == 1 ? Colors.blue.shade50 : null,
                   onTap: () {
                     setState(() {
