@@ -1,9 +1,11 @@
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:fluttertoast/fluttertoast.dart';
-import 'package:flutter/material.dart';
 import 'dart:convert';
-import '../db/question.dart';
+import 'package:flutter/material.dart';
+import 'package:fluttertoast/fluttertoast.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import '../widgets/image_view.dart';
 import '../db/chapter.dart';
+import '../db/question.dart';
 
 class QuestionDetailPage extends StatefulWidget {
   final Chapter chapter;
@@ -23,7 +25,7 @@ class QuestionDetailPage extends StatefulWidget {
 
 class _QuestionDetailPageState extends State<QuestionDetailPage> {
   int mode = 0;
-  List<String> _selectedAnswer = [];
+  final List<String> _selectedAnswer = [];
   List<String> modesList = ['练习模式', '快刷模式', '测试模式', '背题模式'];
   // 创建 PageController
   PageController _pageController = PageController();
@@ -256,7 +258,101 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     );
   }
 
-  Widget buildAnalysis(String title, IconData icon, String analysisText) {
+  void _showFullScreenImage(
+    BuildContext context,
+    List<String> imageUrls,
+    int initialIndex,
+  ) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => FullScreenImageView(
+          imageUrls: imageUrls,
+          initialIndex: initialIndex,
+        ),
+      ),
+    );
+  }
+
+  Widget buildTextWithImage(String text, String imgUrl) {
+    // split text with regex: (?:[\u4e00-\u9fa5]+)?P\d+(?:-P\d+)?
+    // 1. (?:[\u4e00-\u9fa5]+)? : optional chinese characters
+    // 2. P\d+ : P + digits
+    // 3. (?:-P\d+)? : optional -P + digits
+    final RegExp regex = RegExp(r'(?:[\u4e00-\u9fa5]+)?P\d+(?:-P\d+)?');
+    final List<String> parts = text.split(regex);
+    final List<String> imageUrls = [];
+    List<String> matches =
+        regex.allMatches(text).map((match) => match.group(0)!).toList();
+    // merge parts and matches
+    for (int i = 0; i < matches.length; i++) {
+      parts.insert(2 * i + 1, matches[i]);
+      imageUrls.insert(
+        i,
+        "$imgUrl${matches[i]}-${i + 1}.jpg?x-oss-process=style/water_mark",
+      );
+    }
+    return Text.rich(
+      TextSpan(
+        children: List.generate(parts.length, (index) {
+          if (index.isEven) {
+            return TextSpan(
+              text: parts[index],
+              style: TextStyle(
+                fontSize: 16,
+                height: 1.8,
+                color: Colors.black87,
+              ),
+            );
+          } else {
+            return WidgetSpan(
+              child: ElevatedButton(
+                style: ButtonStyle(
+                  padding: WidgetStateProperty.all<EdgeInsets>(
+                    EdgeInsets.zero,
+                  ),
+                  minimumSize: WidgetStateProperty.all(Size.zero),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  backgroundColor: WidgetStateProperty.all(
+                    Colors.transparent,
+                  ),
+                  elevation: WidgetStateProperty.all(0), // 去掉阴影
+                ),
+                child: Wrap(
+                  alignment: WrapAlignment.center,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Text(
+                      parts[index],
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: Colors.deepOrange,
+                      ),
+                    ),
+                    Icon(
+                      Icons.photo,
+                      size: 18,
+                      color: Colors.deepOrange,
+                    )
+                  ],
+                ),
+                onPressed: () {
+                  _showFullScreenImage(
+                    context,
+                    imageUrls,
+                    index ~/ 2,
+                  );
+                },
+              ),
+            );
+          }
+        }),
+      ),
+    );
+  }
+
+  Widget buildAnalysis(
+      String title, IconData icon, String analysisText, Question q) {
     Color orangeAccent = Color(0xFFB39D6B);
     return Container(
       color: Color(0xFFF9F4E9), // 设置背景颜色 #f9f4e9
@@ -285,13 +381,9 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
             thickness: 1, // 分割线厚度
           ),
           SizedBox(height: 6), // 分割线与内容间距
-          Text(
+          buildTextWithImage(
             analysisText,
-            style: TextStyle(
-              fontSize: 16,
-              height: 1.8,
-              color: Colors.black87, // 内容文字颜色
-            ),
+            'https://ykb-app-files.yikaobang.com.cn/question/restore/${q.nativeAppId}/${q.number}',
           ),
         ],
       ),
@@ -310,13 +402,21 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
         children: [
           questionHeaders(questionIndex),
           buildOptions(questionIndex),
-          const SizedBox(height: 10),
-          Text(
-            '答案：正确答案 $answer, 你的答案 $userAnswer',
-            style: TextStyle(
-              fontSize: 14,
-              color: question.status == 1 ? Colors.green : Colors.red,
-            ),
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              Text(
+                '答案：正确答案 $answer, 你的答案 ',
+                style: TextStyle(fontSize: 14),
+              ),
+              Text(
+                userAnswer,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: question.status == 1 ? Colors.green : Colors.red,
+                ),
+              ),
+            ],
           ),
           //SizedBox(height: 10),
           //Row(
@@ -330,17 +430,19 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
           //    Icon(Icons.star_border),
           //  ],
           //),
-          SizedBox(height: 30),
+          SizedBox(height: 20),
           buildAnalysis(
             '考点还原',
             Icons.location_on_outlined,
             question.restore ?? '',
+            question,
           ),
           SizedBox(height: 10),
           buildAnalysis(
             '答案解析',
             Icons.lightbulb_outlined,
             question.explain ?? '',
+            question,
           ),
         ],
       ),
