@@ -33,7 +33,7 @@ class _HomePageState extends State<HomePage> {
   // List of screens corresponding to the tabs
   final List<Widget> _screens = [
     ChoosedSubjectsPage(),
-    MyPage(),
+    AuthCheckPage(),
   ];
 
   void _onItemTapped(int index) {
@@ -123,12 +123,6 @@ class _HomePageState extends State<HomePage> {
         // Step 4: Extract the ZIP file
         List<int> bytes = await file.readAsBytes();
         Archive archive = ZipDecoder().decodeBytes(bytes);
-
-        // Step 5: Write the extracted files to the documents directory
-        // Directory extractedDir = Directory('$appDocDir/extracted');
-        // if (!await extractedDir.exists()) {
-        //   await extractedDir.create();
-        // }
 
         for (var file in archive) {
           if (file.isFile && !file.name.startsWith('__MACOSX')) {

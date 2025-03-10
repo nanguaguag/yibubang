@@ -179,7 +179,7 @@ class Question {
       'cut_question': cutQuestion,
       'user_answer': userAnswer,
       'status': status,
-      'status': collection,
+      'collection': collection,
     };
   }
 

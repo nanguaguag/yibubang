@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:fluttertoast/fluttertoast.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../widgets/image_view.dart';
@@ -501,7 +500,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
           ElevatedButton(
             onPressed: _onQuestionCutted,
             style: ElevatedButton.styleFrom(
-              shape: CircleBorder(), //圆形
+              shape: CircleBorder(), // 圆形
               backgroundColor: Colors.transparent, // 设置透明背景
               shadowColor: Colors.transparent, // 去掉阴影
               elevation: 4, // 按钮阴影
@@ -603,16 +602,12 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     final String answer = question.answer ?? '';
     question.userAnswer = userAnswer;
     if (question.type == '1' && userAnswer.isEmpty) {
-      Fluttertoast.showToast(
-        msg: "不能不填答案哦~",
-        toastLength: Toast.LENGTH_SHORT,
-        gravity: ToastGravity.BOTTOM,
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('不能不填答案哦~')),
       );
     } else if (question.type == '2' && userAnswer.length <= 1) {
-      Fluttertoast.showToast(
-        msg: "多选题要选择多个选项哦~",
-        toastLength: Toast.LENGTH_SHORT,
-        gravity: ToastGravity.BOTTOM,
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('多选题要选择多个选项哦~')),
       );
     } else if (mode == 2) {
       question.status = 4; // 测试模式 - 已作答
