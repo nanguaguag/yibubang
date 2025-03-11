@@ -1,8 +1,10 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
 import 'question_detail_page.dart';
-import '../db/chapter.dart';
-import '../db/question.dart';
+
+import '../common/app_strings.dart';
+import '../models/chapter.dart';
+import '../models/question.dart';
 
 // Question Status: 题目状态
 // - 0: 未做
@@ -30,10 +32,10 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
   int mode = 0;
 
   // 可选项
-  final List<String> cutTypes = ['全部', '已斩', '未斩'];
-  final List<String> questionTypes = ['全部', '多选题', '单选题'];
-  final List<String> categories = ['全部', '做错的', '收藏的', '未做的'];
-  final List<String> modes = ['练习模式', '快刷模式', '测试模式', '背题模式'];
+  final List<String> cutTypes = AppStrings.cutTypes;
+  final List<String> questionTypes = AppStrings.questionTypes;
+  final List<String> categories = AppStrings.categories;
+  final List<String> modesList = AppStrings.modesList;
 
   @override
   void initState() {
@@ -276,10 +278,10 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
                     category = categories.indexOf(value);
                   });
                 }),
-                _buildFilterSection('模式', modes, modes[mode], (value) {
+                _buildFilterSection('模式', modesList, modesList[mode], (value) {
                   saveSettings();
                   setState(() {
-                    mode = modes.indexOf(value);
+                    mode = modesList.indexOf(value);
                   });
                 }),
               ],

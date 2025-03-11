@@ -2,9 +2,12 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../common/app_strings.dart';
 import '../widgets/image_view.dart';
-import '../db/chapter.dart';
-import '../db/question.dart';
+import '../models/chapter.dart';
+import '../models/question.dart';
+import '../models/questionStat.dart';
+import '../common/request.dart';
 import 'commet_page.dart';
 
 class QuestionDetailPage extends StatefulWidget {
@@ -24,9 +27,7 @@ class QuestionDetailPage extends StatefulWidget {
 }
 
 class _QuestionDetailPageState extends State<QuestionDetailPage> {
-  int mode = 0;
-  final List<String> _selectedAnswer = [];
-  List<String> modesList = ['练习模式', '快刷模式', '测试模式', '背题模式'];
+  int mode = 0; // 初始化刷题模式
   // 创建 PageController
   PageController _pageController = PageController();
 
@@ -35,9 +36,16 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     loadSettings();
     super.initState();
     _pageController = PageController(initialPage: widget.questionIndex);
-    for (Question q in widget.questions) {
-      _selectedAnswer.add(q.userAnswer ?? '');
-    }
+  }
+
+  // 请求接口数据
+  Future<QuestionStat> fetchQuestionStat(Question question) async {
+    final response = await basicReq('/allquestion/main/stat', method: 'GET', {
+      'module_type': '1',
+      'question_id': question.id,
+      'app_id': question.appId,
+    });
+    return QuestionStat.fromMap(response['data']);
   }
 
   // 控制翻到下一页的方法
@@ -61,10 +69,9 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     await prefs.setInt('mode', mode);
   }
 
-  Widget submitButton(int questionIndex) {
+  Widget submitButton(Question question, int index) {
     // 如果是快刷/测试模式且为单选题，不显示提交按钮
-    if ((mode == 1 || mode == 2) &&
-        widget.questions[questionIndex].type == '1') {
+    if ((mode == 1 || mode == 2) && question.type == '1') {
       return const SizedBox.shrink();
     }
     return Align(
@@ -74,7 +81,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
         height: 60.0, // 按钮的高度
         child: ElevatedButton(
           onPressed: () {
-            submitAnswer(questionIndex);
+            submitAnswer(question, index);
           },
           child: const Text(
             '提交',
@@ -85,45 +92,44 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     );
   }
 
-  Widget checkableOptionsList(int questionIndex) {
-    final List<dynamic> optionJson = getOptionJson(questionIndex);
+  Widget checkableOptionsList(Question question, int index) {
+    final List<dynamic> optionJson = getOptionJson(question);
     return Expanded(
       child: ListView.builder(
         itemCount: optionJson.length,
-        itemBuilder: (context, index) {
-          final Map<String, dynamic> option = optionJson[index];
-          switch (widget.questions[questionIndex].type) {
+        itemBuilder: (context, i) {
+          final Map<String, dynamic> option = optionJson[i];
+          switch (question.type) {
             case '1': // 单选题
               return RadioListTile<String>(
                 title: Text("${option['key']}. ${option['title']}"),
                 value: option['key'],
-                groupValue: _selectedAnswer[questionIndex],
+                groupValue: question.userAnswer,
                 onChanged: (String? value) {
                   setState(() {
-                    _selectedAnswer[questionIndex] = value ?? '';
+                    question.userAnswer = value ?? '';
                   });
                   if (mode == 1 || mode == 2) {
                     // 快刷模式 && 测试模式, 单选题自动提交
-                    submitAnswer(questionIndex);
+                    submitAnswer(question, index);
                   }
                 },
               );
             case '2': // 多选题
               return CheckboxListTile(
                 title: Text("${option['key']}. ${option['title']}"),
-                value: _selectedAnswer[questionIndex].contains(option['key']),
+                value: question.userAnswer.contains(option['key']),
                 controlAffinity: ListTileControlAffinity.leading,
                 onChanged: (bool? value) {
                   setState(() {
-                    bool checked = _selectedAnswer[questionIndex].contains(
-                      option['key'],
-                    );
+                    bool checked = question.userAnswer.contains(option['key']);
                     if (value == true && !checked) {
-                      _selectedAnswer[questionIndex] += option['key'];
+                      question.userAnswer += option['key'];
                     } else if (value == false && checked) {
-                      _selectedAnswer[questionIndex] =
-                          _selectedAnswer[questionIndex]
-                              .replaceAll(option['key'], '');
+                      question.userAnswer = question.userAnswer.replaceAll(
+                        option['key'],
+                        '',
+                      );
                     }
                   });
                 },
@@ -136,8 +142,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     );
   }
 
-  Widget questionHeaders(int questionIndex) {
-    final Question question = widget.questions[questionIndex];
+  Widget questionHeaders(Question question, int index) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -155,7 +160,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
               // 3: (22-16)/2
               padding: EdgeInsets.fromLTRB(5, 0, 5, 3),
               child: Text(
-                '${questionIndex + 1}',
+                '${index + 1}',
                 style: TextStyle(
                   fontSize: 22,
                   color: Colors.black87,
@@ -183,29 +188,26 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     );
   }
 
-  Widget unansweredQuestion(int questionIndex) {
+  Widget unansweredQuestion(Question question, int index) {
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          questionHeaders(questionIndex),
-          checkableOptionsList(questionIndex),
-          submitButton(questionIndex),
+          questionHeaders(question, index),
+          checkableOptionsList(question, index),
+          submitButton(question, index),
         ],
       ),
     );
   }
 
-  Widget buildOptions(int questionIndex) {
-    final List<dynamic> optionJson = getOptionJson(questionIndex);
-    final Question question = widget.questions[questionIndex];
-    final String answer = question.answer ?? '';
-    final String userAnswer = _selectedAnswer[questionIndex];
+  Widget buildOptions(Question question) {
+    final List<dynamic> optionJson = getOptionJson(question);
     for (Map<String, dynamic> option in optionJson) {
       final String key = option['key'];
-      final bool answerContains = answer.contains(key);
-      final bool userAnswerContains = userAnswer.contains(key);
+      final bool answerContains = question.answer!.contains(key);
+      final bool userAnswerContains = question.userAnswer.contains(key);
       if ((mode == 3 && question.status == 0) || question.status == 4) {
         if (answerContains) {
           option['color'] = Colors.black87;
@@ -351,8 +353,12 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     );
   }
 
-  Widget buildAnalysis(
-      String title, IconData icon, String analysisText, Question q) {
+  Widget buildAnalysisText(
+    String title,
+    IconData icon,
+    String analysisText,
+    Question q,
+  ) {
     Color orangeAccent = Color(0xFFB39D6B);
     return Container(
       color: Color(0xFFF9F4E9), // 设置背景颜色 #f9f4e9
@@ -390,9 +396,107 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     );
   }
 
-  Widget answeredQuestion(int questionIndex) {
-    final Question question = widget.questions[questionIndex];
-    final String userAnswer = _selectedAnswer[questionIndex];
+  Widget createStat(QuestionStat stat) {
+    int rightCount = int.parse(stat.rightCount);
+    int wrongCount = int.parse(stat.wrongCount);
+    double errorRate = wrongCount / (rightCount + wrongCount);
+    int n = (errorRate * 10).ceil(); // 难度
+    int fullStars = n ~/ 2; // 整星的数量
+    bool hasHalfStar = n % 2 == 1; // 是否有半颗星
+    int emptyStars = 5 - fullStars - (hasHalfStar ? 1 : 0); // 空星数量
+
+    return Column(children: [
+      SizedBox(height: 5),
+      Row(
+        children: [
+          Text('难度：'),
+          ...List.generate(
+            fullStars,
+            (index) => Icon(
+              Icons.star,
+              color: Colors.orange,
+            ),
+          ), // 整星
+          if (hasHalfStar)
+            Icon(
+              Icons.star_half,
+              color: Colors.orange,
+            ), // 半颗星
+          ...List.generate(
+            emptyStars,
+            (index) => Icon(
+              Icons.star_border,
+              color: Colors.grey,
+            ),
+          ), // 空星
+        ],
+      ),
+      SizedBox(height: 5),
+      Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('统计：'),
+          Expanded(
+            child: Text(
+              '${stat.statInfo}共${stat.commentCount}条评论',
+            ),
+          ),
+        ],
+      ),
+      SizedBox(height: 5),
+    ]);
+  }
+
+  Widget createEmptyStat() {
+    int n = 0;
+    int fullStars = n ~/ 2; // 整星的数量
+    bool hasHalfStar = n % 2 == 1; // 是否有半颗星
+    int emptyStars = 5 - fullStars - (hasHalfStar ? 1 : 0); // 空星数量
+
+    return Column(children: [
+      SizedBox(height: 5),
+      Row(
+        children: [
+          Text('难度：'),
+          ...List.generate(
+            fullStars,
+            (index) => Icon(
+              Icons.star,
+              color: Colors.orange,
+            ),
+          ), // 整星
+          if (hasHalfStar)
+            Icon(
+              Icons.star_half,
+              color: Colors.orange,
+            ), // 半颗星
+          ...List.generate(
+            emptyStars,
+            (index) => Icon(
+              Icons.star_border,
+              color: Colors.grey,
+            ),
+          ), // 空星
+        ],
+      ),
+      SizedBox(height: 5),
+      Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('统计：'),
+          Expanded(
+            child: Text(
+              '本题???人收藏，全部考生作答???次，对???次，正确率???%，共???条评论',
+            ),
+          ),
+        ],
+      ),
+      SizedBox(height: 5),
+    ]);
+  }
+
+  Widget answeredQuestion(Question question, int index) {
+    final String userAnswer = question.userAnswer;
     final String answer = question.answer ?? '';
     return Padding(
       padding: const EdgeInsets.all(16.0),
@@ -400,9 +504,9 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
         shrinkWrap: true, // 让外层 ListView 适应内容
         physics: ClampingScrollPhysics(), // 正常滚动
         children: [
-          questionHeaders(questionIndex),
-          buildOptions(questionIndex),
-          const SizedBox(height: 20),
+          questionHeaders(question, index),
+          buildOptions(question),
+          const SizedBox(height: 10),
           Row(
             children: [
               Text(
@@ -418,27 +522,29 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
               ),
             ],
           ),
-          //SizedBox(height: 10),
-          //Row(
-          //  children: [
-          //    Text('难度'),
-          //    SizedBox(width: 10),
-          //    Icon(Icons.star, color: Colors.orange),
-          //    Icon(Icons.star, color: Colors.orange),
-          //    Icon(Icons.star_border),
-          //    Icon(Icons.star_border),
-          //    Icon(Icons.star_border),
-          //  ],
-          //),
-          SizedBox(height: 20),
-          buildAnalysis(
+          FutureBuilder<QuestionStat>(
+            future: fetchQuestionStat(question),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return createEmptyStat();
+              } else if (snapshot.hasError) {
+                return createEmptyStat();
+              } else if (snapshot.hasData) {
+                return createStat(snapshot.data!);
+              } else {
+                return Container();
+              }
+            },
+          ),
+          SizedBox(height: 10),
+          buildAnalysisText(
             '考点还原',
             Icons.location_on_outlined,
             question.restore ?? '',
             question,
           ),
           SizedBox(height: 10),
-          buildAnalysis(
+          buildAnalysisText(
             '答案解析',
             Icons.lightbulb_outlined,
             question.explain ?? '',
@@ -451,30 +557,29 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     );
   }
 
-  Widget cuttedQuestion(int questionIndex) {
+  Widget cuttedQuestion(Question question, int index) {
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Text("该题目已斩"),
     );
   }
 
-  Widget buildQuestion(int questionIndex) {
-    final Question question = widget.questions[questionIndex];
+  Widget buildQuestion(Question question, int index) {
     if (mode == 3) {
       // 背题模式, 直接显示正确答案
-      return answeredQuestion(questionIndex);
+      return answeredQuestion(question, index);
     }
     switch (question.status) {
       case 0: // 未作答
-        return unansweredQuestion(questionIndex);
+        return unansweredQuestion(question, index);
       case 1: // 正确作答
-        return answeredQuestion(questionIndex);
+        return answeredQuestion(question, index);
       case 2: // 错误回答
-        return answeredQuestion(questionIndex);
+        return answeredQuestion(question, index);
       case 3: // 已斩题
-        return cuttedQuestion(questionIndex);
+        return cuttedQuestion(question, index);
       case 4: // 测试模式 - 已作答
-        return unansweredQuestion(questionIndex);
+        return unansweredQuestion(question, index);
       default:
         return const Text('未知的题目状态');
     }
@@ -534,12 +639,12 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
               saveSettings();
             },
             itemBuilder: (context) {
-              return List.generate(modesList.length, (index) {
+              return List.generate(AppStrings.modesList.length, (index) {
                 return PopupMenuItem<int>(
                   value: index,
                   child: Row(
                     children: [
-                      Text(modesList[index]),
+                      Text(AppStrings.modesList[index]),
                       SizedBox(width: 8),
                       if (mode == index) Icon(Icons.check, size: 20),
                     ],
@@ -555,13 +660,13 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
         controller: _pageController,
         itemCount: widget.questions.length,
         itemBuilder: (context, index) {
-          return buildQuestion(index);
+          return buildQuestion(widget.questions[index], index);
         },
       ),
     );
   }
 
-  List<dynamic> getOptionJson(int questionIndex) {
+  List<dynamic> getOptionJson(Question question) {
     const defaultOptionString = '''[{
         "title": "A选项加载失败",
         "img": "",
@@ -586,7 +691,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     ]''';
 
     return json.decode(
-      widget.questions[questionIndex].option ?? defaultOptionString,
+      question.option ?? defaultOptionString,
     );
   }
 
@@ -598,12 +703,8 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     return sortedStr;
   }
 
-  void submitAnswer(int questionIndex) {
-    final Question question = widget.questions[questionIndex];
-    final String userAnswer = _selectedAnswer[questionIndex];
-    //final List<dynamic> optionJson = getOptionJson(questionIndex);
-    final String answer = question.answer ?? '';
-    question.userAnswer = userAnswer;
+  void submitAnswer(Question question, int index) {
+    final String userAnswer = question.userAnswer;
     if (question.type == '1' && userAnswer.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('不能不填答案哦~')),
@@ -616,18 +717,18 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
       question.status = 4; // 测试模式 - 已作答
       updateQuestion(question);
       setState(() {
-        widget.questions[questionIndex].status = question.status;
+        widget.questions[index].status = question.status;
       });
       _nextPage();
     } else {
-      if (sortString(userAnswer) == sortString(answer)) {
+      if (sortString(userAnswer) == sortString(question.answer!)) {
         question.status = 1; // 回答正确
       } else {
         question.status = 2; // 回答错误
       }
       updateQuestion(question);
       setState(() {
-        widget.questions[questionIndex].status = question.status;
+        widget.questions[index].status = question.status;
       });
       if (question.status == 1 && mode == 1) {
         // 快刷模式自动翻页 || 测试模式自动翻页

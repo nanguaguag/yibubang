@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:yibubang/screens/question_grid_page.dart';
 import '../common/app_strings.dart';
 import 'subjects_list_page.dart';
-import '../db/subject.dart';
-import '../db/chapter.dart';
+import '../models/subject.dart';
+import '../models/chapter.dart';
 import '../widgets/theme_controller.dart';
 import 'package:get/get.dart';
 

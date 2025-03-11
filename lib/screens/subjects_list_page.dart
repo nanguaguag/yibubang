@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
+
 import '../common/app_strings.dart';
-import '../db/subject.dart';
+import '../models/subject.dart';
 
 class SubjectsListPage extends StatefulWidget {
   @override

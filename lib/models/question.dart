@@ -1,4 +1,4 @@
-import 'database_helper.dart';
+import '../db/database_helper.dart';
 import 'chapter.dart';
 
 class Question {
@@ -56,7 +56,7 @@ class Question {
   String? outlinesMastery;
   String? filterType;
   String? cutQuestion; // 是否已斩
-  String? userAnswer; // 用户答案
+  String userAnswer; // 用户答案
   int status; // 题目状态
   int collection; // 是否收藏
 
@@ -115,7 +115,7 @@ class Question {
     this.outlinesMastery,
     this.filterType,
     this.cutQuestion,
-    this.userAnswer,
+    required this.userAnswer,
     required this.status,
     required this.collection,
   });
@@ -240,7 +240,7 @@ class Question {
       outlinesMastery: map['outlines_mastery'],
       filterType: map['filter_type'],
       cutQuestion: map['cut_question'],
-      userAnswer: map['user_answer'],
+      userAnswer: map['user_answer'] ?? '',
       status: map['status'],
       collection: map['collection'],
     );

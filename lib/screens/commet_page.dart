@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:yibubang/common/ykb_encrypt.dart';
 
-import '../db/question.dart';
+import '../models/question.dart';
 import '../models/comment.dart';
 import '../common/request.dart';
 

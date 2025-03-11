@@ -1,4 +1,4 @@
-import 'database_helper.dart';
+import '../db/database_helper.dart';
 
 class Chapter {
   String id;
