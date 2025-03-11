@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../widgets/image_view.dart';
 import '../db/chapter.dart';
 import '../db/question.dart';
+import 'commet_page.dart';
 
 class QuestionDetailPage extends StatefulWidget {
   final Chapter chapter;
@@ -443,6 +444,8 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
             question.explain ?? '',
             question,
           ),
+          SizedBox(height: 10),
+          CommentPage(question: question),
         ],
       ),
     );
