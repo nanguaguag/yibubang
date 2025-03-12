@@ -45,6 +45,24 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
     loadSettings();
   }
 
+  Future<List<Question>> filter(Future<List<Question>> questionsFuture) async {
+    List<Question> questions = await questionsFuture;
+
+    // 根据不同的筛选条件进行筛选
+    questions = questions.where((q) {
+      if (category == 1 && q.status != 2) return false; // 只保留做错的题目
+      if (category == 2 && q.collection != 1) return false; // 只保留收藏的题目
+      if (category == 3 && q.status != 0) return false; // 只保留未做的题目
+      if (cutType != 0 && q.cutQuestion != "") return false; // 过滤 cutType
+      if (questionType != 0 && int.parse(q.type!) != questionType) {
+        return false; // 过滤 单选题、多选题
+      }
+      return true;
+    }).toList();
+
+    return questions;
+  }
+
   // 获取数据
   Future<void> loadSettings() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -163,7 +181,7 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
       ),
       itemCount: questions.length,
       itemBuilder: (context, index) {
-        final int? questionState = questions[index].status;
+        final int questionState = questions[index].status;
         Color buttonColor;
 
         switch (questionState) {
@@ -258,32 +276,50 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
                     ),
                   ),
                 ]),
-                _buildFilterSection('斩题', cutTypes, cutTypes[cutType], (value) {
-                  saveSettings();
-                  setState(() {
-                    cutType = cutTypes.indexOf(value);
-                  });
-                }),
                 _buildFilterSection(
-                    '题型', questionTypes, questionTypes[questionType], (value) {
-                  saveSettings();
-                  setState(() {
-                    questionType = questionTypes.indexOf(value);
-                  });
-                }),
-                _buildFilterSection('分类', categories, categories[category],
-                    (value) {
-                  saveSettings();
-                  setState(() {
-                    category = categories.indexOf(value);
-                  });
-                }),
-                _buildFilterSection('模式', modesList, modesList[mode], (value) {
-                  saveSettings();
-                  setState(() {
-                    mode = modesList.indexOf(value);
-                  });
-                }),
+                  '斩题',
+                  cutTypes,
+                  cutTypes[cutType],
+                  (value) {
+                    saveSettings();
+                    setState(() {
+                      cutType = cutTypes.indexOf(value);
+                    });
+                  },
+                ),
+                _buildFilterSection(
+                  '题型',
+                  questionTypes,
+                  questionTypes[questionType],
+                  (value) {
+                    saveSettings();
+                    setState(() {
+                      questionType = questionTypes.indexOf(value);
+                    });
+                  },
+                ),
+                _buildFilterSection(
+                  '分类',
+                  categories,
+                  categories[category],
+                  (value) {
+                    saveSettings();
+                    setState(() {
+                      category = categories.indexOf(value);
+                    });
+                  },
+                ),
+                _buildFilterSection(
+                  '模式',
+                  modesList,
+                  modesList[mode],
+                  (value) {
+                    saveSettings();
+                    setState(() {
+                      mode = modesList.indexOf(value);
+                    });
+                  },
+                ),
               ],
             ),
           ),
@@ -296,7 +332,7 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
             child: Padding(
               padding: const EdgeInsets.all(16.0),
               child: FutureBuilder<List<Question>>(
-                future: allQuestions,
+                future: filter(allQuestions),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return _buildLoadingIndicator();

@@ -1,5 +1,6 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
+import 'package:yibubang/db/settings.dart';
 import 'package:yibubang/screens/home_page.dart';
 import '../common/request.dart';
 
@@ -317,8 +318,7 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Future<void> logout() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    await prefs.clear(); // 清空所有存储数据
+    clearUserInfo(); // 清除登录数据
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(builder: (context) => const HomePage()),

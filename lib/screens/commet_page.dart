@@ -1,9 +1,12 @@
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
 import 'package:yibubang/common/ykb_encrypt.dart';
 
 import '../models/question.dart';
 import '../models/comment.dart';
 import '../common/request.dart';
+import '../db/settings.dart';
+import 'my_page.dart';
 
 class CommentPage extends StatefulWidget {
   final Question question;
@@ -28,17 +31,28 @@ class _CommentPageState extends State<CommentPage>
       'page': '1',
       'app_id': widget.question.appId,
     });
+    if (response['code'] == 309) {
+      // 登录过期，重新登录
+      clearUserInfo();
+      return CommentData.fromJson({
+        'hot': [],
+        'time_line': [],
+      });
+    }
     return CommentData.fromJson(response['data']);
   }
 
   @override
   void initState() {
     super.initState();
-    _commentDataFuture = fetchComments();
   }
 
-  @override
-  Widget build(BuildContext context) {
+  Future<bool> checkLoginStatus() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    return prefs.getBool('loggedin') ?? false;
+  }
+
+  Widget commentList() {
     return FutureBuilder<CommentData>(
       future: _commentDataFuture,
       builder: (context, snapshot) {
@@ -99,6 +113,49 @@ class _CommentPageState extends State<CommentPage>
           );
         } else {
           return Container();
+        }
+      },
+    );
+  }
+
+  /// 显示错误信息
+  Widget _buildErrorMessage(Object? error) {
+    return Center(child: Text('加载失败: $error'));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<bool>(
+      future: checkLoginStatus(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Center(child: CircularProgressIndicator());
+        } else if (snapshot.hasError) {
+          return _buildErrorMessage(snapshot.error);
+        } else if (snapshot.data!) {
+          _commentDataFuture = fetchComments();
+          return commentList();
+        } else {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              SizedBox(height: 5),
+              Text("您还没登录，无法查看评论哦～"),
+              SizedBox(height: 5),
+              TextButton(
+                child: Text("点击登录"),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => AuthCheckPage(),
+                    ),
+                  );
+                },
+              ),
+              SizedBox(height: 5),
+            ],
+          );
         }
       },
     );

@@ -1,5 +1,5 @@
-import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:http/http.dart' as http;
 import 'ykb_encrypt.dart';
 import 'dart:convert';
 import 'dart:async';
@@ -52,7 +52,8 @@ Future<Map<String, dynamic>> basicReq(
   } else {
     return {"msg": "Unknown Method"};
   }
-  return json.decode(response.body);
+  Map<String, dynamic> resp = json.decode(response.body);
+  return resp;
 }
 
 /// 登录函数，调用登录接口并将返回数据存储到 shared_preferences 中

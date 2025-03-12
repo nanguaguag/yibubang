@@ -28,6 +28,7 @@ class QuestionDetailPage extends StatefulWidget {
 
 class _QuestionDetailPageState extends State<QuestionDetailPage> {
   int mode = 0; // 初始化刷题模式
+  int _currentPage = 0; // 当前页面
   // 创建 PageController
   PageController _pageController = PageController();
 
@@ -35,7 +36,8 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
   void initState() {
     loadSettings();
     super.initState();
-    _pageController = PageController(initialPage: widget.questionIndex);
+    _currentPage = widget.questionIndex;
+    _pageController = PageController(initialPage: _currentPage);
   }
 
   // 请求接口数据
@@ -590,8 +592,27 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     print('额外的按钮被点击了！');
   }
 
-  void _onCalulateSatistics() {
-    print('另一个按钮被点击了！');
+  Widget collectionBtn() {
+    Question question = widget.questions[_currentPage];
+    return IconButton(
+      icon: question.collection == 0
+          ? Icon(Icons.favorite_outline)
+          : Icon(
+              Icons.favorite,
+              color: Colors.redAccent,
+            ),
+      onPressed: () {
+        if (question.collection == 0) {
+          question.collection = 1;
+        } else {
+          question.collection = 0;
+        }
+        updateQuestion(question); // 在数据库中 update
+        setState(() {
+          widget.questions[_currentPage].collection = question.collection;
+        });
+      },
+    );
   }
 
   @override
@@ -626,10 +647,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
               ),
             ),
           ),
-          IconButton(
-            icon: Icon(Icons.bar_chart),
-            onPressed: _onCalulateSatistics,
-          ),
+          collectionBtn(),
           PopupMenuButton<int>(
             icon: Icon(Icons.more_vert),
             onSelected: (value) {
@@ -658,6 +676,11 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
       ),
       body: PageView.builder(
         controller: _pageController,
+        onPageChanged: (int page) {
+          setState(() {
+            _currentPage = page; // 更新当前页索引
+          });
+        },
         itemCount: widget.questions.length,
         itemBuilder: (context, index) {
           return buildQuestion(widget.questions[index], index);
