@@ -717,7 +717,10 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.chapter.name),
+        title: Text(
+          widget.chapter.name,
+          overflow: TextOverflow.ellipsis,
+        ),
         actions: <Widget>[
           ElevatedButton(
             onPressed: _onQuestionCutted,

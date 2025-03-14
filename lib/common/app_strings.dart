@@ -1,5 +1,5 @@
 class AppStrings {
-  static const String appVersion = '1.0.0';
+  static const String appVersion = '1.0.3';
   static const String appTitle = '医不帮';
   static const String selectedSubjectsTitle = '我的课程';
   static const String myPageTitle = '我的';

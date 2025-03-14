@@ -1,7 +1,7 @@
 {
-    "latest_app": "1.0.1",
+    "latest_app": "1.0.3",
     "latest_app_url": "https://github.com/nanguaguag/yibubang/releases/",
-    "update_info": "修复一些bug",
-    "latest_data_url": "https://files.melonhu.cn/yibubang/question_data.sqlite.zip",
+    "update_info": "【医不帮v1.0.3】更新信息：\n\t1. 支持根据题目类型、是否收藏、是否做了等因素筛选题目;\n\t2. 支持收藏题目;\n\t3. 登录医考帮后能够查看每道题的评论和统计数据;\n\t4. 支持题目重做、可以计算本人作答次数和准确率;\n\t5. 如果账号在另一设备登录，则退出账号;",
+    "latest_data_url": "https://api.hanximeng.com/lanzou/?url=https://dongmelon.lanzn.com/iSXTb2p9aw7g&type=down",
     "latest_data_md5": "59cef99484946b17167aa7e34d5b3cf1"
 }

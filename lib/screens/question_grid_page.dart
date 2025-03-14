@@ -304,7 +304,10 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
         ],
         title: Row(
           children: [
-            Text(widget.chapter.name),
+            Text(
+              widget.chapter.name,
+              overflow: TextOverflow.ellipsis,
+            ),
             Spacer(),
             IconButton(
               icon: Icon(Icons.restart_alt),
