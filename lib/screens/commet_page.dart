@@ -189,10 +189,15 @@ class CommentItem extends StatelessWidget {
   CommentItem({required this.comment});
 
   Widget commentPraise(Comment comment) {
-    if (int.parse(comment.praiseNum) >= int.parse(comment.floorNum)) {
+    if (int.parse(comment.praiseNum) >= int.parse(comment.opposeNum)) {
       return Row(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
+          if (comment.replies != "0")
+            TextButton(
+              child: Text("${comment.replies}条回复"),
+              onPressed: () {},
+            ),
           Icon(Icons.thumb_up, size: 16, color: Colors.green),
           SizedBox(width: 4.0),
           Text(
@@ -203,7 +208,7 @@ class CommentItem extends StatelessWidget {
           Icon(Icons.thumb_down_outlined, size: 16, color: Colors.grey),
           SizedBox(width: 4.0),
           Text(
-            comment.floorNum,
+            comment.opposeNum,
             style: TextStyle(color: Colors.grey),
           ),
         ],
@@ -212,6 +217,11 @@ class CommentItem extends StatelessWidget {
       return Row(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
+          if (comment.replies != "0")
+            TextButton(
+              child: Text("${comment.replies}条回复"),
+              onPressed: () {},
+            ),
           Icon(Icons.thumb_up_outlined, size: 16, color: Colors.grey),
           SizedBox(width: 4.0),
           Text(
@@ -222,7 +232,7 @@ class CommentItem extends StatelessWidget {
           Icon(Icons.thumb_down, size: 16, color: Colors.red),
           SizedBox(width: 4.0),
           Text(
-            comment.floorNum,
+            comment.opposeNum,
             style: TextStyle(color: Colors.redAccent),
           ),
         ],
@@ -244,6 +254,7 @@ class CommentItem extends StatelessWidget {
               children: [
                 CircleAvatar(
                   backgroundImage: NetworkImage(comment.avatar),
+                  maxRadius: 10,
                 ),
                 SizedBox(width: 8.0),
                 Column(
@@ -291,8 +302,8 @@ class CommentItem extends StatelessWidget {
               comment.content,
               style: TextStyle(fontSize: 16),
             ),
-            SizedBox(height: 8.0),
             // 如果有图像，则显示图像
+            if (comment.imgs.isNotEmpty) SizedBox(height: 8.0),
             if (comment.imgs.isNotEmpty) Image.network(comment.imgs),
             if (comment.imgs.isNotEmpty) SizedBox(height: 8.0),
             // 点赞数显示

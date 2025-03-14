@@ -19,7 +19,9 @@ class Comment {
   final String id;
   final String content;
   final String praiseNum;
+  final String opposeNum;
   final String floorNum;
+  final String replies;
   final String school;
   final String ctime;
   final String avatar;
@@ -32,7 +34,9 @@ class Comment {
     required this.id,
     required this.content,
     required this.praiseNum,
+    required this.opposeNum,
     required this.floorNum,
+    required this.replies,
     required this.school,
     required this.ctime,
     required this.avatar,
@@ -55,7 +59,9 @@ class Comment {
       id: json['id'] ?? '',
       content: json['content'] ?? '',
       praiseNum: json['praise_num'] ?? '0',
+      opposeNum: json['oppose_num'] ?? '0',
       floorNum: json['floor_num'] ?? '0',
+      replies: json['replies'] ?? '0',
       school: json['school'] ?? '0',
       ctime: json['ctime'] ?? '0',
       avatar: json['avatar'] ?? '',

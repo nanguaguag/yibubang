@@ -84,6 +84,52 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
     await prefs.setInt('mode', mode);
   }
 
+  void clearUserAnswers() async {
+    List<Question> questions = await getQuestionsFromChapter(widget.chapter);
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text("重做本章节？"),
+          content: Text("您确定要重做吗？该操作不可撤销！"),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(); // 关闭对话框
+              },
+              child: Text("取消"),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(); // 关闭对话框
+                for (Question q in questions) {
+                  if (q.userAnswer.isNotEmpty) {
+                    q.userAnswer += ';'; // 末尾加上 ; 表示清除前面的做题记录
+                    q.status = 0;
+                    updateQuestion(q);
+                  }
+                }
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('已清除作答记录'),
+                    duration: Duration(seconds: 1),
+                  ),
+                );
+                setState(() {
+                  // 刷新所有题目
+                  allQuestions = getQuestionsFromChapter(
+                    widget.chapter,
+                  );
+                });
+              },
+              child: Text("确认"),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   // 显示加载进度条
   Widget _buildLoadingIndicator() {
     return const Center(child: CircularProgressIndicator());
@@ -243,20 +289,47 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.chapter.name),
+        actions: [
+          Builder(
+            builder: (context) => Padding(
+              padding: EdgeInsets.only(right: 5),
+              child: IconButton(
+                icon: Icon(Icons.tune), // 自定义 Drawer 图标
+                onPressed: () {
+                  Scaffold.of(context).openEndDrawer();
+                },
+              ),
+            ),
+          ),
+        ],
+        title: Row(
+          children: [
+            Text(widget.chapter.name),
+            Spacer(),
+            IconButton(
+              icon: Icon(Icons.restart_alt),
+              onPressed: clearUserAnswers,
+            ),
+          ],
+        ),
       ),
       endDrawer: FractionallySizedBox(
         widthFactor: 0.7, // 宽度占父容器的70%
         child: Drawer(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.zero, // 设为0，去掉圆角
+          ),
           child: SafeArea(
             child: ListView(
-              padding: EdgeInsets.symmetric(vertical: 10),
+              padding: EdgeInsets.symmetric(vertical: 5),
               children: <Widget>[
                 // 关闭按钮放置在侧边栏的顶部
                 Row(children: [
-                  Padding(
-                    padding: EdgeInsets.all(10),
-                    child: Icon(Icons.tune),
+                  Container(
+                    margin: EdgeInsets.symmetric(horizontal: 10),
+                    width: 4, // 控制竖条的宽度
+                    height: 25, // 控制竖条的高度
+                    color: Colors.deepOrange, // 竖条颜色
                   ),
                   Text(
                     '筛选',
@@ -268,11 +341,14 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
                   Spacer(),
                   Align(
                     alignment: Alignment.topRight,
-                    child: IconButton(
-                      icon: Icon(Icons.close),
-                      onPressed: () {
-                        Navigator.pop(context); // 关闭侧边栏
-                      },
+                    child: Padding(
+                      padding: EdgeInsets.only(right: 5),
+                      child: IconButton(
+                        icon: Icon(Icons.close),
+                        onPressed: () {
+                          Navigator.pop(context); // 关闭侧边栏
+                        },
+                      ),
                     ),
                   ),
                 ]),

@@ -58,6 +58,20 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     );
   }
 
+  String getLastAnswer(String userAnswer) {
+    /// userAnswer 格式：
+    /// - 最后一次答案是DC：AB;ABC;DC
+    /// - 还没做：AB;ABC;
+    List<String> answers = userAnswer.split(';');
+    return answers.last;
+  }
+
+  String changeLastAnswer(String userAnswer, String lastAnswer) {
+    List<String> answers = userAnswer.split(';');
+    answers.last = lastAnswer;
+    return answers.join(';');
+  }
+
   // 获取数据
   Future<void> loadSettings() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -106,10 +120,13 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
               return RadioListTile<String>(
                 title: Text("${option['key']}. ${option['title']}"),
                 value: option['key'],
-                groupValue: question.userAnswer,
+                groupValue: getLastAnswer(question.userAnswer),
                 onChanged: (String? value) {
                   setState(() {
-                    question.userAnswer = value ?? '';
+                    question.userAnswer = changeLastAnswer(
+                      question.userAnswer,
+                      value ?? '',
+                    );
                   });
                   if (mode == 1 || mode == 2) {
                     // 快刷模式 && 测试模式, 单选题自动提交
@@ -120,19 +137,28 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
             case '2': // 多选题
               return CheckboxListTile(
                 title: Text("${option['key']}. ${option['title']}"),
-                value: question.userAnswer.contains(option['key']),
+                value:
+                    getLastAnswer(question.userAnswer).contains(option['key']),
                 controlAffinity: ListTileControlAffinity.leading,
                 onChanged: (bool? value) {
                   setState(() {
-                    bool checked = question.userAnswer.contains(option['key']);
+                    bool checked = getLastAnswer(question.userAnswer)
+                        .contains(option['key']);
                     if (value == true && !checked) {
-                      question.userAnswer += option['key'];
+                      question.userAnswer = changeLastAnswer(
+                        question.userAnswer,
+                        getLastAnswer(question.userAnswer) + option['key'],
+                      );
                     } else if (value == false && checked) {
-                      question.userAnswer = question.userAnswer.replaceAll(
-                        option['key'],
-                        '',
+                      question.userAnswer = changeLastAnswer(
+                        question.userAnswer,
+                        getLastAnswer(question.userAnswer).replaceAll(
+                          option['key'],
+                          '',
+                        ),
                       );
                     }
+                    print(question.userAnswer);
                   });
                 },
               );
@@ -209,7 +235,8 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     for (Map<String, dynamic> option in optionJson) {
       final String key = option['key'];
       final bool answerContains = question.answer!.contains(key);
-      final bool userAnswerContains = question.userAnswer.contains(key);
+      final bool userAnswerContains =
+          getLastAnswer(question.userAnswer).contains(key);
       if ((mode == 3 && question.status == 0) || question.status == 4) {
         if (answerContains) {
           option['color'] = Colors.black87;
@@ -398,7 +425,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     );
   }
 
-  Widget createStat(QuestionStat stat) {
+  Widget createStat(QuestionStat stat, Question question) {
     int rightCount = int.parse(stat.rightCount);
     int wrongCount = int.parse(stat.wrongCount);
     double errorRate = wrongCount / (rightCount + wrongCount);
@@ -407,6 +434,19 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     bool hasHalfStar = n % 2 == 1; // 是否有半颗星
     int emptyStars = 5 - fullStars - (hasHalfStar ? 1 : 0); // 空星数量
 
+    int myCorrectAnsCnt = 0;
+    final List<String> myAnswers = question.userAnswer.split(';');
+    final int totalAnsCnt = myAnswers.length;
+    for (String ans in myAnswers) {
+      if (sortString(ans) == sortString(question.answer!)) {
+        myCorrectAnsCnt += 1;
+      }
+    }
+    Color textColor =
+        myCorrectAnsCnt < totalAnsCnt / 2 ? Colors.red : Colors.green;
+    final String myAccuracy =
+        (myCorrectAnsCnt / totalAnsCnt * 100).toStringAsFixed(2);
+
     return Column(children: [
       SizedBox(height: 5),
       Row(
@@ -439,8 +479,28 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
         children: [
           Text('统计：'),
           Expanded(
-            child: Text(
-              '${stat.statInfo}共${stat.commentCount}条评论',
+            child: RichText(
+              text: TextSpan(
+                text: '${stat.statInfo}共${stat.commentCount}条评论。',
+                style: TextStyle(color: Colors.black),
+                children: <TextSpan>[
+                  TextSpan(text: '本人作答'),
+                  TextSpan(
+                    text: '${myAnswers.length}',
+                    style: TextStyle(color: textColor),
+                  ),
+                  TextSpan(text: '次，对'),
+                  TextSpan(
+                    text: '$myCorrectAnsCnt',
+                    style: TextStyle(color: textColor),
+                  ),
+                  TextSpan(text: '次，正确率'),
+                  TextSpan(
+                    text: '$myAccuracy%',
+                    style: TextStyle(color: textColor),
+                  ),
+                ],
+              ),
             ),
           ),
         ],
@@ -449,11 +509,24 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     ]);
   }
 
-  Widget createEmptyStat() {
+  Widget createEmptyStat(Question question) {
     int n = 0;
     int fullStars = n ~/ 2; // 整星的数量
     bool hasHalfStar = n % 2 == 1; // 是否有半颗星
     int emptyStars = 5 - fullStars - (hasHalfStar ? 1 : 0); // 空星数量
+
+    int myCorrectAnsCnt = 0;
+    final List<String> myAnswers = question.userAnswer.split(';');
+    final int totalAnsCnt = myAnswers.length;
+    for (String ans in myAnswers) {
+      if (sortString(ans) == sortString(question.answer!)) {
+        myCorrectAnsCnt += 1;
+      }
+    }
+    Color textColor =
+        myCorrectAnsCnt < totalAnsCnt / 2 ? Colors.red : Colors.green;
+    final String myAccuracy =
+        (myCorrectAnsCnt / totalAnsCnt * 100).toStringAsFixed(2);
 
     return Column(children: [
       SizedBox(height: 5),
@@ -487,8 +560,28 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
         children: [
           Text('统计：'),
           Expanded(
-            child: Text(
-              '本题???人收藏，全部考生作答???次，对???次，正确率???%，共???条评论',
+            child: RichText(
+              text: TextSpan(
+                text: '本题???人收藏，全部考生作答???次，对???次，正确率???%，共???条评论。',
+                style: TextStyle(color: Colors.black),
+                children: <TextSpan>[
+                  TextSpan(text: '本人作答'),
+                  TextSpan(
+                    text: '${myAnswers.length}',
+                    style: TextStyle(color: textColor),
+                  ),
+                  TextSpan(text: '次，对'),
+                  TextSpan(
+                    text: '$myCorrectAnsCnt',
+                    style: TextStyle(color: textColor),
+                  ),
+                  TextSpan(text: '次，正确率'),
+                  TextSpan(
+                    text: '$myAccuracy%',
+                    style: TextStyle(color: textColor),
+                  ),
+                ],
+              ),
             ),
           ),
         ],
@@ -498,7 +591,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
   }
 
   Widget answeredQuestion(Question question, int index) {
-    final String userAnswer = question.userAnswer;
+    final String userAnswer = getLastAnswer(question.userAnswer);
     final String answer = question.answer ?? '';
     return Padding(
       padding: const EdgeInsets.all(16.0),
@@ -528,11 +621,11 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
             future: fetchQuestionStat(question),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
-                return createEmptyStat();
+                return createEmptyStat(question);
               } else if (snapshot.hasError) {
-                return createEmptyStat();
+                return createEmptyStat(question);
               } else if (snapshot.hasData) {
-                return createStat(snapshot.data!);
+                return createStat(snapshot.data!, question);
               } else {
                 return Container();
               }
@@ -589,7 +682,12 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
 
   // 额外的图标按钮功能
   void _onQuestionCutted() {
-    print('额外的按钮被点击了！');
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('该功能仍在开发中，敬请期待！'),
+        duration: Duration(seconds: 1),
+      ),
+    );
   }
 
   Widget collectionBtn() {
@@ -621,11 +719,6 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
       appBar: AppBar(
         title: Text(widget.chapter.name),
         actions: <Widget>[
-          // 额外的图标按钮 1
-          //IconButton(
-          //  icon: Icon(Icons.visibility_off),
-          //  onPressed: _onQuestionCutted,
-          //),
           ElevatedButton(
             onPressed: _onQuestionCutted,
             style: ElevatedButton.styleFrom(
@@ -727,14 +820,20 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
   }
 
   void submitAnswer(Question question, int index) {
-    final String userAnswer = question.userAnswer;
+    final String userAnswer = getLastAnswer(question.userAnswer);
     if (question.type == '1' && userAnswer.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('不能不填答案哦~')),
+        const SnackBar(
+          content: Text('不能不填答案哦~'),
+          duration: Duration(seconds: 1),
+        ),
       );
     } else if (question.type == '2' && userAnswer.length <= 1) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('多选题要选择多个选项哦~')),
+        const SnackBar(
+          content: Text('多选题要选择多个选项哦~'),
+          duration: Duration(seconds: 1),
+        ),
       );
     } else if (mode == 2) {
       question.status = 4; // 测试模式 - 已作答

@@ -116,12 +116,18 @@ class _LoginPageState extends State<LoginPage> {
           );
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(resp['message'] ?? '登录失败')),
+            SnackBar(
+              content: Text(resp['message'] ?? '登录失败'),
+              duration: Duration(seconds: 1),
+            ),
           );
         }
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('登录异常: $e')),
+          SnackBar(
+            content: Text('登录异常: $e'),
+            duration: Duration(seconds: 1),
+          ),
         );
       } finally {
         setState(() {

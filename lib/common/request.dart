@@ -4,6 +4,8 @@ import 'ykb_encrypt.dart';
 import 'dart:convert';
 import 'dart:async';
 
+import '../db/settings.dart';
+
 /// 发起请求的基础函数，整合了请求头设置及全局登录状态的处理
 Future<Map<String, dynamic>> basicReq(
   String url,
@@ -53,6 +55,11 @@ Future<Map<String, dynamic>> basicReq(
     return {"msg": "Unknown Method"};
   }
   Map<String, dynamic> resp = json.decode(response.body);
+  if (resp['code'] == '309') {
+    // 会话过期，请重新登录
+    clearUserInfo();
+  }
+
   return resp;
 }
 
