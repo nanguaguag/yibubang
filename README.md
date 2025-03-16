@@ -1,6 +1,20 @@
-# 医不帮
-
-————为医学生打造的跨平台刷题软件
+<p align="center">
+  <img width=30% src="assets/icon/icon.png" alt="医不帮 - 为医学生打造的跨平台刷题软件"><br>
+  <h3 align="center">医不帮</h3>
+  <p align="center">————为医学生打造的跨平台刷题软件</p>
+  <div align="center">
+    <a href="#Features">Features</a> •
+    <a href="#Snapshots">Snapshots</a> •
+    <a href="#hDownload">Download</a>
+  </div>
+  <div align="center">
+    <a href="https://github.com/nanguaguag/yibubang"><img src="https://img.shields.io/badge/platform-flutter-blue.svg" alt="github"></a>
+    <a href="https://github.com/nanguaguag/yibubang/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="license"></a>
+    <a href="https://github.com/nanguaguag/yibubang/actions"><img src="https://github.com/nanguaguag/yibubang/actions/workflows/build-macOS-app.yml/badge.svg" alt="build"></a>
+    <a href="https://github.com/nanguaguag/yibubang/actions"><img src="https://github.com/nanguaguag/yibubang/actions/workflows/build-windows-app.yml/badge.svg" alt="build"></a>
+    <a href="https://github.com/nanguaguag/yibubang/actions"><img src="https://github.com/nanguaguag/yibubang/actions/workflows/firebase-hosting-merge.yml/badge.svg" alt="build"></a>
+  </div>
+</p>
 
 ## Features
 
@@ -28,12 +42,23 @@
 - 臃肿的医考帮 ❌
 - 轻量的医不帮 ✅ 秒开无广告
 
-### 支持所有付费题库
+### 🚀 支持所有付费题库
 
 > 目前只有**口腔医学期末考试**的全部题库
 
 - 登录后，可以查看题目统计信息和评论区
 
+## TODO
+
+- [ ] 查看评论区回复
+- [ ] 调整暗黑模式诸多颜色
+- [ ] 登录医考帮后，同步做题记录
+
 ## Snapshots
 
 ![](assets/images/app_image.png)
+
+## Download
+
+- Github: https://github.com/nanguaguag/yibubang/releases
+- Gitee: https://gitee.com/pumpkin_melon/yibubang/releases
