@@ -3,16 +3,16 @@
   <h3 align="center">医不帮</h3>
   <p align="center">————为医学生打造的跨平台刷题软件</p>
   <div align="center">
-    <a href="#Features">Features</a> •
-    <a href="#Snapshots">Snapshots</a> •
-    <a href="#hDownload">Download</a>
-  </div>
-  <div align="center">
     <a href="https://github.com/nanguaguag/yibubang"><img src="https://img.shields.io/badge/platform-flutter-blue.svg" alt="github"></a>
     <a href="https://github.com/nanguaguag/yibubang/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="license"></a>
     <a href="https://github.com/nanguaguag/yibubang/actions"><img src="https://github.com/nanguaguag/yibubang/actions/workflows/build-macOS-app.yml/badge.svg" alt="build"></a>
     <a href="https://github.com/nanguaguag/yibubang/actions"><img src="https://github.com/nanguaguag/yibubang/actions/workflows/build-windows-app.yml/badge.svg" alt="build"></a>
     <a href="https://github.com/nanguaguag/yibubang/actions"><img src="https://github.com/nanguaguag/yibubang/actions/workflows/firebase-hosting-merge.yml/badge.svg" alt="build"></a>
+  </div>
+  <div align="center">
+    <a href="#Features">Features</a> •
+    <a href="#Snapshots">Snapshots</a> •
+    <a href="#hDownload">Download</a>
   </div>
 </p>
 

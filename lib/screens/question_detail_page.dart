@@ -189,17 +189,12 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
               padding: EdgeInsets.fromLTRB(5, 0, 5, 3),
               child: Text(
                 '${index + 1}',
-                style: TextStyle(
-                  fontSize: 22,
-                  color: Colors.black87,
-                ),
+                style: TextStyle(fontSize: 22),
               ),
             ),
             Text(
               '/ ${widget.questions.length}',
-              style: TextStyle(
-                color: Colors.grey,
-              ),
+              style: TextStyle(color: Colors.grey),
             ),
           ],
         ),
@@ -239,7 +234,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
           getLastAnswer(question.userAnswer).contains(key);
       if ((mode == 3 && question.status == 0) || question.status == 4) {
         if (answerContains) {
-          option['color'] = Colors.black87;
+          option['color'] = null;
           option['icon'] = Icons.check_circle;
         } else {
           option['color'] = Colors.grey;
@@ -392,6 +387,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     return Container(
       color: Color(0xFFF9F4E9), // 设置背景颜色 #f9f4e9
       padding: const EdgeInsets.all(16.0),
+      margin: const EdgeInsets.symmetric(vertical: 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -482,7 +478,6 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
             child: RichText(
               text: TextSpan(
                 text: '${stat.statInfo}共${stat.commentCount}条评论。',
-                style: TextStyle(color: Colors.black),
                 children: <TextSpan>[
                   TextSpan(text: '本人作答'),
                   TextSpan(
@@ -563,7 +558,6 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
             child: RichText(
               text: TextSpan(
                 text: '本题???人收藏，全部考生作答???次，对???次，正确率???%，共???条评论。',
-                style: TextStyle(color: Colors.black),
                 children: <TextSpan>[
                   TextSpan(text: '本人作答'),
                   TextSpan(
@@ -632,20 +626,20 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
             },
           ),
           SizedBox(height: 10),
-          buildAnalysisText(
-            '考点还原',
-            Icons.location_on_outlined,
-            question.restore ?? '',
-            question,
-          ),
-          SizedBox(height: 10),
-          buildAnalysisText(
-            '答案解析',
-            Icons.lightbulb_outlined,
-            question.explain ?? '',
-            question,
-          ),
-          SizedBox(height: 10),
+          if (question.restore != '')
+            buildAnalysisText(
+              '考点还原',
+              Icons.location_on_outlined,
+              question.restore ?? '',
+              question,
+            ),
+          if (question.explain != '')
+            buildAnalysisText(
+              '答案解析',
+              Icons.lightbulb_outlined,
+              question.explain ?? '',
+              question,
+            ),
           CommentPage(question: question),
         ],
       ),
@@ -737,7 +731,6 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
                 "斩",
                 style: TextStyle(
                   fontSize: 18,
-                  color: Colors.black,
                   fontWeight: FontWeight.bold,
                 ),
               ),

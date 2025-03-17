@@ -67,14 +67,15 @@ class _SubjectsListPageState extends State<SubjectsListPage>
   }
 
   // 构建带高亮效果的文本组件
-  Widget _buildHighlightedText(String text, String query) {
+  Widget _buildHighlightedText(Subject subject, String query) {
+    String text = subject.name;
     // 定义基本样式和高亮样式
-    TextStyle normalStyle = const TextStyle(
+    TextStyle normalStyle = TextStyle(
       fontSize: 15,
-      color: Colors.black,
+      color: subject.selected == 1 ? Colors.black87 : null,
       decoration: TextDecoration.none,
     );
-    TextStyle highlightStyle = const TextStyle(
+    TextStyle highlightStyle = TextStyle(
       fontSize: 15,
       color: Colors.red,
       fontWeight: FontWeight.bold,
@@ -150,7 +151,6 @@ class _SubjectsListPageState extends State<SubjectsListPage>
                   controller: _searchController,
                   autofocus: true, // 自动聚焦
                   onChanged: _filterSearchResults,
-                  style: const TextStyle(color: Colors.black54),
                   decoration: const InputDecoration(
                     hintText: '搜索课程...',
                     hintStyle: TextStyle(color: Colors.grey),
@@ -211,10 +211,11 @@ class _SubjectsListPageState extends State<SubjectsListPage>
                 return ListTile(
                   // 使用_highlightedText来显示匹配字符的高亮效果
                   title: _buildHighlightedText(
-                    subject.name,
+                    subject,
                     _searchController.text,
                   ),
-                  tileColor: subject.selected == 1 ? Colors.blue.shade50 : null,
+                  tileColor:
+                      subject.selected == 1 ? Colors.blue.shade100 : null,
                   onTap: () {
                     setState(() {
                       toggleSubjectSelected(subject.id); // 更新数据库状态

@@ -1,0 +1,58 @@
+name: Build Linux Flutter App
+
+on:
+  push:
+    branches:
+      - main  # 或其他触发条件
+
+jobs:
+  build-linux-app:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 缓存 Flutter SDK
+      - name: Cache Flutter SDK
+        uses: actions/cache@v4
+        with:
+          path: /opt/flutter
+          key: ${{ runner.os }}-flutter
+
+      # 缓存 Flutter 依赖
+      - name: Cache Flutter dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.pub-cache
+          key: ${{ runner.os }}-pub-${{ hashFiles('**/pubspec.yaml') }}
+          restore-keys: ${{ runner.os }}-pub-
+
+      # 设置 Flutter 环境
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.27.3'
+          cache: true
+
+      # 安装 Linux 依赖项（如需要）
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev
+
+      # 获取 Flutter 依赖
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      # 运行测试
+      - name: Run tests
+        run: flutter test
+
+      # 编译 Linux 应用（release 版本）
+      - name: Build Linux App (release)
+        run: flutter build linux --release
+
+      # 上传构建的可执行文件为工件
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: yibubang-linux-release
+          path: build/linux/x64/release/bundle/

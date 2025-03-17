@@ -52,6 +52,66 @@ class _CommentPageState extends State<CommentPage>
     return prefs.getBool('loggedin') ?? false;
   }
 
+  Widget generateComment(CommentData commentData) {
+    Widget hotComments = Column(
+      children: [
+        SizedBox(height: 20),
+        Row(
+          children: [
+            Container(
+              width: 4, // 控制竖条的宽度
+              height: 20, // 控制竖条的高度
+              color: Colors.deepOrange, // 竖条颜色
+            ),
+            SizedBox(width: 8.0),
+            Text(
+              '最热评论 (${commentData.hot.length})',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+        Divider(),
+        CommentList(comments: commentData.hot),
+      ],
+    );
+
+    Widget timelineComments = Column(
+      children: [
+        SizedBox(height: 20),
+        Row(
+          children: [
+            Container(
+              width: 4, // 控制竖条的宽度
+              height: 20, // 控制竖条的高度
+              color: Colors.deepOrange, // 竖条颜色
+            ),
+            SizedBox(width: 8.0),
+            Text(
+              '最新评论 (${commentData.timeLine.length})',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+        Divider(),
+        CommentList(comments: commentData.timeLine),
+      ],
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (commentData.hot.isNotEmpty) hotComments,
+        if (commentData.timeLine.isNotEmpty) timelineComments,
+      ],
+    );
+  }
+
   Widget commentList() {
     return FutureBuilder<CommentData>(
       future: _commentDataFuture,
@@ -63,54 +123,7 @@ class _CommentPageState extends State<CommentPage>
           return Center(child: Text('加载失败: ${snapshot.error}'));
         } else if (snapshot.hasData) {
           final commentData = snapshot.data!;
-          return DefaultTabController(
-            length: 2, // 2 个 Tab
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                SizedBox(height: 20),
-                Row(
-                  children: [
-                    Container(
-                      width: 4, // 控制竖条的宽度
-                      height: 20, // 控制竖条的高度
-                      color: Colors.deepOrange, // 竖条颜色
-                    ),
-                    SizedBox(width: 8.0),
-                    Text(
-                      '最热评论 (${commentData.hot.length})',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-                Divider(),
-                CommentList(comments: commentData.hot),
-                SizedBox(height: 20),
-                Row(
-                  children: [
-                    Container(
-                      width: 4, // 控制竖条的宽度
-                      height: 20, // 控制竖条的高度
-                      color: Colors.deepOrange, // 竖条颜色
-                    ),
-                    SizedBox(width: 8.0),
-                    Text(
-                      '最新评论 (${commentData.timeLine.length})',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-                Divider(),
-                CommentList(comments: commentData.timeLine),
-              ],
-            ),
-          );
+          return generateComment(commentData);
         } else {
           return Container();
         }
@@ -189,7 +202,31 @@ class CommentItem extends StatelessWidget {
   CommentItem({required this.comment});
 
   Widget commentPraise(Comment comment) {
-    if (int.parse(comment.praiseNum) >= int.parse(comment.opposeNum)) {
+    if (int.parse(comment.praiseNum) == int.parse(comment.opposeNum)) {
+      return Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          if (comment.replies != "0")
+            TextButton(
+              child: Text("${comment.replies}条回复"),
+              onPressed: () {},
+            ),
+          Icon(Icons.thumb_up_outlined, size: 16, color: Colors.grey),
+          SizedBox(width: 4.0),
+          Text(
+            comment.praiseNum,
+            style: TextStyle(color: Colors.grey),
+          ),
+          SizedBox(width: 8.0),
+          Icon(Icons.thumb_down_outlined, size: 16, color: Colors.grey),
+          SizedBox(width: 4.0),
+          Text(
+            comment.opposeNum,
+            style: TextStyle(color: Colors.grey),
+          ),
+        ],
+      );
+    } else if (int.parse(comment.praiseNum) > int.parse(comment.opposeNum)) {
       return Row(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
@@ -240,6 +277,33 @@ class CommentItem extends StatelessWidget {
     }
   }
 
+  Widget getReplyComment(Comment comment) {
+    if (comment.parentId != '0') {
+      return Container(
+        width: double.infinity,
+        padding: EdgeInsets.all(8.0),
+        margin: EdgeInsets.only(bottom: 8.0),
+        decoration: BoxDecoration(
+          border: Border(
+            left: BorderSide(
+              color: Colors.grey,
+              width: 4.0,
+            ),
+          ),
+          color: Colors.grey[200],
+        ),
+        child: Text(
+          comment.reply.isNotEmpty
+              ? "${comment.reply[0].nickname}: ${comment.reply[0].content}"
+              : '原评论内容',
+          style: TextStyle(color: Colors.black54),
+        ),
+      );
+    } else {
+      return Container();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Card(
@@ -278,25 +342,7 @@ class CommentItem extends StatelessWidget {
             ),
             SizedBox(height: 8.0),
             // 如果是回复，则先显示引用的原评论内容
-            if (comment.parentId != '0')
-              Container(
-                width: double.infinity,
-                padding: EdgeInsets.all(8.0),
-                margin: EdgeInsets.only(bottom: 8.0),
-                decoration: BoxDecoration(
-                  border: Border(
-                    left: BorderSide(
-                      color: Colors.grey,
-                      width: 4.0,
-                    ),
-                  ),
-                  color: Colors.grey[200],
-                ),
-                child: Text(
-                  comment.reply.isNotEmpty ? comment.reply[0].content : '原评论内容',
-                  style: TextStyle(fontStyle: FontStyle.normal),
-                ),
-              ),
+            getReplyComment(comment),
             // 评论内容
             Text(
               comment.content,
