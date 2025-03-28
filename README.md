@@ -5,9 +5,10 @@
   <div align="center">
     <a href="https://github.com/nanguaguag/yibubang"><img src="https://img.shields.io/badge/platform-flutter-blue.svg" alt="github"></a>
     <a href="https://github.com/nanguaguag/yibubang/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="license"></a>
-    <a href="https://github.com/nanguaguag/yibubang/actions"><img src="https://github.com/nanguaguag/yibubang/actions/workflows/build-macOS-app.yml/badge.svg" alt="build"></a>
-    <a href="https://github.com/nanguaguag/yibubang/actions"><img src="https://github.com/nanguaguag/yibubang/actions/workflows/build-windows-app.yml/badge.svg" alt="build"></a>
-    <a href="https://github.com/nanguaguag/yibubang/actions"><img src="https://github.com/nanguaguag/yibubang/actions/workflows/firebase-hosting-merge.yml/badge.svg" alt="build"></a>
+    <a href="https://github.com/nanguaguag/yibubang/actions"><img src="https://github.com/nanguaguag/yibubang/actions/workflows/build-macOS.yml/badge.svg" alt="build"></a>
+    <a href="https://github.com/nanguaguag/yibubang/actions"><img src="https://github.com/nanguaguag/yibubang/actions/workflows/build-windows.yml/badge.svg" alt="build"></a>
+    <a href="https://github.com/nanguaguag/yibubang/actions"><img src="https://github.com/nanguaguag/yibubang/actions/workflows/build-android.yml/badge.svg" alt="build"></a>
+    <a href="https://github.com/nanguaguag/yibubang/actions"><img src="https://github.com/nanguaguag/yibubang/actions/workflows/build-Linux.yml/badge.svg" alt="build"></a>
   </div>
   <div align="center">
     <a href="#Features">Features</a> •
@@ -24,9 +25,9 @@
 
 - [x] 安卓端（universal、arm64、x86-84）
 - [x] MacOS
-- [ ] Windows（出现了一点点问题）
+- [x] Windows
+- [x] Linux
 - [ ] IOS/iPadOS（即将推出）
-- [ ] Linux（即将推出）
 - [ ] ~~网页端（目前来说不可行）~~
 
 ### ✅ 本地化
@@ -50,8 +51,8 @@
 
 ## TODO
 
+- [x] 调整暗黑模式诸多颜色
 - [ ] 查看评论区回复
-- [ ] 调整暗黑模式诸多颜色
 - [ ] 登录医考帮后，同步做题记录
 
 ## Snapshots

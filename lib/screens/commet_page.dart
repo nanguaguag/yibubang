@@ -2,6 +2,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
 import 'package:yibubang/common/ykb_encrypt.dart';
 
+import '../widgets/image_view.dart';
 import '../models/question.dart';
 import '../models/comment.dart';
 import '../common/request.dart';
@@ -277,6 +278,22 @@ class CommentItem extends StatelessWidget {
     }
   }
 
+  void showFullScreenImage(
+    BuildContext context,
+    List<String> imageUrls,
+    int initialIndex,
+  ) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => FullScreenImageView(
+          imageUrls: imageUrls,
+          initialIndex: initialIndex,
+        ),
+      ),
+    );
+  }
+
   Widget getReplyComment(Comment comment) {
     if (comment.parentId != '0') {
       return Container(
@@ -349,9 +366,23 @@ class CommentItem extends StatelessWidget {
               style: TextStyle(fontSize: 16),
             ),
             // 如果有图像，则显示图像
-            if (comment.imgs.isNotEmpty) SizedBox(height: 8.0),
-            if (comment.imgs.isNotEmpty) Image.network(comment.imgs),
-            if (comment.imgs.isNotEmpty) SizedBox(height: 8.0),
+            if (comment.imgWatermark.isNotEmpty)
+              InkWell(
+                onTap: () {
+                  showFullScreenImage(
+                    context,
+                    [comment.imgWatermark],
+                    0,
+                  );
+                },
+                child: Padding(
+                  padding: EdgeInsets.all(4),
+                  child: Image.network(
+                    comment.imgWatermark,
+                    height: 200,
+                  ),
+                ),
+              ),
             // 点赞数显示
             commentPraise(comment),
           ],

@@ -478,6 +478,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
             child: RichText(
               text: TextSpan(
                 text: '${stat.statInfo}共${stat.commentCount}条评论。',
+                style: TextStyle(color: Colors.grey),
                 children: <TextSpan>[
                   TextSpan(text: '本人作答'),
                   TextSpan(
@@ -558,6 +559,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
             child: RichText(
               text: TextSpan(
                 text: '本题???人收藏，全部考生作答???次，对???次，正确率???%，共???条评论。',
+                style: TextStyle(color: Colors.grey),
                 children: <TextSpan>[
                   TextSpan(text: '本人作答'),
                   TextSpan(

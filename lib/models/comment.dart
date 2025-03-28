@@ -27,6 +27,8 @@ class Comment {
   final String avatar;
   final String nickname;
   final String imgs;
+  final String cimgs;
+  final String imgWatermark;
   final String parentId;
   final List<Comment> reply;
 
@@ -42,6 +44,8 @@ class Comment {
     required this.avatar,
     required this.nickname,
     required this.imgs,
+    required this.cimgs,
+    required this.imgWatermark,
     required this.parentId,
     required this.reply,
   });
@@ -67,6 +71,8 @@ class Comment {
       avatar: json['avatar'] ?? '',
       nickname: json['nickname'] ?? '',
       imgs: json['imgs'] ?? '',
+      cimgs: json['cimgs'] ?? '',
+      imgWatermark: json['img_watermark'] ?? '',
       parentId: json['parent_id'] ?? '0',
       reply: replyList,
     );

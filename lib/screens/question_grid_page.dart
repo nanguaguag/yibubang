@@ -290,6 +290,10 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
     return Scaffold(
       appBar: AppBar(
         actions: [
+          IconButton(
+            icon: Icon(Icons.restart_alt),
+            onPressed: clearUserAnswers,
+          ),
           Builder(
             builder: (context) => Padding(
               padding: EdgeInsets.only(right: 5),
@@ -302,17 +306,9 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
             ),
           ),
         ],
-        title: Row(
+        title: Wrap(
           children: [
-            Text(
-              widget.chapter.name,
-              overflow: TextOverflow.ellipsis,
-            ),
-            Spacer(),
-            IconButton(
-              icon: Icon(Icons.restart_alt),
-              onPressed: clearUserAnswers,
-            ),
+            Text(widget.chapter.name),
           ],
         ),
       ),
