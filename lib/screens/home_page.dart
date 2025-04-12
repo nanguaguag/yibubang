@@ -13,6 +13,13 @@ import '../screens/choosed_subjects_page.dart';
 import '../screens/my_page.dart';
 import '../db/data_transfer.dart';
 
+Future<bool> checkTransferScuess() async {
+  UserDBHelper userdb = UserDBHelper();
+  return !((await userdb.isTableEmpty('Question')) ||
+      (await userdb.isTableEmpty('Chapter')) ||
+      (await userdb.isTableEmpty('Subject')));
+}
+
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
@@ -263,9 +270,8 @@ class _HomePageState extends State<HomePage> {
     if (compareVersions(currentVersion, '1.0.3') > 0) {
       bool transfered = prefs.getBool('transfered') ?? false;
       // 显示加载对话框，禁止用户操作
-      if ((AppStrings.needTransfer ||
-              await isDatabaseExist('user_data.sqlite')) &
-          !transfered) {
+      if (AppStrings.needTransfer &&
+          (!await checkTransferScuess() || !transfered)) {
         showLoadingDialog(context);
         if (await transferData()) {
           // 迁移成功

@@ -1,12 +1,6 @@
-import 'dart:io';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import 'dart:async';
-
-Future<bool> isDatabaseExist(String dbName) async {
-  String path = join(await getDatabasesPath(), dbName);
-  return File(path).exists();
-}
 
 class DatabaseHelper {
   static final DatabaseHelper _instance = DatabaseHelper._internal();
@@ -510,5 +504,11 @@ class UserDBHelper {
   Future<int> delete(String table, String condition, List<dynamic> args) async {
     final db = await database;
     return await db.delete(table, where: condition, whereArgs: args);
+  }
+
+  Future<bool> isTableEmpty(String table) async {
+    final db = await database;
+    final List<Map<String, dynamic>> result = await db.query(table, limit: 1);
+    return result.isEmpty;
   }
 }

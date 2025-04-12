@@ -72,7 +72,6 @@ class _SubjectsListPageState extends State<SubjectsListPage>
     // 定义基本样式和高亮样式
     TextStyle normalStyle = TextStyle(
       fontSize: 15,
-      color: subject.selected == 1 ? Colors.black87 : null,
       decoration: TextDecoration.none,
     );
     TextStyle highlightStyle = TextStyle(

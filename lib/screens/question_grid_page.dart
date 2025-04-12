@@ -148,6 +148,73 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
     );
   }
 
+  void clearWrongAnswers() async {
+    List<UserQuestion> userQuestions = await getUserQuestionsFromChapter(
+      widget.chapter,
+    );
+    bool doneAll = true;
+    for (UserQuestion q in userQuestions) {
+      if (q.userAnswer.isEmpty || q.status == 0) {
+        doneAll = false;
+        break;
+      }
+    }
+    if (!doneAll) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('请先做完所有题目！'),
+          duration: Duration(seconds: 1),
+        ),
+      );
+      return;
+    }
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text("重做全部错题？"),
+          content: Text("您确定要重做吗？该操作不可撤销！"),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(); // 关闭对话框
+              },
+              child: Text("取消"),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(); // 关闭对话框
+                for (UserQuestion q in userQuestions) {
+                  if (q.userAnswer.isNotEmpty && q.status == 2) {
+                    q.userAnswer += ';'; // 末尾加上 ; 表示清除前面的做题记录
+                    q.status = 0;
+                    updateQuestion(q);
+                  }
+                }
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('已清除做错题目'),
+                    duration: Duration(seconds: 1),
+                  ),
+                );
+                setState(() {
+                  // 刷新所有题目
+                  allQuestions = getQuestionsFromChapter(
+                    widget.chapter,
+                  );
+                  allUserQuestions = getUserQuestionsFromChapter(
+                    widget.chapter,
+                  );
+                });
+              },
+              child: Text("确认"),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   // 显示加载进度条
   Widget _buildLoadingIndicator() {
     return const Center(child: CircularProgressIndicator());
@@ -312,10 +379,26 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        actions: [
-          IconButton(
+        actions: <Widget>[
+          PopupMenuButton<String>(
             icon: Icon(Icons.restart_alt),
-            onPressed: clearUserAnswers,
+            onSelected: (String value) {
+              if (value == 'redoAll') {
+                clearUserAnswers();
+              } else if (value == 'redoWrong') {
+                clearWrongAnswers();
+              }
+            },
+            itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+              const PopupMenuItem<String>(
+                value: 'redoAll',
+                child: Text('全部重做'),
+              ),
+              const PopupMenuItem<String>(
+                value: 'redoWrong',
+                child: Text('重做错题'),
+              ),
+            ],
           ),
           Builder(
             builder: (context) => Padding(
