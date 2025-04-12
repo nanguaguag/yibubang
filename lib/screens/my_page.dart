@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:yibubang/db/settings.dart';
 import 'package:yibubang/screens/home_page.dart';
 import '../common/request.dart';
+import 'login_successfully.dart';
 
 ///// 我的页面，展示用户的收藏/评论/笔记
 //class MyPage extends StatelessWidget {
@@ -111,7 +112,7 @@ class _LoginPageState extends State<LoginPage> {
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
-              builder: (context) => const HomePage(),
+              builder: (context) => LoginSuccessfullyPage(),
             ),
           );
         } else {

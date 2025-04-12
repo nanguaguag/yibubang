@@ -42,14 +42,8 @@ class Subject {
   }
 }
 
-void insertSubject(Subject subject) async {
-  int id = await DatabaseHelper().insert('Subject', subject.toMap());
-  print('Inserted subject with ID: $id');
-}
-
 Future<List<Subject>> fetchSelectedSubjects() async {
-  DatabaseHelper dbh = DatabaseHelper();
-  List<Map<String, dynamic>> subjectsData = await dbh.getByCondition(
+  List<Map<String, dynamic>> subjectsData = await UserDBHelper().getByCondition(
     'Subject',
     'selected = TRUE',
     [],
@@ -60,15 +54,15 @@ Future<List<Subject>> fetchSelectedSubjects() async {
 }
 
 Future<List<Subject>> fetchAllSubjects() async {
-  DatabaseHelper dbh = DatabaseHelper();
-  List<Map<String, dynamic>> subjectsData = await dbh.getAll('Subject');
+  List<Map<String, dynamic>> subjectsData =
+      await UserDBHelper().getAll('Subject');
   List<Subject> subjects = subjectsData.map((e) => Subject.fromMap(e)).toList();
 
   return subjects;
 }
 
 void toggleSubjectSelected(String subjectId) async {
-  DatabaseHelper dbh = DatabaseHelper();
+  UserDBHelper dbh = UserDBHelper();
   List<Map<String, dynamic>> subject =
       await dbh.getByCondition('Subject', 'id = ?', [subjectId]);
   if (subject.isNotEmpty) {

@@ -6,10 +6,12 @@ import 'package:archive/archive.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:crypto/crypto.dart';
 import 'package:url_launcher/url_launcher.dart';
-
+import 'package:shared_preferences/shared_preferences.dart';
+import '../db/database_helper.dart';
 import '../common/app_strings.dart';
 import '../screens/choosed_subjects_page.dart';
 import '../screens/my_page.dart';
+import '../db/data_transfer.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -208,9 +210,71 @@ class _HomePageState extends State<HomePage> {
     return 0;
   }
 
+  /// 显示加载框（禁止用户交互）
+  void showLoadingDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      barrierDismissible: false, // 禁止点击背景关闭
+      builder: (BuildContext context) {
+        return const AlertDialog(
+          content: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 20),
+              Expanded(child: Text("正在迁移数据，请稍候...")),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// 显示“请重启”提示框
+  void showRestartDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      barrierDismissible: false, // 禁止点空白关闭
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text("完成"),
+          content: const Text("数据迁移完成，请重启应用以完成更新"),
+          actions: [
+            TextButton(
+              onPressed: () {
+                // 用户确认后退出 app 或关闭对话框
+                // SystemNavigator.pop(); // 用这个退出 app
+                Navigator.of(context).pop(); // 或者只是关闭对话框
+              },
+              child: const Text("OK"),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   /// 检查应用更新，如果有新版本则弹窗提示
-  void checkForAppUpdate() {
+  void checkForAppUpdate() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
     String latestVersion = updateData["latest_app"] ?? currentVersion;
+    // 当前版本在1.0.3以上，意味着需要增加user_data数据库
+    if (compareVersions(currentVersion, '1.0.3') > 0) {
+      bool transfered = prefs.getBool('transfered') ?? false;
+      // 显示加载对话框，禁止用户操作
+      if ((AppStrings.needTransfer ||
+              await isDatabaseExist('user_data.sqlite')) &
+          !transfered) {
+        showLoadingDialog(context);
+        if (await transferData()) {
+          // 迁移成功
+          prefs.setBool('transfered', true);
+        }
+        Navigator.of(context, rootNavigator: true).pop();
+        showRestartDialog(context);
+      }
+    }
     if (compareVersions(latestVersion, currentVersion) > 0) {
       // 弹窗提示更新
       showDialog(

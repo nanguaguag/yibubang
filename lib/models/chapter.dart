@@ -48,7 +48,7 @@ void sortChaptersById(List<Chapter> chapters) {
 }
 
 Future<List<Chapter>> fetchChaptersBySubjectId(String subjectId) async {
-  DatabaseHelper dbh = DatabaseHelper();
+  UserDBHelper dbh = UserDBHelper();
   List<Map<String, dynamic>> chaptersData = await dbh.getByCondition(
     'Chapter',
     'subject_id = ?',

@@ -1,6 +1,50 @@
 import '../db/database_helper.dart';
 import 'chapter.dart';
 
+class UserQuestion {
+  String id;
+  String? chapterId;
+  String? chapterParentId;
+  String cutQuestion;
+  String userAnswer; // 用户答案
+  int status; // 题目状态
+  int collection; // 是否收藏
+
+  UserQuestion({
+    required this.id,
+    this.chapterId,
+    this.chapterParentId,
+    required this.cutQuestion,
+    required this.userAnswer,
+    required this.status,
+    required this.collection,
+  });
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'chapter_id': chapterId,
+      'chapter_parent_id': chapterParentId,
+      'cut_question': cutQuestion,
+      'user_answer': userAnswer,
+      'status': status,
+      'collection': collection,
+    };
+  }
+
+  factory UserQuestion.fromMap(Map<String, dynamic> map) {
+    return UserQuestion(
+      id: map['id'],
+      chapterId: map['chapter_id'],
+      chapterParentId: map['chapter_parent_id'],
+      cutQuestion: map['cut_question'],
+      userAnswer: map['user_answer'] ?? '',
+      status: map['status'] ?? 0,
+      collection: map['collection'] ?? 0,
+    );
+  }
+}
+
 class Question {
   String id;
   String? year; // 年份
@@ -57,8 +101,6 @@ class Question {
   String? filterType;
   String? cutQuestion; // 是否已斩
   String userAnswer; // 用户答案
-  int status; // 题目状态
-  int collection; // 是否收藏
 
   Question({
     required this.id,
@@ -116,8 +158,6 @@ class Question {
     this.filterType,
     this.cutQuestion,
     required this.userAnswer,
-    required this.status,
-    required this.collection,
   });
 
   // Convert a Question to a map
@@ -178,8 +218,6 @@ class Question {
       'filter_type': filterType,
       'cut_question': cutQuestion,
       'user_answer': userAnswer,
-      'status': status,
-      'collection': collection,
     };
   }
 
@@ -241,13 +279,16 @@ class Question {
       filterType: map['filter_type'],
       cutQuestion: map['cut_question'],
       userAnswer: map['user_answer'] ?? '',
-      status: map['status'],
-      collection: map['collection'],
     );
   }
 }
 
 void sortQuestionsById(List<Question> questions) {
+  // 将一个 List<Chapter> 按照 id 转成数字后的大小排序
+  questions.sort((a, b) => int.parse(a.id).compareTo(int.parse(b.id)));
+}
+
+void sortUserQuestionsById(List<UserQuestion> questions) {
   // 将一个 List<Chapter> 按照 id 转成数字后的大小排序
   questions.sort((a, b) => int.parse(a.id).compareTo(int.parse(b.id)));
 }
@@ -267,9 +308,24 @@ Future<List<Question>> getQuestionsFromChapter(Chapter chapter) async {
   return questions;
 }
 
-Future<void> updateQuestion(Question question) async {
+Future<List<UserQuestion>> getUserQuestionsFromChapter(Chapter chapter) async {
+  List<Map<String, dynamic>> questionsData =
+      await UserDBHelper().getByCondition(
+    'Question',
+    'chapter_parent_id = ? AND chapter_id = ?',
+    [chapter.subjectId, chapter.id],
+  );
+  List<UserQuestion> questions =
+      questionsData.map((e) => UserQuestion.fromMap(e)).toList();
+
+  sortUserQuestionsById(questions);
+
+  return questions;
+}
+
+Future<void> updateQuestion(UserQuestion question) async {
   // 更新问题状态和用户答案
-  await DatabaseHelper().update(
+  await UserDBHelper().update(
     'Question',
     {
       'status': question.status,

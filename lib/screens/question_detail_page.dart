@@ -13,12 +13,14 @@ import 'commet_page.dart';
 class QuestionDetailPage extends StatefulWidget {
   final Chapter chapter;
   final List<Question> questions;
+  final List<UserQuestion> userQuestions;
   final int questionIndex;
 
   const QuestionDetailPage({
     super.key,
     required this.chapter,
     required this.questions,
+    required this.userQuestions,
     required this.questionIndex,
   });
 
@@ -85,7 +87,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     await prefs.setInt('mode', mode);
   }
 
-  Widget submitButton(Question question, int index) {
+  Widget submitButton(Question question, UserQuestion userQuestion, int index) {
     // 如果是快刷/测试模式且为单选题，不显示提交按钮
     if ((mode == 1 || mode == 2) && question.type == '1') {
       return const SizedBox.shrink();
@@ -97,7 +99,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
         height: 60.0, // 按钮的高度
         child: ElevatedButton(
           onPressed: () {
-            submitAnswer(question, index);
+            submitAnswer(question, userQuestion, index);
           },
           child: const Text(
             '提交',
@@ -108,7 +110,11 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     );
   }
 
-  Widget checkableOptionsList(Question question, int index) {
+  Widget checkableOptionsList(
+    Question question,
+    UserQuestion userQuestion,
+    int index,
+  ) {
     final List<dynamic> optionJson = getOptionJson(question);
     return Expanded(
       child: ListView.builder(
@@ -120,45 +126,45 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
               return RadioListTile<String>(
                 title: Text("${option['key']}. ${option['title']}"),
                 value: option['key'],
-                groupValue: getLastAnswer(question.userAnswer),
+                groupValue: getLastAnswer(userQuestion.userAnswer),
                 onChanged: (String? value) {
                   setState(() {
-                    question.userAnswer = changeLastAnswer(
-                      question.userAnswer,
+                    userQuestion.userAnswer = changeLastAnswer(
+                      userQuestion.userAnswer,
                       value ?? '',
                     );
                   });
                   if (mode == 1 || mode == 2) {
                     // 快刷模式 && 测试模式, 单选题自动提交
-                    submitAnswer(question, index);
+                    submitAnswer(question, userQuestion, index);
                   }
                 },
               );
             case '2': // 多选题
               return CheckboxListTile(
                 title: Text("${option['key']}. ${option['title']}"),
-                value:
-                    getLastAnswer(question.userAnswer).contains(option['key']),
+                value: getLastAnswer(userQuestion.userAnswer)
+                    .contains(option['key']),
                 controlAffinity: ListTileControlAffinity.leading,
                 onChanged: (bool? value) {
                   setState(() {
-                    bool checked = getLastAnswer(question.userAnswer)
+                    bool checked = getLastAnswer(userQuestion.userAnswer)
                         .contains(option['key']);
                     if (value == true && !checked) {
-                      question.userAnswer = changeLastAnswer(
-                        question.userAnswer,
-                        getLastAnswer(question.userAnswer) + option['key'],
+                      userQuestion.userAnswer = changeLastAnswer(
+                        userQuestion.userAnswer,
+                        getLastAnswer(userQuestion.userAnswer) + option['key'],
                       );
                     } else if (value == false && checked) {
-                      question.userAnswer = changeLastAnswer(
-                        question.userAnswer,
-                        getLastAnswer(question.userAnswer).replaceAll(
+                      userQuestion.userAnswer = changeLastAnswer(
+                        userQuestion.userAnswer,
+                        getLastAnswer(userQuestion.userAnswer).replaceAll(
                           option['key'],
                           '',
                         ),
                       );
                     }
-                    print(question.userAnswer);
+                    print(userQuestion.userAnswer);
                   });
                 },
               );
@@ -211,28 +217,32 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     );
   }
 
-  Widget unansweredQuestion(Question question, int index) {
+  Widget unansweredQuestion(
+    Question question,
+    UserQuestion userQuestion,
+    int index,
+  ) {
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           questionHeaders(question, index),
-          checkableOptionsList(question, index),
-          submitButton(question, index),
+          checkableOptionsList(question, userQuestion, index),
+          submitButton(question, userQuestion, index),
         ],
       ),
     );
   }
 
-  Widget buildOptions(Question question) {
+  Widget buildOptions(Question question, UserQuestion userQuestion) {
     final List<dynamic> optionJson = getOptionJson(question);
     for (Map<String, dynamic> option in optionJson) {
       final String key = option['key'];
       final bool answerContains = question.answer!.contains(key);
       final bool userAnswerContains =
-          getLastAnswer(question.userAnswer).contains(key);
-      if ((mode == 3 && question.status == 0) || question.status == 4) {
+          getLastAnswer(userQuestion.userAnswer).contains(key);
+      if ((mode == 3 && userQuestion.status == 0) || userQuestion.status == 4) {
         if (answerContains) {
           option['color'] = null;
           option['icon'] = Icons.check_circle;
@@ -300,6 +310,39 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     );
   }
 
+  TextSpan buildTextWithBold(String text) {
+    final RegExp regex = RegExp(r'（[A-Z](对|错)(，为本题正确答案)?）');
+    final List<String> parts = text.split(regex);
+    List<String> matches =
+        regex.allMatches(text).map((match) => match.group(0)!).toList();
+    // merge parts and matches
+    for (int i = 0; i < matches.length; i++) {
+      parts.insert(2 * i + 1, matches[i]);
+    }
+    return TextSpan(
+      children: List.generate(parts.length, (index) {
+        if (index.isEven) {
+          return TextSpan(
+            text: parts[index],
+            style: TextStyle(
+              fontSize: 16,
+              height: 1.8,
+            ),
+          );
+        } else {
+          return TextSpan(
+            text: parts[index],
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+              height: 1.8,
+            ),
+          );
+        }
+      }),
+    );
+  }
+
   Widget buildTextWithImage(String text, String imgUrl) {
     // split text with regex: (?:[\u4e00-\u9fa5]+)?P\d+(?:-P\d+)?
     // 1. (?:[\u4e00-\u9fa5]+)? : optional chinese characters
@@ -322,14 +365,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
       TextSpan(
         children: List.generate(parts.length, (index) {
           if (index.isEven) {
-            return TextSpan(
-              text: parts[index],
-              style: TextStyle(
-                fontSize: 16,
-                height: 1.8,
-                color: Colors.black87,
-              ),
-            );
+            return buildTextWithBold(parts[index]);
           } else {
             return WidgetSpan(
               child: ElevatedButton(
@@ -384,44 +420,41 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     Question q,
   ) {
     Color orangeAccent = Color(0xFFB39D6B);
-    return Container(
-      color: Color(0xFFF9F4E9), // 设置背景颜色 #f9f4e9
-      padding: const EdgeInsets.all(16.0),
-      margin: const EdgeInsets.symmetric(vertical: 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Icon(icon, color: orangeAccent, size: 24),
-              SizedBox(width: 6), // 图标与文字间距
-              Text(
-                title, // 标题文字
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: orangeAccent, // 标题颜色
-                ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(height: 10),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Icon(icon, color: orangeAccent, size: 24),
+            SizedBox(width: 6), // 图标与文字间距
+            Text(
+              title, // 标题文字
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: orangeAccent, // 标题颜色
               ),
-            ],
-          ),
-          SizedBox(height: 6), // 标题与内容间距
-          Divider(
-            color: orangeAccent, // 分割线颜色
-            thickness: 1, // 分割线厚度
-          ),
-          SizedBox(height: 6), // 分割线与内容间距
-          buildTextWithImage(
-            analysisText,
-            'https://ykb-app-files.yikaobang.com.cn/question/restore/${q.nativeAppId}/${q.number}',
-          ),
-        ],
-      ),
+            ),
+          ],
+        ),
+        SizedBox(height: 10), // 标题与内容间距
+        buildTextWithImage(
+          analysisText,
+          'https://ykb-app-files.yikaobang.com.cn/question/restore/${q.nativeAppId}/${q.number}',
+        ),
+        SizedBox(height: 10),
+        Divider(color: Color(0x22888888)),
+      ],
     );
   }
 
-  Widget createStat(QuestionStat stat, Question question) {
+  Widget createStat(
+    QuestionStat stat,
+    Question question,
+    UserQuestion userQuestion,
+  ) {
     int rightCount = int.parse(stat.rightCount);
     int wrongCount = int.parse(stat.wrongCount);
     double errorRate = wrongCount / (rightCount + wrongCount);
@@ -431,7 +464,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     int emptyStars = 5 - fullStars - (hasHalfStar ? 1 : 0); // 空星数量
 
     int myCorrectAnsCnt = 0;
-    final List<String> myAnswers = question.userAnswer.split(';');
+    final List<String> myAnswers = userQuestion.userAnswer.split(';');
     final int totalAnsCnt = myAnswers.length;
     for (String ans in myAnswers) {
       if (sortString(ans) == sortString(question.answer!)) {
@@ -505,14 +538,17 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     ]);
   }
 
-  Widget createEmptyStat(Question question) {
+  Widget createEmptyStat(
+    Question question,
+    UserQuestion userQuestion,
+  ) {
     int n = 0;
     int fullStars = n ~/ 2; // 整星的数量
     bool hasHalfStar = n % 2 == 1; // 是否有半颗星
     int emptyStars = 5 - fullStars - (hasHalfStar ? 1 : 0); // 空星数量
 
     int myCorrectAnsCnt = 0;
-    final List<String> myAnswers = question.userAnswer.split(';');
+    final List<String> myAnswers = userQuestion.userAnswer.split(';');
     final int totalAnsCnt = myAnswers.length;
     for (String ans in myAnswers) {
       if (sortString(ans) == sortString(question.answer!)) {
@@ -586,91 +622,155 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     ]);
   }
 
-  Widget answeredQuestion(Question question, int index) {
-    final String userAnswer = getLastAnswer(question.userAnswer);
+  Widget answeredQuestion(
+    Question question,
+    UserQuestion userQuestion,
+    int index,
+  ) {
+    final String userAnswer = getLastAnswer(userQuestion.userAnswer);
     final String answer = question.answer ?? '';
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: ListView(
-        shrinkWrap: true, // 让外层 ListView 适应内容
-        physics: ClampingScrollPhysics(), // 正常滚动
-        children: [
-          questionHeaders(question, index),
-          buildOptions(question),
-          const SizedBox(height: 10),
-          Row(
+    return Stack(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: ListView(
+            shrinkWrap: true, // 让外层 ListView 适应内容
+            physics: ClampingScrollPhysics(), // 正常滚动
             children: [
-              Text(
-                '答案：正确答案 $answer, 你的答案 ',
-                style: TextStyle(fontSize: 14),
+              questionHeaders(question, index),
+              buildOptions(question, userQuestion),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Text(
+                    '答案：正确答案 $answer, 你的答案 ',
+                    style: TextStyle(fontSize: 14),
+                  ),
+                  Text(
+                    userAnswer,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color:
+                          userQuestion.status == 1 ? Colors.green : Colors.red,
+                    ),
+                  ),
+                ],
               ),
-              Text(
-                userAnswer,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: question.status == 1 ? Colors.green : Colors.red,
+              FutureBuilder<QuestionStat>(
+                future: fetchQuestionStat(question),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return createEmptyStat(question, userQuestion);
+                  } else if (snapshot.hasError) {
+                    return createEmptyStat(question, userQuestion);
+                  } else if (snapshot.hasData) {
+                    return createStat(snapshot.data!, question, userQuestion);
+                  } else {
+                    return Container();
+                  }
+                },
+              ),
+              if (question.source != '')
+                Text(
+                  '来源：${question.source ?? ''}',
+                  style: TextStyle(fontSize: 14),
                 ),
-              ),
+              SizedBox(height: 10),
+              Divider(color: Color(0x22888888)),
+              if (question.restore != '')
+                buildAnalysisText(
+                  '考点还原',
+                  Icons.location_on_outlined,
+                  question.restore ?? '',
+                  question,
+                ),
+              if (question.explain != '')
+                buildAnalysisText(
+                  '答案解析',
+                  Icons.lightbulb_outlined,
+                  question.explain ?? '',
+                  question,
+                ),
+              CommentPage(question: question),
             ],
           ),
-          FutureBuilder<QuestionStat>(
-            future: fetchQuestionStat(question),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return createEmptyStat(question);
-              } else if (snapshot.hasError) {
-                return createEmptyStat(question);
-              } else if (snapshot.hasData) {
-                return createStat(snapshot.data!, question);
-              } else {
-                return Container();
-              }
-            },
-          ),
-          SizedBox(height: 10),
-          if (question.restore != '')
-            buildAnalysisText(
-              '考点还原',
-              Icons.location_on_outlined,
-              question.restore ?? '',
-              question,
-            ),
-          if (question.explain != '')
-            buildAnalysisText(
-              '答案解析',
-              Icons.lightbulb_outlined,
-              question.explain ?? '',
-              question,
-            ),
-          CommentPage(question: question),
-        ],
-      ),
+        ),
+        //// 悬浮底栏
+        //Positioned(
+        //  left: 0,
+        //  right: 0,
+        //  bottom: 0,
+        //  child: Container(
+        //    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        //    decoration: BoxDecoration(
+        //      color: Colors.white,
+        //      border: Border(
+        //        top: BorderSide(
+        //          color: Colors.grey.shade300,
+        //        ),
+        //      ),
+        //      boxShadow: [
+        //        BoxShadow(
+        //          color: Colors.black12,
+        //          blurRadius: 4,
+        //          spreadRadius: 2,
+        //        )
+        //      ],
+        //    ),
+        //    child: Row(
+        //      children: [
+        //        Expanded(
+        //          child: TextField(
+        //            decoration: InputDecoration(
+        //              hintText: "记个笔记吧",
+        //              border: OutlineInputBorder(
+        //                borderRadius: BorderRadius.circular(20),
+        //              ),
+        //              contentPadding: EdgeInsets.symmetric(horizontal: 16),
+        //            ),
+        //          ),
+        //        ),
+        //        SizedBox(width: 10),
+        //        IconButton(icon: Icon(Icons.send), onPressed: () {}),
+        //      ],
+        //    ),
+        //  ),
+        //),
+      ],
     );
   }
 
-  Widget cuttedQuestion(Question question, int index) {
+  Widget cuttedQuestion(
+    Question question,
+    UserQuestion userQuestion,
+    int index,
+  ) {
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Text("该题目已斩"),
     );
   }
 
-  Widget buildQuestion(Question question, int index) {
+  Widget buildQuestion(
+    Question question,
+    UserQuestion userQuestion,
+    int index,
+  ) {
     if (mode == 3) {
       // 背题模式, 直接显示正确答案
-      return answeredQuestion(question, index);
+      return answeredQuestion(question, userQuestion, index);
     }
-    switch (question.status) {
+    switch (userQuestion.status) {
       case 0: // 未作答
-        return unansweredQuestion(question, index);
+        return unansweredQuestion(question, userQuestion, index);
       case 1: // 正确作答
-        return answeredQuestion(question, index);
+        return answeredQuestion(question, userQuestion, index);
       case 2: // 错误回答
-        return answeredQuestion(question, index);
+        return answeredQuestion(question, userQuestion, index);
       case 3: // 已斩题
-        return cuttedQuestion(question, index);
+        return cuttedQuestion(question, userQuestion, index);
       case 4: // 测试模式 - 已作答
-        return unansweredQuestion(question, index);
+        return unansweredQuestion(question, userQuestion, index);
       default:
         return const Text('未知的题目状态');
     }
@@ -687,23 +787,21 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
   }
 
   Widget collectionBtn() {
-    Question question = widget.questions[_currentPage];
+    UserQuestion userQuestion = widget.userQuestions[_currentPage];
     return IconButton(
-      icon: question.collection == 0
+      icon: userQuestion.collection == 0
           ? Icon(Icons.favorite_outline)
-          : Icon(
-              Icons.favorite,
-              color: Colors.redAccent,
-            ),
+          : Icon(Icons.favorite, color: Colors.redAccent),
       onPressed: () {
-        if (question.collection == 0) {
-          question.collection = 1;
+        if (userQuestion.collection == 0) {
+          userQuestion.collection = 1;
         } else {
-          question.collection = 0;
+          userQuestion.collection = 0;
         }
-        updateQuestion(question); // 在数据库中 update
+        updateQuestion(userQuestion); // 在数据库中 update
         setState(() {
-          widget.questions[_currentPage].collection = question.collection;
+          widget.userQuestions[_currentPage].collection =
+              userQuestion.collection;
         });
       },
     );
@@ -774,7 +872,11 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
         },
         itemCount: widget.questions.length,
         itemBuilder: (context, index) {
-          return buildQuestion(widget.questions[index], index);
+          return buildQuestion(
+            widget.questions[index],
+            widget.userQuestions[index],
+            index,
+          );
         },
       ),
     );
@@ -817,8 +919,8 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     return sortedStr;
   }
 
-  void submitAnswer(Question question, int index) {
-    final String userAnswer = getLastAnswer(question.userAnswer);
+  void submitAnswer(Question question, UserQuestion userQuestion, int index) {
+    final String userAnswer = getLastAnswer(userQuestion.userAnswer);
     if (question.type == '1' && userAnswer.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -834,23 +936,23 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
         ),
       );
     } else if (mode == 2) {
-      question.status = 4; // 测试模式 - 已作答
-      updateQuestion(question);
+      userQuestion.status = 4; // 测试模式 - 已作答
+      updateQuestion(userQuestion);
       setState(() {
-        widget.questions[index].status = question.status;
+        widget.userQuestions[index].status = userQuestion.status;
       });
       _nextPage();
     } else {
       if (sortString(userAnswer) == sortString(question.answer!)) {
-        question.status = 1; // 回答正确
+        userQuestion.status = 1; // 回答正确
       } else {
-        question.status = 2; // 回答错误
+        userQuestion.status = 2; // 回答错误
       }
-      updateQuestion(question);
+      updateQuestion(userQuestion);
       setState(() {
-        widget.questions[index].status = question.status;
+        widget.userQuestions[index].status = userQuestion.status;
       });
-      if (question.status == 1 && mode == 1) {
+      if (userQuestion.status == 1 && mode == 1) {
         // 快刷模式自动翻页 || 测试模式自动翻页
         _nextPage();
       }

@@ -17,14 +17,14 @@ class QuestionGridPage extends StatefulWidget {
 
   const QuestionGridPage({super.key, required this.chapter});
 
-  //const SubjectsListPage({super.key});
-
   @override
   _QuestionGridPageState createState() => _QuestionGridPageState();
 }
 
 class _QuestionGridPageState extends State<QuestionGridPage> {
   late Future<List<Question>> allQuestions;
+  late Future<List<UserQuestion>> allUserQuestions;
+
   // 筛选选项
   int cutType = 0;
   int questionType = 0;
@@ -42,25 +42,38 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
     super.initState();
     // 初始化 Future 在 initState 中，这样可以访问 widget
     allQuestions = getQuestionsFromChapter(widget.chapter);
+    allUserQuestions = getUserQuestionsFromChapter(widget.chapter);
     loadSettings();
   }
 
-  Future<List<Question>> filter(Future<List<Question>> questionsFuture) async {
+  Future<MapEntry<List<Question>, List<UserQuestion>>> filter(
+    Future<List<Question>> questionsFuture,
+    Future<List<UserQuestion>> userQuestionsFuture,
+  ) async {
     List<Question> questions = await questionsFuture;
+    List<UserQuestion> userQuestions = await userQuestionsFuture;
 
     // 根据不同的筛选条件进行筛选
-    questions = questions.where((q) {
+    userQuestions = userQuestions.where((q) {
       if (category == 1 && q.status != 2) return false; // 只保留做错的题目
       if (category == 2 && q.collection != 1) return false; // 只保留收藏的题目
       if (category == 3 && q.status != 0) return false; // 只保留未做的题目
       if (cutType != 0 && q.cutQuestion != "") return false; // 过滤 cutType
+      return true;
+    }).toList();
+
+    questions = questions.where((q) {
+      // 过滤q.id不在userQuestions里的题目
+      if (userQuestions.where((userQ) => userQ.id == q.id).isEmpty) {
+        return false;
+      }
       if (questionType != 0 && int.parse(q.type!) != questionType) {
         return false; // 过滤 单选题、多选题
       }
       return true;
     }).toList();
 
-    return questions;
+    return MapEntry(questions, userQuestions);
   }
 
   // 获取数据
@@ -85,7 +98,9 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
   }
 
   void clearUserAnswers() async {
-    List<Question> questions = await getQuestionsFromChapter(widget.chapter);
+    List<UserQuestion> userQuestions = await getUserQuestionsFromChapter(
+      widget.chapter,
+    );
     showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -102,7 +117,7 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
             TextButton(
               onPressed: () {
                 Navigator.of(context).pop(); // 关闭对话框
-                for (Question q in questions) {
+                for (UserQuestion q in userQuestions) {
                   if (q.userAnswer.isNotEmpty) {
                     q.userAnswer += ';'; // 末尾加上 ; 表示清除前面的做题记录
                     q.status = 0;
@@ -118,6 +133,9 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
                 setState(() {
                   // 刷新所有题目
                   allQuestions = getQuestionsFromChapter(
+                    widget.chapter,
+                  );
+                  allUserQuestions = getUserQuestionsFromChapter(
                     widget.chapter,
                   );
                 });
@@ -214,6 +232,7 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
 
   Widget buildQuestionGrid(
     List<Question> questions,
+    List<UserQuestion> userQuestions,
     int crossAxisCount,
     double crossSpacing,
     double buttonSize,
@@ -227,7 +246,7 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
       ),
       itemCount: questions.length,
       itemBuilder: (context, index) {
-        final int questionState = questions[index].status;
+        final int questionState = userQuestions[index].status;
         Color buttonColor;
 
         switch (questionState) {
@@ -259,6 +278,7 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
                 builder: (context) => QuestionDetailPage(
                   chapter: widget.chapter,
                   questions: questions,
+                  userQuestions: userQuestions,
                   questionIndex: index,
                 ),
               ),
@@ -266,6 +286,9 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
             loadSettings();
             setState(() {
               allQuestions = getQuestionsFromChapter(
+                widget.chapter,
+              );
+              allUserQuestions = getUserQuestionsFromChapter(
                 widget.chapter,
               );
             });
@@ -406,14 +429,15 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
           Expanded(
             child: Padding(
               padding: const EdgeInsets.all(16.0),
-              child: FutureBuilder<List<Question>>(
-                future: filter(allQuestions),
+              child:
+                  FutureBuilder<MapEntry<List<Question>, List<UserQuestion>>>(
+                future: filter(allQuestions, allUserQuestions),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return _buildLoadingIndicator();
                   } else if (snapshot.hasError) {
                     return _buildErrorMessage(snapshot.error);
-                  } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                  } else if (!snapshot.hasData || snapshot.data!.key.isEmpty) {
                     return _buildEmptyMessage('本章节中还没有题目哦~');
                   } else {
                     return LayoutBuilder(
@@ -427,7 +451,8 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
                         double crossSpacing =
                             (width - count * btnSize) / (count - 1);
                         return buildQuestionGrid(
-                          snapshot.data!,
+                          snapshot.data!.key,
+                          snapshot.data!.value,
                           count,
                           crossSpacing,
                           btnSize,
