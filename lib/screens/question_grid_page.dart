@@ -24,6 +24,8 @@ class QuestionGridPage extends StatefulWidget {
 class _QuestionGridPageState extends State<QuestionGridPage> {
   late Future<List<Question>> allQuestions;
   late Future<List<UserQuestion>> allUserQuestions;
+  final ScrollController _scrollController = ScrollController();
+  double _savedScrollOffset = 0.0;
 
   // 筛选选项
   int cutType = 0;
@@ -43,10 +45,36 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
     // 初始化 Future 在 initState 中，这样可以访问 widget
     allQuestions = getQuestionsFromChapter(widget.chapter);
     allUserQuestions = getUserQuestionsFromChapter(widget.chapter);
-    loadSettings();
+    _loadSettings();
   }
 
-  Future<MapEntry<List<Question>, List<UserQuestion>>> filter(
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _refreshPage() async {
+    final questions = getQuestionsFromChapter(widget.chapter);
+    final userQuestions = getUserQuestionsFromChapter(widget.chapter);
+
+    setState(() {
+      allQuestions = questions;
+      allUserQuestions = userQuestions;
+    });
+
+    await questions;
+    await userQuestions;
+
+    // 延迟恢复滚动位置
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.jumpTo(_savedScrollOffset);
+      }
+    });
+  }
+
+  Future<MapEntry<List<Question>, List<UserQuestion>>> _filter(
     Future<List<Question>> questionsFuture,
     Future<List<UserQuestion>> userQuestionsFuture,
   ) async {
@@ -76,8 +104,8 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
     return MapEntry(questions, userQuestions);
   }
 
-  // 获取数据
-  Future<void> loadSettings() async {
+  /// 获取数据
+  Future<void> _loadSettings() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     // 获取设置数据并更新状态
     setState(() {
@@ -88,6 +116,7 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
     });
   }
 
+  /// 保存设置
   Future<void> saveSettings() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     // 保存设置数据
@@ -130,15 +159,7 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
                     duration: Duration(seconds: 1),
                   ),
                 );
-                setState(() {
-                  // 刷新所有题目
-                  allQuestions = getQuestionsFromChapter(
-                    widget.chapter,
-                  );
-                  allUserQuestions = getUserQuestionsFromChapter(
-                    widget.chapter,
-                  );
-                });
+                _refreshPage();
               },
               child: Text("确认"),
             ),
@@ -197,15 +218,7 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
                     duration: Duration(seconds: 1),
                   ),
                 );
-                setState(() {
-                  // 刷新所有题目
-                  allQuestions = getQuestionsFromChapter(
-                    widget.chapter,
-                  );
-                  allUserQuestions = getUserQuestionsFromChapter(
-                    widget.chapter,
-                  );
-                });
+                _refreshPage();
               },
               child: Text("确认"),
             ),
@@ -215,22 +228,22 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
     );
   }
 
-  // 显示加载进度条
+  /// 显示加载进度条
   Widget _buildLoadingIndicator() {
     return const Center(child: CircularProgressIndicator());
   }
 
-  // 显示错误信息
+  /// 显示错误信息
   Widget _buildErrorMessage(Object? error) {
     return Center(child: Text('加载失败: $error'));
   }
 
-  // 显示无数据提示
+  /// 显示无数据提示
   Widget _buildEmptyMessage(String msg) {
     return Center(child: Text(msg));
   }
 
-  // 构建筛选部分
+  /// 构建筛选部分
   Widget _buildFilterSection(
     String title,
     List<String> items,
@@ -297,7 +310,7 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
     );
   }
 
-  Widget buildQuestionGrid(
+  Widget _buildQuestionGrid(
     List<Question> questions,
     List<UserQuestion> userQuestions,
     int crossAxisCount,
@@ -305,6 +318,7 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
     double buttonSize,
   ) {
     return GridView.builder(
+      controller: _scrollController,
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: crossAxisCount,
         childAspectRatio: 1.0, // 设置 item 宽高比例,
@@ -339,6 +353,7 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
 
         return ElevatedButton(
           onPressed: () async {
+            _savedScrollOffset = _scrollController.offset;
             await Navigator.push(
               context,
               MaterialPageRoute(
@@ -350,15 +365,8 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
                 ),
               ),
             );
-            loadSettings();
-            setState(() {
-              allQuestions = getQuestionsFromChapter(
-                widget.chapter,
-              );
-              allUserQuestions = getUserQuestionsFromChapter(
-                widget.chapter,
-              );
-            });
+            await _loadSettings();
+            _refreshPage();
           },
           style: ElevatedButton.styleFrom(
             padding: EdgeInsets.zero,
@@ -514,7 +522,7 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
               padding: const EdgeInsets.all(16.0),
               child:
                   FutureBuilder<MapEntry<List<Question>, List<UserQuestion>>>(
-                future: filter(allQuestions, allUserQuestions),
+                future: _filter(allQuestions, allUserQuestions),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return _buildLoadingIndicator();
@@ -533,7 +541,7 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
                             ((width + 24) / (btnSize + 24)).floor();
                         double crossSpacing =
                             (width - count * btnSize) / (count - 1);
-                        return buildQuestionGrid(
+                        return _buildQuestionGrid(
                           snapshot.data!.key,
                           snapshot.data!.value,
                           count,

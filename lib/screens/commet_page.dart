@@ -219,7 +219,7 @@ class CommentItem extends StatelessWidget {
     required this.question,
   });
 
-  Widget gotoReplyBtn(
+  Widget _gotoReplyBtn(
     Comment comment,
     Question question,
     BuildContext context,
@@ -243,7 +243,7 @@ class CommentItem extends StatelessWidget {
     return Container();
   }
 
-  Widget commentPraise(
+  Widget _commentPraise(
     Comment comment,
     Question question,
     BuildContext context,
@@ -252,7 +252,7 @@ class CommentItem extends StatelessWidget {
       return Row(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          gotoReplyBtn(comment, question, context),
+          _gotoReplyBtn(comment, question, context),
           Icon(Icons.thumb_up_outlined, size: 16, color: Colors.grey),
           SizedBox(width: 4.0),
           Text(
@@ -272,7 +272,7 @@ class CommentItem extends StatelessWidget {
       return Row(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          gotoReplyBtn(comment, question, context),
+          _gotoReplyBtn(comment, question, context),
           Icon(Icons.thumb_up, size: 16, color: Colors.green),
           SizedBox(width: 4.0),
           Text(
@@ -292,7 +292,7 @@ class CommentItem extends StatelessWidget {
       return Row(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          gotoReplyBtn(comment, question, context),
+          _gotoReplyBtn(comment, question, context),
           Icon(Icons.thumb_up_outlined, size: 16, color: Colors.grey),
           SizedBox(width: 4.0),
           Text(
@@ -311,7 +311,7 @@ class CommentItem extends StatelessWidget {
     }
   }
 
-  void showFullScreenImage(
+  void _showFullScreenImage(
     BuildContext context,
     List<String> imageUrls,
     int initialIndex,
@@ -327,7 +327,7 @@ class CommentItem extends StatelessWidget {
     );
   }
 
-  Widget getReplyComment(
+  Widget _getReplyComment(
     Comment comment,
     BuildContext context, {
     int depth = 0,
@@ -347,9 +347,9 @@ class CommentItem extends StatelessWidget {
               width: 4.0,
             ),
           ),
-          color: Colors.grey[200],
+          color: Colors.grey.withValues(alpha: 0.2),
         ),
-        child: commentContent(comment.reply[depth], context),
+        child: _commentContent(comment.reply[replyLength - 1], context),
       );
     } else if (depth < replyLength - 1) {
       return Container(
@@ -367,12 +367,12 @@ class CommentItem extends StatelessWidget {
         ),
         child: Column(
           children: [
-            getReplyComment(
+            _getReplyComment(
               comment,
               context,
               depth: depth + 1,
             ),
-            commentContent(comment.reply[depth], context),
+            _commentContent(comment.reply[replyLength - 1 - depth], context),
           ],
         ),
       );
@@ -381,7 +381,7 @@ class CommentItem extends StatelessWidget {
     }
   }
 
-  Widget commentContent(Comment comment, BuildContext context) {
+  Widget _commentContent(Comment comment, BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -414,7 +414,7 @@ class CommentItem extends StatelessWidget {
         ),
         SizedBox(height: 8.0),
         // 如果是回复，则先显示引用的原评论内容
-        getReplyComment(comment, context),
+        _getReplyComment(comment, context),
         // 评论内容
         Text(
           comment.content,
@@ -424,7 +424,7 @@ class CommentItem extends StatelessWidget {
         if (comment.imgWatermark.isNotEmpty)
           InkWell(
             onTap: () {
-              showFullScreenImage(
+              _showFullScreenImage(
                 context,
                 [comment.imgWatermark],
                 0,
@@ -439,12 +439,12 @@ class CommentItem extends StatelessWidget {
             ),
           ),
         // 点赞数显示
-        commentPraise(comment, question, context),
+        _commentPraise(comment, question, context),
       ],
     );
   }
 
-  void showOptions(BuildContext context, Comment comment) {
+  void _showOptions(BuildContext context, Comment comment) {
     showModalBottomSheet(
       context: context,
       builder: (BuildContext ctx) {
@@ -480,11 +480,11 @@ class CommentItem extends StatelessWidget {
       ),
       margin: EdgeInsets.all(8.0),
       child: InkWell(
-        onTap: () => showOptions(context, comment),
+        onTap: () => _showOptions(context, comment),
         borderRadius: BorderRadius.circular(16),
         child: Padding(
           padding: EdgeInsets.all(8.0),
-          child: commentContent(comment, context),
+          child: _commentContent(comment, context),
         ),
       ),
     );

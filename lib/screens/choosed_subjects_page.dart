@@ -7,6 +7,27 @@ import '../models/chapter.dart';
 import '../widgets/theme_controller.dart';
 import 'package:get/get.dart';
 
+class SubjectWithChapters {
+  final Subject subject;
+  final List<Chapter> chapters;
+
+  SubjectWithChapters({required this.subject, required this.chapters});
+}
+
+Future<List<SubjectWithChapters>> fetchSubjectsWithChapters() async {
+  List<Subject> subjects = await fetchSelectedSubjects();
+  List<SubjectWithChapters> subjectWithChapters = [];
+
+  for (final subject in subjects) {
+    List<Chapter> chapters = await fetchChaptersBySubjectId(subject.id);
+    subjectWithChapters.add(
+      SubjectWithChapters(subject: subject, chapters: chapters),
+    );
+  }
+
+  return subjectWithChapters;
+}
+
 class ChoosedSubjectsPage extends StatefulWidget {
   const ChoosedSubjectsPage({super.key});
 
@@ -14,53 +35,30 @@ class ChoosedSubjectsPage extends StatefulWidget {
   _ChoosedSubjectsPageState createState() => _ChoosedSubjectsPageState();
 }
 
-// 题库页面，展示用户现在正在刷的题库
+/// 题库页面，展示用户现在正在刷的题库
 class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
-  Future<List<Subject>> selectedSubjects = fetchSelectedSubjects();
+  late Future<List<SubjectWithChapters>> subjectsWithChapters;
 
-  Widget chapterList(Subject subject) {
-    Future<List<Chapter>> chaptersInSubject =
-        fetchChaptersBySubjectId(subject.id);
-
-    return FutureBuilder<List<Chapter>>(
-      future: chaptersInSubject,
-      builder: (context, snapshot) {
-        return _buildChapterListContent(context, snapshot, subject);
-      },
-    );
+  @override
+  void initState() {
+    super.initState();
+    subjectsWithChapters = fetchSubjectsWithChapters();
   }
 
-  // 构建章节列表内容的函数
-  Widget _buildChapterListContent(BuildContext context,
-      AsyncSnapshot<List<Chapter>> snapshot, Subject subject) {
-    if (snapshot.connectionState == ConnectionState.waiting) {
-      return _buildLoadingIndicator(); // 显示加载进度条
-    } else if (snapshot.hasError) {
-      return _buildErrorMessage(snapshot.error); // 显示错误信息
-    } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
-      return _buildEmptyMessage('无数据'); // 显示无数据提示
-    } else {
-      return _buildChapterList(context, snapshot.data!, subject); // 构建章节列表
-    }
+  void _refreshData() {
+    setState(() {
+      subjectsWithChapters = fetchSubjectsWithChapters();
+    });
   }
 
-  // 显示加载进度条
-  Widget _buildLoadingIndicator() {
-    //return const Center(child: LinearProgressIndicator());
-    return Container(); // 不显示加载进度条
-  }
+  /// 显示错误信息
+  Widget _buildErrorMessage(Object? error) =>
+      Center(child: Text('加载失败: $error'));
 
-  // 显示错误信息
-  Widget _buildErrorMessage(Object? error) {
-    return Center(child: Text('加载失败: $error'));
-  }
+  /// 显示无数据提示
+  Widget _buildEmptyMessage(String msg) => Center(child: Text(msg));
 
-  // 显示无数据提示
-  Widget _buildEmptyMessage(String msg) {
-    return Center(child: Text(msg));
-  }
-
-  // 构建章节列表
+  /// 构建章节列表
   Widget _buildChapterList(
     BuildContext context,
     List<Chapter> chapters,
@@ -70,17 +68,18 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
     double incorrectProgress = subject.incorrect / (subject.total + 0.001);
 
     return ExpansionTile(
+      key: PageStorageKey(subject.id), // ← 关键：稳定的 key
       title: Row(
         children: [
           Expanded(
-            flex: 80, // 80%
+            flex: 80,
             child: Text(
               subject.name,
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
           ),
           Expanded(
-            flex: 20, // 20%
+            flex: 20,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
@@ -95,25 +94,16 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
                     children: [
                       Expanded(
                         flex: (correctProgress * 100).toInt(),
-                        child: Container(
-                          height: 4,
-                          color: Colors.green,
-                        ),
+                        child: Container(height: 4, color: Colors.green),
                       ),
                       Expanded(
                         flex: (incorrectProgress * 100).toInt(),
-                        child: Container(
-                          height: 4,
-                          color: Colors.red,
-                        ),
+                        child: Container(height: 4, color: Colors.red),
                       ),
                       Expanded(
                         flex: ((1 - correctProgress - incorrectProgress) * 100)
                             .toInt(),
-                        child: Container(
-                          height: 4,
-                          color: Colors.grey[200],
-                        ),
+                        child: Container(height: 4, color: Colors.grey[200]),
                       ),
                     ],
                   ),
@@ -129,7 +119,7 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
     );
   }
 
-  // 构建单个章节项
+  /// 构建单个章节项
   Widget _buildChapterItem(BuildContext context, Chapter chapter) {
     double correctProgress = chapter.correct / (chapter.total + 0.001);
     double incorrectProgress = chapter.incorrect / (chapter.total + 0.001);
@@ -137,15 +127,16 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
     return ListTile(
       title: Row(
         children: [
+          SizedBox(width: 10),
           Expanded(
-            flex: 85, // 75%
+            flex: 85,
             child: Text(
               chapter.name,
               style: const TextStyle(fontSize: 14),
             ),
           ),
           Expanded(
-            flex: 15, // 25%
+            flex: 15,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
@@ -160,17 +151,11 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
                     children: [
                       Expanded(
                         flex: (correctProgress * 100).toInt(),
-                        child: Container(
-                          height: 4,
-                          color: Colors.green,
-                        ),
+                        child: Container(height: 4, color: Colors.green),
                       ),
                       Expanded(
                         flex: (incorrectProgress * 100).toInt(),
-                        child: Container(
-                          height: 4,
-                          color: Colors.red,
-                        ),
+                        child: Container(height: 4, color: Colors.red),
                       ),
                       Expanded(
                         flex: ((1 - correctProgress - incorrectProgress) * 100)
@@ -197,18 +182,7 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
             ),
           ),
         );
-        setState(() {
-          selectedSubjects = fetchSelectedSubjects();
-        });
-      },
-    );
-  }
-
-  Widget subjectList(List<Subject> subjects) {
-    return ListView.builder(
-      itemCount: subjects.length,
-      itemBuilder: (context, index) {
-        return chapterList(subjects[index]);
+        _refreshData();
       },
     );
   }
@@ -226,34 +200,45 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
             return IconButton(
               icon: AnimatedSwitcher(
                 duration: const Duration(milliseconds: 300),
-                transitionBuilder: (Widget child, Animation<double> animation) {
-                  return ScaleTransition(scale: animation, child: child);
-                },
+                transitionBuilder: (child, anim) => ScaleTransition(
+                  scale: anim,
+                  child: child,
+                ),
                 child: Icon(
                   themeController.getIcon(),
-                  key: ValueKey(
-                    themeController.themeMode.value,
-                  ), // 使用Key确保图标切换有动画效果
+                  key: ValueKey(themeController.themeMode.value),
                 ),
               ),
-              onPressed: () {
-                themeController.toggleTheme(); // 切换主题模式
-              },
+              // 切换主题模式
+              onPressed: themeController.toggleTheme,
             );
           })
         ],
       ),
-      body: FutureBuilder<List<Subject>>(
-        future: selectedSubjects,
+      body: FutureBuilder<List<SubjectWithChapters>>(
+        future: subjectsWithChapters,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return _buildLoadingIndicator();
+            return Container();
           } else if (snapshot.hasError) {
             return _buildErrorMessage(snapshot.error);
           } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
             return _buildEmptyMessage('您还没有正在学习的课程~');
           } else {
-            return subjectList(snapshot.data!);
+            final data = snapshot.data!;
+            return ListView.builder(
+              itemCount: data.length,
+              itemBuilder: (context, index) {
+                final subject = data[index].subject;
+                final chapters = data[index].chapters;
+                return Theme(
+                  data: Theme.of(context).copyWith(
+                    dividerColor: Colors.grey.withValues(alpha: 0.2),
+                  ),
+                  child: _buildChapterList(context, chapters, subject),
+                );
+              },
+            );
           }
         },
       ),
@@ -265,9 +250,7 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
               builder: (context) => SubjectsListPage(),
             ),
           );
-          setState(() {
-            selectedSubjects = fetchSelectedSubjects();
-          });
+          _refreshData();
         },
         tooltip: '添加课程',
         child: const Icon(Icons.add),

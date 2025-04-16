@@ -5,7 +5,7 @@
   <div align="center">
     <a href="https://github.com/nanguaguag/yibubang"><img src="https://img.shields.io/badge/platform-flutter-blue.svg" alt="github"></a>
     <a href="https://github.com/nanguaguag/yibubang/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="license"></a>
-    <a href="https://github.com/nanguaguag/yibubang/actions"><img src="https://github.com/nanguaguag/yibubang/actions/workflows/build-macOS.yml/badge.svg" alt="build"></a>
+    <a href="https://github.com/nanguaguag/yibubang/actions"><img src="https://github.com/nanguaguag/yibubang/actions/workflows/build-macos.yml/badge.svg" alt="build"></a>
     <a href="https://github.com/nanguaguag/yibubang/actions"><img src="https://github.com/nanguaguag/yibubang/actions/workflows/build-windows.yml/badge.svg" alt="build"></a>
     <a href="https://github.com/nanguaguag/yibubang/actions"><img src="https://github.com/nanguaguag/yibubang/actions/workflows/build-android.yml/badge.svg" alt="build"></a>
     <a href="https://github.com/nanguaguag/yibubang/actions"><img src="https://github.com/nanguaguag/yibubang/actions/workflows/build-Linux.yml/badge.svg" alt="build"></a>

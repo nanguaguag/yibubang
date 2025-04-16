@@ -36,14 +36,14 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
 
   @override
   void initState() {
-    loadSettings();
+    _loadSettings();
     super.initState();
     _currentPage = widget.questionIndex;
     _pageController = PageController(initialPage: _currentPage);
   }
 
   // 请求接口数据
-  Future<QuestionStat> fetchQuestionStat(Question question) async {
+  Future<QuestionStat> _fetchQuestionStat(Question question) async {
     final response = await basicReq('/allquestion/main/stat', method: 'GET', {
       'module_type': '1',
       'question_id': question.id,
@@ -60,7 +60,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     );
   }
 
-  String getLastAnswer(String userAnswer) {
+  String _getLastAnswer(String userAnswer) {
     /// userAnswer 格式：
     /// - 最后一次答案是DC：AB;ABC;DC
     /// - 还没做：AB;ABC;
@@ -68,26 +68,26 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     return answers.last;
   }
 
-  String changeLastAnswer(String userAnswer, String lastAnswer) {
+  String _changeLastAnswer(String userAnswer, String lastAnswer) {
     List<String> answers = userAnswer.split(';');
     answers.last = lastAnswer;
     return answers.join(';');
   }
 
   // 获取数据
-  Future<void> loadSettings() async {
+  Future<void> _loadSettings() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     setState(() {
       mode = prefs.getInt('mode') ?? 0;
     });
   }
 
-  Future<void> saveSettings() async {
+  Future<void> _saveSettings() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.setInt('mode', mode);
   }
 
-  Widget submitButton(Question question, UserQuestion userQuestion, int index) {
+  Widget _submitButton(Question question, UserQuestion userQuestion, int index) {
     // 如果是快刷/测试模式且为单选题，不显示提交按钮
     if ((mode == 1 || mode == 2) && question.type == '1') {
       return const SizedBox.shrink();
@@ -110,12 +110,12 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     );
   }
 
-  Widget checkableOptionsList(
+  Widget _checkableOptionsList(
     Question question,
     UserQuestion userQuestion,
     int index,
   ) {
-    final List<dynamic> optionJson = getOptionJson(question);
+    final List<dynamic> optionJson = _getOptionJson(question);
     return Expanded(
       child: ListView.builder(
         itemCount: optionJson.length,
@@ -126,10 +126,10 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
               return RadioListTile<String>(
                 title: Text("${option['key']}. ${option['title']}"),
                 value: option['key'],
-                groupValue: getLastAnswer(userQuestion.userAnswer),
+                groupValue: _getLastAnswer(userQuestion.userAnswer),
                 onChanged: (String? value) {
                   setState(() {
-                    userQuestion.userAnswer = changeLastAnswer(
+                    userQuestion.userAnswer = _changeLastAnswer(
                       userQuestion.userAnswer,
                       value ?? '',
                     );
@@ -143,28 +143,27 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
             case '2': // 多选题
               return CheckboxListTile(
                 title: Text("${option['key']}. ${option['title']}"),
-                value: getLastAnswer(userQuestion.userAnswer)
+                value: _getLastAnswer(userQuestion.userAnswer)
                     .contains(option['key']),
                 controlAffinity: ListTileControlAffinity.leading,
                 onChanged: (bool? value) {
                   setState(() {
-                    bool checked = getLastAnswer(userQuestion.userAnswer)
+                    bool checked = _getLastAnswer(userQuestion.userAnswer)
                         .contains(option['key']);
                     if (value == true && !checked) {
-                      userQuestion.userAnswer = changeLastAnswer(
+                      userQuestion.userAnswer = _changeLastAnswer(
                         userQuestion.userAnswer,
-                        getLastAnswer(userQuestion.userAnswer) + option['key'],
+                        _getLastAnswer(userQuestion.userAnswer) + option['key'],
                       );
                     } else if (value == false && checked) {
-                      userQuestion.userAnswer = changeLastAnswer(
+                      userQuestion.userAnswer = _changeLastAnswer(
                         userQuestion.userAnswer,
-                        getLastAnswer(userQuestion.userAnswer).replaceAll(
+                        _getLastAnswer(userQuestion.userAnswer).replaceAll(
                           option['key'],
                           '',
                         ),
                       );
                     }
-                    print(userQuestion.userAnswer);
                   });
                 },
               );
@@ -176,7 +175,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     );
   }
 
-  Widget questionHeaders(Question question, int index) {
+  Widget _questionHeaders(Question question, int index) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -217,7 +216,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     );
   }
 
-  Widget unansweredQuestion(
+  Widget _unansweredQuestion(
     Question question,
     UserQuestion userQuestion,
     int index,
@@ -227,21 +226,21 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          questionHeaders(question, index),
-          checkableOptionsList(question, userQuestion, index),
-          submitButton(question, userQuestion, index),
+          _questionHeaders(question, index),
+          _checkableOptionsList(question, userQuestion, index),
+          _submitButton(question, userQuestion, index),
         ],
       ),
     );
   }
 
-  Widget buildOptions(Question question, UserQuestion userQuestion) {
-    final List<dynamic> optionJson = getOptionJson(question);
+  Widget _buildOptions(Question question, UserQuestion userQuestion) {
+    final List<dynamic> optionJson = _getOptionJson(question);
     for (Map<String, dynamic> option in optionJson) {
       final String key = option['key'];
       final bool answerContains = question.answer!.contains(key);
       final bool userAnswerContains =
-          getLastAnswer(userQuestion.userAnswer).contains(key);
+          _getLastAnswer(userQuestion.userAnswer).contains(key);
       if ((mode == 3 && userQuestion.status == 0) || userQuestion.status == 4) {
         if (answerContains) {
           option['color'] = null;
@@ -310,7 +309,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     );
   }
 
-  TextSpan buildTextWithBold(String text) {
+  TextSpan _buildTextWithBold(String text) {
     final RegExp regex = RegExp(r'（[A-Z](对|错)(，为本题正确答案)?）');
     final List<String> parts = text.split(regex);
     List<String> matches =
@@ -343,7 +342,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     );
   }
 
-  Widget buildTextWithImage(String text, String imgUrl) {
+  Widget _buildTextWithImage(String text, String imgUrl) {
     // split text with regex: (?:[\u4e00-\u9fa5]+)?P\d+(?:-P\d+)?
     // 1. (?:[\u4e00-\u9fa5]+)? : optional chinese characters
     // 2. P\d+ : P + digits
@@ -365,7 +364,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
       TextSpan(
         children: List.generate(parts.length, (index) {
           if (index.isEven) {
-            return buildTextWithBold(parts[index]);
+            return _buildTextWithBold(parts[index]);
           } else {
             return WidgetSpan(
               child: ElevatedButton(
@@ -413,7 +412,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     );
   }
 
-  Widget buildAnalysisText(
+  Widget _buildAnalysisText(
     String title,
     IconData icon,
     String analysisText,
@@ -440,7 +439,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
           ],
         ),
         SizedBox(height: 10), // 标题与内容间距
-        buildTextWithImage(
+        _buildTextWithImage(
           analysisText,
           'https://ykb-app-files.yikaobang.com.cn/question/restore/${q.nativeAppId}/${q.number}',
         ),
@@ -450,7 +449,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     );
   }
 
-  Widget createStat(
+  Widget _createStat(
     QuestionStat stat,
     Question question,
     UserQuestion userQuestion,
@@ -538,7 +537,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     ]);
   }
 
-  Widget createEmptyStat(
+  Widget _createEmptyStat(
     Question question,
     UserQuestion userQuestion,
   ) {
@@ -622,12 +621,12 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     ]);
   }
 
-  Widget answeredQuestion(
+  Widget _answeredQuestion(
     Question question,
     UserQuestion userQuestion,
     int index,
   ) {
-    final String userAnswer = getLastAnswer(userQuestion.userAnswer);
+    final String userAnswer = _getLastAnswer(userQuestion.userAnswer);
     final String answer = question.answer ?? '';
     return Stack(
       children: [
@@ -637,8 +636,8 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
             shrinkWrap: true, // 让外层 ListView 适应内容
             physics: ClampingScrollPhysics(), // 正常滚动
             children: [
-              questionHeaders(question, index),
-              buildOptions(question, userQuestion),
+              _questionHeaders(question, index),
+              _buildOptions(question, userQuestion),
               const SizedBox(height: 10),
               Row(
                 children: [
@@ -657,14 +656,14 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
                 ],
               ),
               FutureBuilder<QuestionStat>(
-                future: fetchQuestionStat(question),
+                future: _fetchQuestionStat(question),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
-                    return createEmptyStat(question, userQuestion);
+                    return _createEmptyStat(question, userQuestion);
                   } else if (snapshot.hasError) {
-                    return createEmptyStat(question, userQuestion);
+                    return _createEmptyStat(question, userQuestion);
                   } else if (snapshot.hasData) {
-                    return createStat(snapshot.data!, question, userQuestion);
+                    return _createStat(snapshot.data!, question, userQuestion);
                   } else {
                     return Container();
                   }
@@ -678,14 +677,14 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
               SizedBox(height: 10),
               Divider(color: Color(0x22888888)),
               if (question.restore != '')
-                buildAnalysisText(
+                _buildAnalysisText(
                   '考点还原',
                   Icons.location_on_outlined,
                   question.restore ?? '',
                   question,
                 ),
               if (question.explain != '')
-                buildAnalysisText(
+                _buildAnalysisText(
                   '答案解析',
                   Icons.lightbulb_outlined,
                   question.explain ?? '',
@@ -758,19 +757,19 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
   ) {
     if (mode == 3) {
       // 背题模式, 直接显示正确答案
-      return answeredQuestion(question, userQuestion, index);
+      return _answeredQuestion(question, userQuestion, index);
     }
     switch (userQuestion.status) {
       case 0: // 未作答
-        return unansweredQuestion(question, userQuestion, index);
+        return _unansweredQuestion(question, userQuestion, index);
       case 1: // 正确作答
-        return answeredQuestion(question, userQuestion, index);
+        return _answeredQuestion(question, userQuestion, index);
       case 2: // 错误回答
-        return answeredQuestion(question, userQuestion, index);
+        return _answeredQuestion(question, userQuestion, index);
       case 3: // 已斩题
         return cuttedQuestion(question, userQuestion, index);
       case 4: // 测试模式 - 已作答
-        return unansweredQuestion(question, userQuestion, index);
+        return _unansweredQuestion(question, userQuestion, index);
       default:
         return const Text('未知的题目状态');
     }
@@ -786,7 +785,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     );
   }
 
-  Widget collectionBtn() {
+  Widget _collectionBtn() {
     UserQuestion userQuestion = widget.userQuestions[_currentPage];
     return IconButton(
       icon: userQuestion.collection == 0
@@ -836,14 +835,14 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
               ),
             ),
           ),
-          collectionBtn(),
+          _collectionBtn(),
           PopupMenuButton<int>(
             icon: Icon(Icons.more_vert),
             onSelected: (value) {
               setState(() {
                 mode = value;
               });
-              saveSettings();
+              _saveSettings();
             },
             itemBuilder: (context) {
               return List.generate(AppStrings.modesList.length, (index) {
@@ -882,7 +881,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     );
   }
 
-  List<dynamic> getOptionJson(Question question) {
+  List<dynamic> _getOptionJson(Question question) {
     const defaultOptionString = '''[{
         "title": "A选项加载失败",
         "img": "",
@@ -920,7 +919,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
   }
 
   void submitAnswer(Question question, UserQuestion userQuestion, int index) {
-    final String userAnswer = getLastAnswer(userQuestion.userAnswer);
+    final String userAnswer = _getLastAnswer(userQuestion.userAnswer);
     if (question.type == '1' && userAnswer.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(

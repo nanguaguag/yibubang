@@ -213,8 +213,9 @@ class _SubjectsListPageState extends State<SubjectsListPage>
                     subject,
                     _searchController.text,
                   ),
-                  tileColor:
-                      subject.selected == 1 ? Colors.blue.shade100 : null,
+                  tileColor: subject.selected == 1
+                      ? Colors.blue.shade100.withValues(alpha: 0.2)
+                      : null,
                   onTap: () {
                     setState(() {
                       toggleSubjectSelected(subject.id); // 更新数据库状态

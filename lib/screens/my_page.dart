@@ -30,7 +30,7 @@ class AuthCheckPage extends StatefulWidget {
 }
 
 class _AuthCheckPageState extends State<AuthCheckPage> {
-  Future<bool> checkLoginStatus() async {
+  Future<bool> _checkLoginStatus() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     return prefs.getBool('loggedin') ?? false;
   }
@@ -43,7 +43,7 @@ class _AuthCheckPageState extends State<AuthCheckPage> {
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<bool>(
-      future: checkLoginStatus(),
+      future: _checkLoginStatus(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return Center(child: CircularProgressIndicator());
@@ -274,10 +274,10 @@ class _ProfilePageState extends State<ProfilePage> {
   @override
   void initState() {
     super.initState();
-    loadUserData();
+    _loadUserData();
   }
 
-  Future<void> loadUserData() async {
+  Future<void> _loadUserData() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     setState(() {
       mobile = prefs.getString('mobile') ?? "";

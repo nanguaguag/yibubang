@@ -42,15 +42,15 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
-    _needToDownloadFuture = needToDownload();
+    _needToDownloadFuture = _needToDownload();
     // 如果需要下载，则自动触发下载任务
     _needToDownloadFuture.then((needDownload) {
       if (needDownload) {
-        downloadAndExtractZip();
+        _downloadAndExtractZip();
       }
       // 检查应用更新（注意此处依赖于 updateData 已经加载）
       if (updateData.isNotEmpty) {
-        checkForAppUpdate();
+        _checkForAppUpdate();
       }
     });
   }
@@ -68,13 +68,13 @@ class _HomePageState extends State<HomePage> {
   }
 
   /// 计算文件的 MD5 值
-  Future<String> calculateMd5(File file) async {
+  Future<String> _calculateMd5(File file) async {
     List<int> fileBytes = await file.readAsBytes();
     return md5.convert(fileBytes).toString();
   }
 
   /// 判断是否需要下载题库，同时加载更新信息
-  Future<bool> needToDownload() async {
+  Future<bool> _needToDownload() async {
     if (updateData.isEmpty) {
       final Uri updateUrl = Uri.parse(
         'https://files.melonhu.cn/yibubang/yibubang_update.json',
@@ -101,7 +101,7 @@ class _HomePageState extends State<HomePage> {
     File file = File(filePath);
 
     if (await file.exists()) {
-      String fileMd5 = await calculateMd5(file);
+      String fileMd5 = await _calculateMd5(file);
       if (fileMd5 == updateData['latest_data_md5']) {
         return false;
       }
@@ -111,9 +111,9 @@ class _HomePageState extends State<HomePage> {
   }
 
   /// 下载并解压 ZIP 文件
-  Future<void> downloadAndExtractZip() async {
+  Future<void> _downloadAndExtractZip() async {
     // 再次判断是否需要下载
-    if (!await needToDownload()) return;
+    if (!await _needToDownload()) return;
 
     setState(() {
       isDownloading = true;
@@ -183,7 +183,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   /// 构建进度指示控件或重新下载按钮
-  Widget buildProgress() {
+  Widget _buildProgress() {
     if (isDownloading) {
       return Column(
         children: [
@@ -196,14 +196,14 @@ class _HomePageState extends State<HomePage> {
       );
     } else {
       return ElevatedButton(
-        onPressed: downloadAndExtractZip,
+        onPressed: _downloadAndExtractZip,
         child: Text('重新下载'),
       );
     }
   }
 
   /// 比较版本号函数，返回 1 表示 v1 大于 v2，0 表示相等，-1 表示 v1 小于 v2
-  int compareVersions(String v1, String v2) {
+  int _compareVersions(String v1, String v2) {
     List<int> v1Parts = v1.split('.').map(int.parse).toList();
     List<int> v2Parts = v2.split('.').map(int.parse).toList();
     int length =
@@ -263,11 +263,11 @@ class _HomePageState extends State<HomePage> {
   }
 
   /// 检查应用更新，如果有新版本则弹窗提示
-  void checkForAppUpdate() async {
+  void _checkForAppUpdate() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     String latestVersion = updateData["latest_app"] ?? currentVersion;
     // 当前版本在1.0.3以上，意味着需要增加user_data数据库
-    if (compareVersions(currentVersion, '1.0.3') > 0) {
+    if (_compareVersions(currentVersion, '1.0.3') > 0) {
       bool transfered = prefs.getBool('transfered') ?? false;
       // 显示加载对话框，禁止用户操作
       if (AppStrings.needTransfer &&
@@ -281,7 +281,7 @@ class _HomePageState extends State<HomePage> {
         showRestartDialog(context);
       }
     }
-    if (compareVersions(latestVersion, currentVersion) > 0) {
+    if (_compareVersions(latestVersion, currentVersion) > 0) {
       // 弹窗提示更新
       showDialog(
         context: context,
@@ -340,7 +340,7 @@ class _HomePageState extends State<HomePage> {
                 children: [
                   Text(statusText),
                   SizedBox(height: 20),
-                  buildProgress(),
+                  _buildProgress(),
                 ],
               ),
             ),
