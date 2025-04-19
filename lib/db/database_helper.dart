@@ -29,11 +29,7 @@ class DatabaseHelper {
     await db.execute('''
       CREATE TABLE IF NOT EXISTS Subject (
           id TEXT PRIMARY KEY,
-          name TEXT NOT NULL,
-          selected INTEGER NOT NULL,
-          correct INTEGER NOT NULL,
-          incorrect INTEGER NOT NULL,
-          total INTEGER NOT NULL
+          name TEXT NOT NULL
       )
     ''');
 
@@ -42,9 +38,6 @@ class DatabaseHelper {
           id TEXT PRIMARY KEY,
           name TEXT NOT NULL,
           subject_id TEXT NOT NULL,
-          correct INTEGER NOT NULL,
-          incorrect INTEGER NOT NULL,
-          total INTEGER NOT NULL,
           FOREIGN KEY(subject_id) REFERENCES Subject(id)
       )
     ''');
@@ -106,12 +99,6 @@ class DatabaseHelper {
           filter_type TEXT,
           cut_question TEXT,
           user_answer TEXT,
-          comment_count TEXT,
-          right_count TEXT,
-          wrong_count TEXT,
-          collection_count TEXT,
-          status INTEGER,
-          collection INTEGER,
           FOREIGN KEY(chapter_id) REFERENCES Chapter(id),
           FOREIGN KEY(chapter_parent_id) REFERENCES Subject(id)
       )

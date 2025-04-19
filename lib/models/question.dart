@@ -1,3 +1,5 @@
+import 'package:sqflite/sqflite.dart';
+
 import '../db/database_helper.dart';
 import 'chapter.dart';
 
@@ -308,17 +310,46 @@ Future<List<Question>> getQuestionsFromChapter(Chapter chapter) async {
   return questions;
 }
 
-Future<List<UserQuestion>> getUserQuestionsFromChapter(Chapter chapter) async {
-  List<Map<String, dynamic>> questionsData =
-      await UserDBHelper().getByCondition(
-    'Question',
-    'chapter_parent_id = ? AND chapter_id = ?',
-    [chapter.subjectId, chapter.id],
-  );
-  List<UserQuestion> questions =
-      questionsData.map((e) => UserQuestion.fromMap(e)).toList();
+Future<List<UserQuestion>> getUserQuestions(
+    Future<List<Question>> questions) async {
+  List<UserQuestion> userQuestions = [];
+  for (Question question in await questions) {
+    List<Map<String, dynamic>> result = await DatabaseHelper().getByCondition(
+      'Question',
+      'id = ?',
+      [question.id],
+    );
+    if (result.isNotEmpty) {
+      userQuestions.add(UserQuestion.fromMap(result[0]));
+    } else {
+      userQuestions.add(UserQuestion(
+        id: question.id,
+        chapterId: question.chapterId,
+        chapterParentId: question.chapterParentId,
+        cutQuestion: '',
+        userAnswer: '',
+        status: 0,
+        collection: 0,
+      ));
+    }
+  }
 
-  sortUserQuestionsById(questions);
+  return userQuestions;
+}
+
+Future<List<Question>> getQuestionsFromIdentity(
+    String identityId, String subjectId, String chapterId) async {
+  Database db = await DatabaseHelper().database;
+
+  List<Map<String, dynamic>> result = await db.rawQuery('''
+    SELECT q.*
+    FROM IdentityQuestion iq
+    JOIN Question q ON iq.question_id = q.id
+    WHERE iq.identity_id = ? AND q.chapter_parent_id = ? AND q.chapter_id = ?
+  ''', [identityId, subjectId, chapterId]);
+
+  List<Question> questions = result.map((e) => Question.fromMap(e)).toList();
+  sortQuestionsById(questions);
 
   return questions;
 }

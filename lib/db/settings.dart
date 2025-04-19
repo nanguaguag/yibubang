@@ -3,20 +3,23 @@ import 'package:shared_preferences/shared_preferences.dart';
 // 存储数据
 Future<void> initSettings() async {
   SharedPreferences prefs = await SharedPreferences.getInstance();
-  if (prefs.getBool('isDarkMode') == null) {
+  if (!prefs.containsKey('isDarkMode')) {
     await prefs.setBool('isDarkMode', false); // 默认关闭暗黑模式
   }
-  if (prefs.getInt('cutType') == null) {
+  if (!prefs.containsKey('cutType')) {
     await prefs.setInt('cutType', 0); // 斩题: 全部
   }
-  if (prefs.getInt('questionType') == null) {
+  if (!prefs.containsKey('questionType')) {
     await prefs.setInt('questionType', 0); // 题型: 全部
   }
-  if (prefs.getInt('category') == null) {
+  if (!prefs.containsKey('category')) {
     await prefs.setInt('category', 0); // 分类: 全部
   }
-  if (prefs.getInt('mode') == null) {
+  if (!prefs.containsKey('mode')) {
     await prefs.setInt('mode', 0); // 模式: 练习模式
+  }
+  if (!prefs.containsKey('identityId')) {
+    await prefs.setString('identityId', '110701'); // 默认identity: 临床题库
   }
 }
 

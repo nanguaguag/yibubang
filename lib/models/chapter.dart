@@ -1,3 +1,6 @@
+import 'package:sqflite/sqflite.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
 import '../db/database_helper.dart';
 
 class Chapter {
@@ -60,4 +63,20 @@ Future<List<Chapter>> fetchChaptersBySubjectId(String subjectId) async {
   sortChaptersById(chapters);
 
   return chapters;
+}
+
+Future<List<Chapter>> getChaptersForIdentity(String subjectId) async {
+  SharedPreferences prefs = await SharedPreferences.getInstance();
+  Database db = await DatabaseHelper().database;
+
+  if (!prefs.containsKey('identityId')) {
+    await prefs.setString('identityId', '110701');
+  }
+  List<Map<String, dynamic>> result = await db.rawQuery('''
+    SELECT c.id, c.name
+    FROM IdentityChapter ic
+    JOIN Chapter c ON ic.chapter_id = c.id
+    WHERE ic.identity_id = ? AND c.subject_id = ?
+  ''', [prefs.getString('identityId'), subjectId]);
+  return result.map((e) => Chapter.fromMap(e)).toList();
 }

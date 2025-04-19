@@ -1,3 +1,6 @@
+import 'package:sqflite/sqflite.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
 import '../db/database_helper.dart';
 
 class Subject {
@@ -59,6 +62,24 @@ Future<List<Subject>> fetchAllSubjects() async {
   List<Subject> subjects = subjectsData.map((e) => Subject.fromMap(e)).toList();
 
   return subjects;
+}
+
+Future<List<Subject>> getSubjectsForIdentity() async {
+  SharedPreferences prefs = await SharedPreferences.getInstance();
+  Database db = await DatabaseHelper().database;
+
+  if (!prefs.containsKey('identityId')) {
+    await prefs.setString('identityId', '110701');
+  }
+
+  List<Map<String, dynamic>> result = await db.rawQuery('''
+    SELECT s.id, s.name
+    FROM IdentitySubject isub
+    JOIN Subject s ON isub.subject_id = s.id
+    WHERE isub.identity_id = ?
+  ''', [prefs.getString('identityId')]);
+  print(result.map((e) => Subject.fromMap(e)).toList());
+  return result.map((e) => Subject.fromMap(e)).toList();
 }
 
 void toggleSubjectSelected(String subjectId) async {

@@ -44,7 +44,7 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
     super.initState();
     // 初始化 Future 在 initState 中，这样可以访问 widget
     allQuestions = getQuestionsFromChapter(widget.chapter);
-    allUserQuestions = getUserQuestionsFromChapter(widget.chapter);
+    allUserQuestions = getUserQuestions(allQuestions);
     _loadSettings();
   }
 
@@ -56,7 +56,7 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
 
   void _refreshPage() async {
     final questions = getQuestionsFromChapter(widget.chapter);
-    final userQuestions = getUserQuestionsFromChapter(widget.chapter);
+    final userQuestions = getUserQuestions(questions);
 
     setState(() {
       allQuestions = questions;
@@ -127,9 +127,8 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
   }
 
   void clearUserAnswers() async {
-    List<UserQuestion> userQuestions = await getUserQuestionsFromChapter(
-      widget.chapter,
-    );
+    final questions = getQuestionsFromChapter(widget.chapter);
+    List<UserQuestion> userQuestions = await getUserQuestions(questions);
     showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -170,10 +169,9 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
   }
 
   void clearWrongAnswers() async {
-    List<UserQuestion> userQuestions = await getUserQuestionsFromChapter(
-      widget.chapter,
-    );
     bool doneAll = true;
+    final questions = getQuestionsFromChapter(widget.chapter);
+    List<UserQuestion> userQuestions = await getUserQuestions(questions);
     for (UserQuestion q in userQuestions) {
       if (q.userAnswer.isEmpty || q.status == 0) {
         doneAll = false;
