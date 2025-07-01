@@ -349,7 +349,7 @@ class CommentItem extends StatelessWidget {
           ),
           color: Colors.grey.withValues(alpha: 0.2),
         ),
-        child: _commentContent(comment.reply[replyLength - 1], context),
+        child: _commentContent(comment.reply[0], context),
       );
     } else if (depth < replyLength - 1) {
       return Container(
@@ -363,7 +363,7 @@ class CommentItem extends StatelessWidget {
               width: 4.0,
             ),
           ),
-          color: Color(0x88EEEEEE),
+          color: Colors.grey.withValues(alpha: 0.2),
         ),
         child: Column(
           children: [

@@ -87,7 +87,8 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     await prefs.setInt('mode', mode);
   }
 
-  Widget _submitButton(Question question, UserQuestion userQuestion, int index) {
+  Widget _submitButton(
+      Question question, UserQuestion userQuestion, int index) {
     // 如果是快刷/测试模式且为单选题，不显示提交按钮
     if ((mode == 1 || mode == 2) && question.type == '1') {
       return const SizedBox.shrink();
@@ -203,6 +204,15 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
             ),
           ],
         ),
+        const SizedBox(height: 10),
+        question.publicTitle != ''
+            ? Text(
+                question.publicTitle ?? '',
+                style: const TextStyle(
+                  fontSize: 18,
+                ),
+              )
+            : const SizedBox.shrink(),
         const SizedBox(height: 10),
         Text(
           question.title ?? '',
