@@ -266,21 +266,21 @@ class _HomePageState extends State<HomePage> {
   void _checkForAppUpdate() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     String latestVersion = updateData["latest_app"] ?? currentVersion;
-    // 当前版本在1.0.3以上，意味着需要增加user_data数据库
-    if (_compareVersions(currentVersion, '1.0.3') > 0) {
-      bool transfered = prefs.getBool('transfered') ?? false;
-      // 显示加载对话框，禁止用户操作
-      if (AppStrings.needTransfer &&
-          (!await checkTransferScuess() || !transfered)) {
-        showLoadingDialog(context);
-        if (await transferData()) {
-          // 迁移成功
-          prefs.setBool('transfered', true);
-        }
-        Navigator.of(context, rootNavigator: true).pop();
-        showRestartDialog(context);
-      }
-    }
+    //// 当前版本在1.0.3以上，意味着需要增加user_data数据库
+    //if (_compareVersions(currentVersion, '1.0.3') > 0) {
+    //  bool transfered = prefs.getBool('transfered') ?? false;
+    //  // 显示加载对话框，禁止用户操作
+    //  if (AppStrings.needTransfer &&
+    //      (!await checkTransferScuess() || !transfered)) {
+    //    showLoadingDialog(context);
+    //    if (await transferData()) {
+    //      // 迁移成功
+    //      prefs.setBool('transfered', true);
+    //    }
+    //    Navigator.of(context, rootNavigator: true).pop();
+    //    showRestartDialog(context);
+    //  }
+    //}
     if (_compareVersions(latestVersion, currentVersion) > 0) {
       // 弹窗提示更新
       showDialog(

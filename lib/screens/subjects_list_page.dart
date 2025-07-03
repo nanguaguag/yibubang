@@ -10,7 +10,7 @@ class SubjectsListPage extends StatefulWidget {
 
 class _SubjectsListPageState extends State<SubjectsListPage>
     with SingleTickerProviderStateMixin {
-  Future<List<Subject>> subjectsFuture = getSubjectsForIdentity();
+  Future<List<Subject>> subjectsFuture = getSubjectsByIdentity();
   List<Subject> _allSubjects = []; // 完整数据列表
   List<Subject> filteredSubjects = [];
   final TextEditingController _searchController = TextEditingController();
@@ -218,7 +218,7 @@ class _SubjectsListPageState extends State<SubjectsListPage>
                       : null,
                   onTap: () {
                     setState(() {
-                      toggleSubjectSelected(subject.id); // 更新数据库状态
+                      toggleSubjectSelected(subject); // 更新数据库状态
                       subject.selected = subject.selected == 1 ? 0 : 1;
                     });
                   },

@@ -14,12 +14,12 @@ class SubjectWithChapters {
   SubjectWithChapters({required this.subject, required this.chapters});
 }
 
-Future<List<SubjectWithChapters>> fetchSubjectsWithChapters() async {
-  List<Subject> subjects = await fetchSelectedSubjects();
+Future<List<SubjectWithChapters>> getSubjectsWithChapters() async {
+  List<Subject> subjects = await getSelectedSubjects();
   List<SubjectWithChapters> subjectWithChapters = [];
 
   for (final subject in subjects) {
-    List<Chapter> chapters = await fetchChaptersBySubjectId(subject.id);
+    List<Chapter> chapters = await getChaptersBySubject(subject);
     subjectWithChapters.add(
       SubjectWithChapters(subject: subject, chapters: chapters),
     );
@@ -42,12 +42,12 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
   @override
   void initState() {
     super.initState();
-    subjectsWithChapters = fetchSubjectsWithChapters();
+    subjectsWithChapters = getSubjectsWithChapters();
   }
 
   void _refreshData() {
     setState(() {
-      subjectsWithChapters = fetchSubjectsWithChapters();
+      subjectsWithChapters = getSubjectsWithChapters();
     });
   }
 

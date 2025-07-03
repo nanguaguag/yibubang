@@ -19,7 +19,7 @@ Future<void> initSettings() async {
     await prefs.setInt('mode', 0); // 模式: 练习模式
   }
   if (!prefs.containsKey('identityId')) {
-    await prefs.setString('identityId', '110701'); // 默认identity: 临床题库
+    await prefs.setString('identityId', '30401'); // 默认identity: 口腔题库
   }
 }
 

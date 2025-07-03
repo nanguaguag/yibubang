@@ -1,4 +1,5 @@
 class AppStrings {
+  static const String identity_id = '30401';
   static const String appVersion = '1.0.5';
   static const String appTitle = '医不帮';
   static const String selectedSubjectsTitle = '我的课程';
