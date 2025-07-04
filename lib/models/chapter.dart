@@ -50,81 +50,88 @@ void sortChaptersById(List<Chapter> chapters) {
 }
 
 Future<List<Chapter>> getChaptersBySubject(Subject subject) async {
-  final dbh = DatabaseHelper();
-  final udbh = UserDBHelper();
+  final db = await DatabaseHelper().database;
+  final userDb = await UserDBHelper().database;
   final prefs = await SharedPreferences.getInstance();
   final identityId = prefs.getString('identityId') ?? '30401';
 
-  // Step 1: 获取 IdentityChapter 表中的 total 信息（主数据库）
-  final chapterRecords = await dbh.getByCondition(
-    'IdentityChapter',
-    'identity_id = ? AND subject_id = ?',
-    [identityId, subject.id],
-  );
+  // 1. 用 JOIN 一次性拿到：chapter_id, chapter_name, total
+  final mainRows = await db.rawQuery('''
+    SELECT C.id       AS chapter_id,
+           C.name     AS chapter_name,
+           IC.total   AS total
+    FROM IdentityChapter AS IC
+    JOIN Chapter AS C
+      ON C.id = IC.chapter_id
+    WHERE IC.identity_id = ?
+      AND IC.subject_id  = ?
+  ''', [identityId, subject.id]);
 
-  if (chapterRecords.isEmpty) return [];
+  if (mainRows.isEmpty) return [];
+
   // 提取所有 chapter_id
-  final chapterIds =
-      chapterRecords.map((e) => e['chapter_id'].toString()).toList();
+  final chapterIds = mainRows.map((r) => r['chapter_id'] as String).toList();
 
-  // Step 2: 获取 Chapter 表信息（主数据库）
+  // 占位符串 "?, ?, …"
   final placeholders = List.filled(chapterIds.length, '?').join(', ');
-  final chapterInfos = await dbh.getByRawQuery(
-    'SELECT * FROM Chapter WHERE id IN ($placeholders)',
-    chapterIds,
-  );
-  // Step 3: 获取 UserDBHelper 中的 correct、incorrect 信息（用户数据库）
-  List<Map<String, dynamic>> chapterUserRecords = await udbh.getByRawQuery(
-    'SELECT * FROM IdentityChapter WHERE identity_id = ? AND chapter_id IN ($placeholders)',
-    [identityId, ...chapterIds],
-  );
-  if (chapterUserRecords.length < chapterRecords.length) {
-    final existingIds =
-        chapterUserRecords.map((e) => e['chapter_id'].toString()).toSet();
-    final missingIds = chapterIds.where((id) => !existingIds.contains(id));
 
-    for (final id in missingIds) {
-      await udbh.insert(
-        'IdentityChapter',
-        {
-          'identity_id': identityId,
-          'subject_id': subject.id,
+  // 2. 一次性拿 user_data 的 correct/incorrect
+  List<Map<String, dynamic>> userRows = await userDb.rawQuery('''
+    SELECT chapter_id, correct, incorrect
+    FROM IdentityChapter
+    WHERE identity_id = ?
+      AND chapter_id IN ($placeholders)
+  ''', [identityId, ...chapterIds]);
+
+  // 3. 如果有缺失的，就在一个事务里批量插入
+  final existingIds = userRows.map((r) => r['chapter_id'] as String).toSet();
+  final missingIds =
+      chapterIds.where((id) => !existingIds.contains(id)).toList();
+
+  if (missingIds.isNotEmpty) {
+    await Future.microtask(() async {
+      await userDb.transaction((txn) async {
+        final batch = txn.batch();
+        for (final id in missingIds) {
+          batch.insert('IdentityChapter', {
+            'identity_id': identityId,
+            'chapter_id': id,
+            'correct': 0,
+            'incorrect': 0,
+          });
+        }
+        await batch.commit(noResult: true);
+      });
+    });
+
+    // 本地也补上 0/0 的记录，方便后面合并
+    userRows = List<Map<String, dynamic>>.from(userRows);
+    userRows.addAll(
+      missingIds.map(
+        (id) => {
           'chapter_id': id,
           'correct': 0,
           'incorrect': 0,
         },
-      );
-    }
-    // 重新获取
-    chapterUserRecords = await udbh.getByRawQuery(
-      'SELECT * FROM IdentityChapter WHERE identity_id = ? AND chapter_id IN ($placeholders)',
-      [identityId, ...chapterIds],
+      ),
     );
   }
 
-  // Step 4: 转换为 Map，方便合并
-  final chapterRecordMap = {
-    for (var s in chapterRecords) s['chapter_id'].toString(): s,
-  };
-  final chapterUserRecordMap = {
-    for (var s in chapterUserRecords) s['chapter_id'].toString(): s,
-  };
-
-  // Step 5: 合并所有数据
-  final List<Chapter> chapters = chapterInfos.map((e) {
-    final record = chapterRecordMap[e['id'].toString()] ?? {};
-    final record2 = chapterUserRecordMap[e['id'].toString()] ?? {};
+  // 4. 在内存中把主数据和用户数据合并，构造 Chapter 对象列表
+  final List<Chapter> chapters = mainRows.map((r) {
+    final cid = r['chapter_id'] as String;
+    final userRec = userRows.firstWhere((u) => u['chapter_id'] == cid);
     return Chapter(
-      id: e['id'],
-      name: e['name'] ?? '',
+      id: cid,
+      name: r['chapter_name'] as String,
       subjectId: subject.id,
-      correct: record2['correct'],
-      incorrect: record2['incorrect'],
-      total: record['total'],
+      total: r['total'] as int,
+      correct: userRec['correct'] as int,
+      incorrect: userRec['incorrect'] as int,
     );
   }).toList();
 
-  // Step 6: 排序（如果你已有排序逻辑）
+  // 5. 排序（如果需要）
   sortChaptersById(chapters);
 
   return chapters;

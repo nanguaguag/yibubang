@@ -284,100 +284,157 @@ class Question {
   }
 }
 
-void sortQuestionsById(List<Question> questions) {
-  // 将一个 List<Chapter> 按照 id 转成数字后的大小排序
-  questions.sort((a, b) => int.parse(a.id).compareTo(int.parse(b.id)));
-}
-
-void sortUserQuestionsById(List<UserQuestion> questions) {
-  // 将一个 List<Chapter> 按照 id 转成数字后的大小排序
-  questions.sort((a, b) => int.parse(a.id).compareTo(int.parse(b.id)));
-}
-
 Future<List<Question>> getQuestionsFromChapter(Chapter chapter) async {
   final dbh = DatabaseHelper();
   final prefs = await SharedPreferences.getInstance();
   final identityId = prefs.getString('identityId') ?? '30401';
-  // 从 IdentityQuestion 中获取指定 identity_id, subject_id 和 chapter_id 的问题
-  final questionRecords = await dbh.getByCondition(
-    'IdentityQuestion',
-    'identity_id = ? AND subject_id = ? AND chapter_id = ?',
+
+  // 用一次 JOIN+ORDER BY 直接拿到所有需要的 Question
+  final rows = await dbh.getByRawQuery(
+    '''
+    SELECT q.*
+      FROM Question AS q
+      JOIN IdentityQuestion AS iq
+        ON q.id = iq.question_id
+     WHERE iq.identity_id = ?
+       AND iq.subject_id = ?
+       AND iq.chapter_id = ?
+     ORDER BY q.id
+    ''',
     [identityId, chapter.subjectId, chapter.id],
   );
-  if (questionRecords.isEmpty) return [];
-  // 提取所有 question_id
-  final questionIds =
-      questionRecords.map((e) => e['question_id'].toString()).toList();
-  // 查询 Question 表中对应的记录
-  final placeholders = List.filled(questionIds.length, '?').join(', ');
-  final questionInfos = await dbh.getByRawQuery(
-    'SELECT * FROM Question WHERE id IN ($placeholders)',
-    questionIds,
-  );
-  if (questionInfos.isEmpty) return [];
-  // 将 questionInfos 转换成 List<Question>
-  List<Question> questions =
-      questionInfos.map((e) => Question.fromMap(e)).toList();
-  // 对问题列表按 id 排序
-  sortQuestionsById(questions);
 
-  return questions;
+  // 直接映射成对象列表返回
+  return rows.map((e) => Question.fromMap(e)).toList();
 }
 
 Future<List<UserQuestion>> getUserQuestions(
-  Future<List<Question>> questions,
+  Future<List<Question>> questionsFuture,
 ) async {
-  final udbh = UserDBHelper();
-  List<UserQuestion> userQuestions = [];
-  for (Question question in await questions) {
-    List<Map<String, dynamic>> result = await udbh.getByCondition(
-      'Question',
-      'id = ?',
-      [question.id],
-    );
-    if (result.isNotEmpty) {
-      userQuestions.add(UserQuestion.fromMap(result[0]));
+  final udb = await UserDBHelper().database;
+
+  // 1. 取出所有题目 ID
+  final questions = await questionsFuture;
+  final ids = questions.map((q) => q.id).toList();
+
+  // 2. 一次性查询已存在的 UserQuestion
+  final existingRows = await udb.query(
+    'Question',
+    where: 'id IN (${List.filled(ids.length, '?').join(',')})',
+    whereArgs: ids,
+  );
+  // 把已存在的 id 收集到一个 Set 里
+  final existingIds = existingRows.map((r) => r['id'] as String).toSet();
+
+  // 3. 准备缺失的记录和最终返回列表
+  List<UserQuestion> resultList = [];
+  List<UserQuestion> toInsert = [];
+
+  for (final q in questions) {
+    if (existingIds.contains(q.id)) {
+      // 已有，直接构造
+      final row = existingRows.firstWhere((r) => r['id'] == q.id);
+      resultList.add(UserQuestion.fromMap(row));
     } else {
-      UserQuestion defaultQuestion = UserQuestion(
-        id: question.id,
-        chapterId: question.chapterId ?? "default_chapter_id",
-        chapterParentId: question.chapterParentId ?? "default_subject_id",
+      // 缺失，先放到待插入列表
+      final uq = UserQuestion(
+        id: q.id,
+        chapterId: q.chapterId ?? 'default_chapter_id',
+        chapterParentId: q.chapterParentId ?? 'default_subject_id',
         cutQuestion: '',
         userAnswer: '',
         status: 0,
         collection: 0,
       );
-      await udbh.insert('Question', defaultQuestion.toMap());
-      userQuestions.add(defaultQuestion);
+      toInsert.add(uq);
+      resultList.add(uq);
     }
   }
 
-  return userQuestions;
+  // 4. 如果有缺失，就在一个事务里批量插入
+  if (toInsert.isNotEmpty) {
+    await Future.microtask(() async {
+      await udb.transaction((txn) async {
+        final batch = txn.batch();
+        for (final uq in toInsert) {
+          batch.insert('Question', uq.toMap());
+        }
+        await batch.commit(noResult: true);
+      });
+    });
+  }
+
+  return resultList;
 }
 
 Future<void> updateQuestion(UserQuestion question) async {
-  // 首先在UserDB的Question表中寻找是否存在
-  final udbh = UserDBHelper();
-  List<Map<String, dynamic>> result = await udbh.getByCondition(
-    'Question',
-    'id = ?',
-    [question.id],
+  final db = await DatabaseHelper().database;
+  final userDb = await UserDBHelper().database;
+
+  // 1. 查出所有相关 identity/subject/chapter
+  final iqRows = await db.query(
+    'IdentityQuestion',
+    columns: ['identity_id', 'subject_id', 'chapter_id'],
+    where: 'question_id = ?',
+    whereArgs: [question.id],
   );
-  if (result.isEmpty) {
-    // 如果不存在，则插入新记录
-    await udbh.insert('Question', question.toMap());
-    print("Inserted new question: ${question.id}");
+
+  // 2. 对每一行做 UPSERT
+  final batch = userDb.batch();
+  for (final row in iqRows) {
+    final identityId = row['identity_id'] as String;
+    final subjectId = row['subject_id'] as String;
+    final chapterId = row['chapter_id'] as String;
+
+    // 2.1 IdentitySubject 的 UPSERT
+    batch.rawInsert('''
+      INSERT INTO IdentitySubject(identity_id, subject_id, correct, incorrect, selected)
+      VALUES(?, ?, ?, ?, COALESCE((SELECT selected FROM IdentitySubject WHERE identity_id=? AND subject_id=?), 0))
+      ON CONFLICT(identity_id, subject_id) DO UPDATE SET
+        correct   = correct + ?,
+        incorrect = incorrect + ?;
+    ''', [
+      identityId, subjectId,
+      // 本次增量：status==1 -> correct+1；status==2 -> incorrect+1；否则0
+      if (question.status == 1) 1 else 0,
+      if (question.status == 2) 1 else 0,
+      // 用于 COALESCE 取原来的 selected
+      identityId, subjectId,
+      // UPSERT 更新时的增量
+      if (question.status == 1) 1 else 0,
+      if (question.status == 2) 1 else 0,
+    ]);
+
+    // 2.2 IdentityChapter 的 UPSERT
+    batch.rawInsert('''
+      INSERT INTO IdentityChapter(identity_id, subject_id, chapter_id, correct, incorrect)
+      VALUES(?, ?, ?, ?, ?)
+      ON CONFLICT(identity_id, chapter_id) DO UPDATE SET
+        correct   = correct + ?,
+        incorrect = incorrect + ?;
+    ''', [
+      identityId,
+      subjectId,
+      chapterId,
+      if (question.status == 1) 1 else 0,
+      if (question.status == 2) 1 else 0,
+      if (question.status == 1) 1 else 0,
+      if (question.status == 2) 1 else 0,
+    ]);
   }
 
-  // 更新问题状态和用户答案
-  await UserDBHelper().update(
+  // 3. 更新 UserDB 中的 Question 表
+  batch.update(
     'Question',
     {
       'status': question.status,
       'collection': question.collection,
       'user_answer': question.userAnswer,
     },
-    'id = ?',
-    [question.id],
+    where: 'id = ?',
+    whereArgs: [question.id],
   );
+
+  // 一次性提交
+  await batch.commit(noResult: true);
 }

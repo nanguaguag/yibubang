@@ -286,11 +286,7 @@ class UserDBHelper {
 
   Future<Database> _initDatabase() async {
     String path = join(await getDatabasesPath(), 'user_data.sqlite');
-    return await openDatabase(
-      path,
-      version: 1,
-      onCreate: _onCreate,
-    );
+    return await openDatabase(path, version: 1, onCreate: _onCreate);
   }
 
   Future<void> _onCreate(Database db, int version) async {
@@ -358,57 +354,24 @@ class UserDBHelper {
       )
     ''');
 
+    // 给 Question 表按 chapter_id 建表
     await db.execute('''
-      CREATE TRIGGER IF NOT EXISTS update_chapter_after_update
-      AFTER UPDATE ON Question
-      FOR EACH ROW
-      BEGIN
-          -- 如果章节变化，更新章节的正确问题数量
-          -- 先减少原章节的correct
-          UPDATE IdentityChapter
-          SET correct = correct - (CASE WHEN OLD.status = 1 THEN 1 ELSE 0 END)
-          WHERE chapter_id = OLD.chapter_id AND identity_id = 30401;
-
-          UPDATE IdentityChapter
-          SET incorrect = incorrect - (CASE WHEN OLD.status = 2 THEN 1 ELSE 0 END)
-          WHERE chapter_id = OLD.chapter_id AND identity_id = 30401;
-
-          -- 之后增加新章节的correct
-          UPDATE IdentityChapter
-          SET correct = correct + (CASE WHEN NEW.status = 1 THEN 1 ELSE 0 END)
-          WHERE chapter_id = NEW.chapter_id AND identity_id = 30401;
-
-          UPDATE IdentityChapter
-          SET incorrect = incorrect + (CASE WHEN NEW.status = 2 THEN 1 ELSE 0 END)
-          WHERE chapter_id = NEW.chapter_id AND identity_id = 30401;
-      END;
+      CREATE INDEX IF NOT EXISTS idx_question_chapter
+        ON Question(chapter_id);
     ''');
 
+    // 给 Question 表按 chapter_parent_id（subject）建表
     await db.execute('''
-      CREATE TRIGGER IF NOT EXISTS update_subject_after_update
-      AFTER UPDATE ON Question
-      FOR EACH ROW
-      BEGIN
-          -- 如果章节变化，更新章节的正确问题数量
-          -- 先减少原章节的correct
-          UPDATE IdentitySubject
-          SET correct = correct - (CASE WHEN OLD.status = 1 THEN 1 ELSE 0 END)
-          WHERE subject_id = OLD.chapter_parent_id AND identity_id = 30401;
-
-          UPDATE IdentitySubject
-          SET incorrect = incorrect - (CASE WHEN OLD.status = 2 THEN 1 ELSE 0 END)
-          WHERE subject_id = OLD.chapter_parent_id AND identity_id = 30401;
-
-          -- 之后增加新章节的correct
-          UPDATE IdentitySubject
-          SET correct = correct + (CASE WHEN NEW.status = 1 THEN 1 ELSE 0 END)
-          WHERE subject_id = NEW.chapter_parent_id AND identity_id = 30401;
-
-          UPDATE IdentitySubject
-          SET incorrect = incorrect + (CASE WHEN NEW.status = 2 THEN 1 ELSE 0 END)
-          WHERE subject_id = NEW.chapter_parent_id AND identity_id = 30401;
-      END;
+      CREATE INDEX IF NOT EXISTS idx_question_subject
+        ON Question(chapter_parent_id);
     ''');
+
+    // （可选）给 Question.status 建表，视你的查询频率决定
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_question_status
+        ON Question(status);
+    ''');
+
     print("用户数据库初始化完成～");
   }
 
