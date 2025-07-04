@@ -1,5 +1,4 @@
-import 'package:sqflite/sqflite.dart';
-import '../common/app_strings.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../db/database_helper.dart';
 import 'chapter.dart';
 
@@ -297,7 +296,8 @@ void sortUserQuestionsById(List<UserQuestion> questions) {
 
 Future<List<Question>> getQuestionsFromChapter(Chapter chapter) async {
   final dbh = DatabaseHelper();
-  final identityId = AppStrings.identity_id;
+  final prefs = await SharedPreferences.getInstance();
+  final identityId = prefs.getString('identityId') ?? '30401';
   // 从 IdentityQuestion 中获取指定 identity_id, subject_id 和 chapter_id 的问题
   final questionRecords = await dbh.getByCondition(
     'IdentityQuestion',

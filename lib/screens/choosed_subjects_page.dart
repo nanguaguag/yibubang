@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:yibubang/screens/question_grid_page.dart';
 import '../common/app_strings.dart';
 import 'subjects_list_page.dart';
+import 'identity_list_page.dart';
 import '../models/subject.dart';
 import '../models/chapter.dart';
 import '../widgets/theme_controller.dart';
@@ -195,6 +196,18 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
       appBar: AppBar(
         title: const Text(AppStrings.selectedSubjectsTitle),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        leading: IconButton(
+          icon: Icon(Icons.apps), // 可以换成你需要的图标
+          onPressed: () async {
+            await Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => (IdentityListPage()),
+              ),
+            );
+            _refreshData();
+          },
+        ),
         actions: [
           Obx(() {
             return IconButton(

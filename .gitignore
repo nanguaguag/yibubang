@@ -53,3 +53,4 @@ app.*.map.json
 .firebase/
 pubspec.lock
 .metadata
+.cxx/

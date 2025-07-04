@@ -1,6 +1,5 @@
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:yibubang/models/subject.dart';
-
-import '../common/app_strings.dart';
 import '../db/database_helper.dart';
 
 class Chapter {
@@ -53,7 +52,8 @@ void sortChaptersById(List<Chapter> chapters) {
 Future<List<Chapter>> getChaptersBySubject(Subject subject) async {
   final dbh = DatabaseHelper();
   final udbh = UserDBHelper();
-  final identityId = AppStrings.identity_id;
+  final prefs = await SharedPreferences.getInstance();
+  final identityId = prefs.getString('identityId') ?? '30401';
 
   // Step 1: 获取 IdentityChapter 表中的 total 信息（主数据库）
   final chapterRecords = await dbh.getByCondition(
@@ -78,9 +78,12 @@ Future<List<Chapter>> getChaptersBySubject(Subject subject) async {
     'SELECT * FROM IdentityChapter WHERE identity_id = ? AND chapter_id IN ($placeholders)',
     [identityId, ...chapterIds],
   );
-  if (chapterUserRecords.isEmpty) {
-    // 在userdb里面创建并初始化
-    for (final id in chapterIds) {
+  if (chapterUserRecords.length < chapterRecords.length) {
+    final existingIds =
+        chapterUserRecords.map((e) => e['chapter_id'].toString()).toSet();
+    final missingIds = chapterIds.where((id) => !existingIds.contains(id));
+
+    for (final id in missingIds) {
       await udbh.insert(
         'IdentityChapter',
         {

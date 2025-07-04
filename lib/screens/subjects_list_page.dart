@@ -218,8 +218,8 @@ class _SubjectsListPageState extends State<SubjectsListPage>
                       : null,
                   onTap: () {
                     setState(() {
-                      toggleSubjectSelected(subject); // 更新数据库状态
                       subject.selected = subject.selected == 1 ? 0 : 1;
+                      toggleSubjectSelected(subject); // 更新数据库状态
                     });
                   },
                   trailing: subject.selected == 1

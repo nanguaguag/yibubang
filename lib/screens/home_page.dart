@@ -11,7 +11,7 @@ import '../db/database_helper.dart';
 import '../common/app_strings.dart';
 import '../screens/choosed_subjects_page.dart';
 import '../screens/my_page.dart';
-import '../db/data_transfer.dart';
+//import '../db/data_transfer.dart';
 
 Future<bool> checkTransferScuess() async {
   UserDBHelper userdb = UserDBHelper();
@@ -264,9 +264,9 @@ class _HomePageState extends State<HomePage> {
 
   /// 检查应用更新，如果有新版本则弹窗提示
   void _checkForAppUpdate() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
     String latestVersion = updateData["latest_app"] ?? currentVersion;
     //// 当前版本在1.0.3以上，意味着需要增加user_data数据库
+    //SharedPreferences prefs = await SharedPreferences.getInstance();
     //if (_compareVersions(currentVersion, '1.0.3') > 0) {
     //  bool transfered = prefs.getBool('transfered') ?? false;
     //  // 显示加载对话框，禁止用户操作

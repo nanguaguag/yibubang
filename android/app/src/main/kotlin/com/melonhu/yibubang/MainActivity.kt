@@ -1,4 +1,4 @@
-package com.example.yibubang
+package com.melonhu.yibubang
 
 import io.flutter.embedding.android.FlutterActivity
 

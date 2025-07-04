@@ -1,4 +1,4 @@
-import '../common/app_strings.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../db/database_helper.dart';
 
 class Subject {
@@ -46,7 +46,8 @@ class Subject {
 Future<List<Subject>> getSelectedSubjects() async {
   final dbh = DatabaseHelper();
   final udbh = UserDBHelper();
-  final identityId = AppStrings.identity_id;
+  final prefs = await SharedPreferences.getInstance();
+  final identityId = prefs.getString('identityId') ?? '30401';
 
   // 从 IdentitySubject 中获取 selected=1 的记录
   final subjectUserRecords = await udbh.getByCondition(
@@ -67,8 +68,8 @@ Future<List<Subject>> getSelectedSubjects() async {
     subjectIds,
   );
   final subjectRecords = await dbh.getByRawQuery(
-    'SELECT * FROM IdentitySubject WHERE subject_id IN ($placeholders)',
-    subjectIds,
+    'SELECT * FROM IdentitySubject WHERE identity_id = ? AND subject_id IN ($placeholders)',
+    [identityId, ...subjectIds],
   );
 
   // 转换为 map 以便合并
@@ -112,9 +113,16 @@ Future<List<Subject>> getAllSubjects() async {
 Future<List<Subject>> getSubjectsByIdentity() async {
   final dbh = DatabaseHelper();
   final udbh = UserDBHelper();
-  final identityId = AppStrings.identity_id;
+  final prefs = await SharedPreferences.getInstance();
+  final identityId = prefs.getString('identityId') ?? '30401';
 
   final subjectRecords = await dbh.getByCondition(
+    'IdentitySubject',
+    'identity_id = ?',
+    [identityId],
+  );
+
+  List<Map<String, dynamic>> subjectUserRecords = await udbh.getByCondition(
     'IdentitySubject',
     'identity_id = ?',
     [identityId],
@@ -128,14 +136,13 @@ Future<List<Subject>> getSubjectsByIdentity() async {
     'SELECT * FROM Subject WHERE id IN ($placeholders)',
     subjectIds,
   );
-  List<Map<String, dynamic>> subjectUserRecords = await udbh.getByRawQuery(
-    'SELECT * FROM IdentitySubject WHERE subject_id IN ($placeholders)',
-    subjectIds,
-  );
 
-  if (subjectUserRecords.isEmpty) {
-    // 在userdb里面创建并初始化
-    for (final id in subjectIds) {
+  if (subjectUserRecords.length < subjectRecords.length) {
+    final existingIds =
+        subjectUserRecords.map((e) => e['subject_id'].toString()).toSet();
+    final missingIds = subjectIds.where((id) => !existingIds.contains(id));
+
+    for (final id in missingIds) {
       await udbh.insert(
         'IdentitySubject',
         {
@@ -177,15 +184,12 @@ Future<List<Subject>> getSubjectsByIdentity() async {
 
 void toggleSubjectSelected(Subject subject) async {
   final udbh = UserDBHelper();
-  final identityId = AppStrings.identity_id;
-  final newSelected = subject.selected == 1 ? 0 : 1;
-
+  final prefs = await SharedPreferences.getInstance();
+  final identityId = prefs.getString('identityId') ?? '30401';
   await udbh.update(
     'IdentitySubject',
-    {'selected': newSelected},
+    {'selected': subject.selected},
     'identity_id = ? AND subject_id = ?',
-    [identityId, subject.id],
+    [identityId, subject.id.toString()],
   );
-
-  subject.selected = newSelected;
 }

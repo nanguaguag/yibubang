@@ -1,5 +1,3 @@
-import 'package:sqflite/sqflite.dart';
-
 import '../db/database_helper.dart';
 
 class Identity {
@@ -32,12 +30,20 @@ class Identity {
   }
 }
 
-Future<List<Identity>> getIdentities() async {
-  Database db = await DatabaseHelper().database;
-  List<Map<String, dynamic>> result = await db.rawQuery('''
-    SELECT DISTINCT i.id, i.name
-    FROM IdentitySubject ic
-    JOIN Identity i ON ic.identity_id = i.id
-  ''');
-  return result.map((e) => Identity.fromMap(e)).toList();
+void sortIdentitiesById(List<Identity> identities) {
+  // 将一个 List<Chapter> 按照 id 转成数字后的大小排序
+  identities.sort((a, b) => int.parse(a.id).compareTo(int.parse(b.id)));
+}
+
+Future<List<Identity>> getChildrenIdentities(String parentId) async {
+  DatabaseHelper dbh = DatabaseHelper();
+  final result = await dbh.getByRawQuery('''
+    SELECT id, parent_id, name
+    FROM Identity
+    WHERE parent_id = ?
+    ORDER BY name
+  ''', [parentId]);
+  List<Identity> identities = result.map((e) => Identity.fromMap(e)).toList();
+  sortIdentitiesById(identities);
+  return identities;
 }

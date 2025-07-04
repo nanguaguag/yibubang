@@ -1,5 +1,21 @@
+import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/material_symbols_icons.dart';
+
 class AppStrings {
-  static const String identity_id = '30401';
+  static const List<String> choosableIdentities = ['20101', '30401']; // 支持的题库
+  static const List<String> choosableIdentiyDir = ['2', '201', '3', '304'];
+  static const Map<String, IconData> identityIconMap = {
+    '2': Symbols.health_metrics,
+    '3': Symbols.dentistry_rounded,
+    '4': Symbols.health_and_safety_rounded,
+    '5': Symbols.cannabis,
+    '6': Symbols.pediatrics,
+    '7': Symbols.pill_rounded,
+    '8': Symbols.cannabis,
+    '10': Symbols.biotech_sharp,
+    '11': Symbols.bloodtype_rounded,
+    '12': Symbols.medical_services,
+  };
   static const String appVersion = '1.0.5';
   static const String appTitle = '医不帮';
   static const String selectedSubjectsTitle = '我的课程';
