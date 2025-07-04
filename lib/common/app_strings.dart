@@ -16,7 +16,7 @@ class AppStrings {
     '11': Symbols.bloodtype_rounded,
     '12': Symbols.medical_services,
   };
-  static const String appVersion = '1.0.5';
+  static const String appVersion = '2.0.0';
   static const String appTitle = '医不帮';
   static const String selectedSubjectsTitle = '我的课程';
   static const String myPageTitle = '我的';

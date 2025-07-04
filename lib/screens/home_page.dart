@@ -96,13 +96,18 @@ class _HomePageState extends State<HomePage> {
       ));
     }
 
+    // Step 1: 获取存储目录并创建下载文件
     String appDocDir = await getDatabasesPath();
     String filePath = '$appDocDir/question_data.sqlite.zip';
     File file = File(filePath);
 
+    // Step 2: 下载 ZIP 文件
+    final dataMd5 = updateData['data_for_version'][currentVersion]["md5"] ??
+        updateData['latest_data_md5'];
+
     if (await file.exists()) {
       String fileMd5 = await _calculateMd5(file);
-      if (fileMd5 == updateData['latest_data_md5']) {
+      if (fileMd5 == dataMd5) {
         return false;
       }
       return true;
@@ -128,8 +133,10 @@ class _HomePageState extends State<HomePage> {
       File file = File(filePath);
 
       // Step 2: 下载 ZIP 文件
-      final latestDataUrl = updateData['latest_data_url'];
-      var request = http.Request('GET', Uri.parse(latestDataUrl));
+      final dataUrl = updateData['data_for_version'][currentVersion]["url"] ??
+          updateData['latest_data_url'];
+
+      var request = http.Request('GET', Uri.parse(dataUrl));
       var response = await request.send();
 
       int totalBytes = response.contentLength ?? 0;
