@@ -1,10 +1,11 @@
+import 'package:shared_preferences/shared_preferences.dart';
 import '../db/database_helper.dart';
 import 'chapter.dart';
 
 class UserQuestion {
   String id;
-  String? chapterId;
-  String? chapterParentId;
+  String chapterId;
+  String chapterParentId;
   String cutQuestion;
   String userAnswer; // 用户答案
   int status; // 题目状态
@@ -12,8 +13,8 @@ class UserQuestion {
 
   UserQuestion({
     required this.id,
-    this.chapterId,
-    this.chapterParentId,
+    required this.chapterId,
+    required this.chapterParentId,
     required this.cutQuestion,
     required this.userAnswer,
     required this.status,
@@ -294,36 +295,80 @@ void sortUserQuestionsById(List<UserQuestion> questions) {
 }
 
 Future<List<Question>> getQuestionsFromChapter(Chapter chapter) async {
-  List<Map<String, dynamic>> questionsData =
-      await DatabaseHelper().getByCondition(
-    'Question',
-    'chapter_parent_id = ? AND chapter_id = ?',
-    [chapter.subjectId, chapter.id],
+  final dbh = DatabaseHelper();
+  final prefs = await SharedPreferences.getInstance();
+  final identityId = prefs.getString('identityId') ?? '30401';
+  // 从 IdentityQuestion 中获取指定 identity_id, subject_id 和 chapter_id 的问题
+  final questionRecords = await dbh.getByCondition(
+    'IdentityQuestion',
+    'identity_id = ? AND subject_id = ? AND chapter_id = ?',
+    [identityId, chapter.subjectId, chapter.id],
   );
+  if (questionRecords.isEmpty) return [];
+  // 提取所有 question_id
+  final questionIds =
+      questionRecords.map((e) => e['question_id'].toString()).toList();
+  // 查询 Question 表中对应的记录
+  final placeholders = List.filled(questionIds.length, '?').join(', ');
+  final questionInfos = await dbh.getByRawQuery(
+    'SELECT * FROM Question WHERE id IN ($placeholders)',
+    questionIds,
+  );
+  if (questionInfos.isEmpty) return [];
+  // 将 questionInfos 转换成 List<Question>
   List<Question> questions =
-      questionsData.map((e) => Question.fromMap(e)).toList();
-
+      questionInfos.map((e) => Question.fromMap(e)).toList();
+  // 对问题列表按 id 排序
   sortQuestionsById(questions);
 
   return questions;
 }
 
-Future<List<UserQuestion>> getUserQuestionsFromChapter(Chapter chapter) async {
-  List<Map<String, dynamic>> questionsData =
-      await UserDBHelper().getByCondition(
-    'Question',
-    'chapter_parent_id = ? AND chapter_id = ?',
-    [chapter.subjectId, chapter.id],
-  );
-  List<UserQuestion> questions =
-      questionsData.map((e) => UserQuestion.fromMap(e)).toList();
+Future<List<UserQuestion>> getUserQuestions(
+  Future<List<Question>> questions,
+) async {
+  final udbh = UserDBHelper();
+  List<UserQuestion> userQuestions = [];
+  for (Question question in await questions) {
+    List<Map<String, dynamic>> result = await udbh.getByCondition(
+      'Question',
+      'id = ?',
+      [question.id],
+    );
+    if (result.isNotEmpty) {
+      userQuestions.add(UserQuestion.fromMap(result[0]));
+    } else {
+      UserQuestion defaultQuestion = UserQuestion(
+        id: question.id,
+        chapterId: question.chapterId ?? "default_chapter_id",
+        chapterParentId: question.chapterParentId ?? "default_subject_id",
+        cutQuestion: '',
+        userAnswer: '',
+        status: 0,
+        collection: 0,
+      );
+      await udbh.insert('Question', defaultQuestion.toMap());
+      userQuestions.add(defaultQuestion);
+    }
+  }
 
-  sortUserQuestionsById(questions);
-
-  return questions;
+  return userQuestions;
 }
 
 Future<void> updateQuestion(UserQuestion question) async {
+  // 首先在UserDB的Question表中寻找是否存在
+  final udbh = UserDBHelper();
+  List<Map<String, dynamic>> result = await udbh.getByCondition(
+    'Question',
+    'id = ?',
+    [question.id],
+  );
+  if (result.isEmpty) {
+    // 如果不存在，则插入新记录
+    await udbh.insert('Question', question.toMap());
+    print("Inserted new question: ${question.id}");
+  }
+
   // 更新问题状态和用户答案
   await UserDBHelper().update(
     'Question',

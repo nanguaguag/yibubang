@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:yibubang/screens/question_grid_page.dart';
 import '../common/app_strings.dart';
 import 'subjects_list_page.dart';
+import 'identity_list_page.dart';
 import '../models/subject.dart';
 import '../models/chapter.dart';
 import '../widgets/theme_controller.dart';
@@ -14,12 +15,12 @@ class SubjectWithChapters {
   SubjectWithChapters({required this.subject, required this.chapters});
 }
 
-Future<List<SubjectWithChapters>> fetchSubjectsWithChapters() async {
-  List<Subject> subjects = await fetchSelectedSubjects();
+Future<List<SubjectWithChapters>> getSubjectsWithChapters() async {
+  List<Subject> subjects = await getSelectedSubjects();
   List<SubjectWithChapters> subjectWithChapters = [];
 
   for (final subject in subjects) {
-    List<Chapter> chapters = await fetchChaptersBySubjectId(subject.id);
+    List<Chapter> chapters = await getChaptersBySubject(subject);
     subjectWithChapters.add(
       SubjectWithChapters(subject: subject, chapters: chapters),
     );
@@ -42,12 +43,12 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
   @override
   void initState() {
     super.initState();
-    subjectsWithChapters = fetchSubjectsWithChapters();
+    subjectsWithChapters = getSubjectsWithChapters();
   }
 
   void _refreshData() {
     setState(() {
-      subjectsWithChapters = fetchSubjectsWithChapters();
+      subjectsWithChapters = getSubjectsWithChapters();
     });
   }
 
@@ -195,6 +196,18 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
       appBar: AppBar(
         title: const Text(AppStrings.selectedSubjectsTitle),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        leading: IconButton(
+          icon: Icon(Icons.apps), // 可以换成你需要的图标
+          onPressed: () async {
+            await Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => (IdentityListPage()),
+              ),
+            );
+            _refreshData();
+          },
+        ),
         actions: [
           Obx(() {
             return IconButton(

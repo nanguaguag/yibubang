@@ -29,23 +29,14 @@ class DatabaseHelper {
     await db.execute('''
       CREATE TABLE IF NOT EXISTS Subject (
           id TEXT PRIMARY KEY,
-          name TEXT NOT NULL,
-          selected INTEGER NOT NULL,
-          correct INTEGER NOT NULL,
-          incorrect INTEGER NOT NULL,
-          total INTEGER NOT NULL
+          name TEXT NOT NULL
       )
     ''');
 
     await db.execute('''
       CREATE TABLE IF NOT EXISTS Chapter (
           id TEXT PRIMARY KEY,
-          name TEXT NOT NULL,
-          subject_id TEXT NOT NULL,
-          correct INTEGER NOT NULL,
-          incorrect INTEGER NOT NULL,
-          total INTEGER NOT NULL,
-          FOREIGN KEY(subject_id) REFERENCES Subject(id)
+          name TEXT NOT NULL
       )
     ''');
 
@@ -106,12 +97,6 @@ class DatabaseHelper {
           filter_type TEXT,
           cut_question TEXT,
           user_answer TEXT,
-          comment_count TEXT,
-          right_count TEXT,
-          wrong_count TEXT,
-          collection_count TEXT,
-          status INTEGER,
-          collection INTEGER,
           FOREIGN KEY(chapter_id) REFERENCES Chapter(id),
           FOREIGN KEY(chapter_parent_id) REFERENCES Subject(id)
       )
@@ -171,6 +156,66 @@ class DatabaseHelper {
           FOREIGN KEY(obj_id) REFERENCES Question(id)
       )
     ''');
+
+    await db.execute('''
+    CREATE TRIGGER IF NOT EXISTS update_chapter_after_insert
+    AFTER INSERT ON Question
+    FOR EACH ROW
+    BEGIN
+        -- 增加总问题数
+        UPDATE IdentityChapter
+        SET total = total + 1
+        WHERE chapter_id = NEW.chapter_id;
+    END;
+    ''');
+
+    await db.execute('''
+    CREATE TRIGGER IF NOT EXISTS update_subject_after_insert
+    AFTER INSERT ON Question
+    FOR EACH ROW
+    BEGIN
+        -- 增加总问题数
+        UPDATE IdentitySubject
+        SET total = total + 1
+        WHERE subject_id = NEW.chapter_parent_id;
+    END;
+    ''');
+
+    await db.execute('''
+    CREATE TABLE IF NOT EXISTS IdentitySubject (
+        identity_id TEXT,
+        subject_id TEXT,
+        total INTAGER NOT NULL,
+        PRIMARY KEY (identity_id, subject_id),
+        FOREIGN KEY (identity_id) REFERENCES Identity(id),
+        FOREIGN KEY (subject_id) REFERENCES Subject(id)
+    )
+    ''');
+
+    await db.execute('''
+    CREATE TABLE IF NOT EXISTS IdentityChapter (
+        identity_id TEXT,
+        chapter_id TEXT,
+        total INTAGER NOT NULL,
+        PRIMARY KEY (identity_id, chapter_id),
+        FOREIGN KEY (identity_id) REFERENCES Identity(id),
+        FOREIGN KEY (chapter_id) REFERENCES Chapter(id)
+    )
+    ''');
+
+    await db.execute('''
+    CREATE TABLE IF NOT EXISTS IdentityQuestion (
+        identity_id TEXT,
+        subject_id TEXT,
+        chapter_id TEXT,
+        question_id TEXT,
+        PRIMARY KEY (identity_id, question_id),
+        FOREIGN KEY (identity_id) REFERENCES Identity(id),
+        FOREIGN KEY (subject_id) REFERENCES Subject(id),
+        FOREIGN KEY (chapter_id) REFERENCES Chapter(id),
+        FOREIGN KEY (question_id) REFERENCES Question(id)
+    )
+    ''');
   }
 
   // Insert data into table
@@ -190,6 +235,14 @@ class DatabaseHelper {
       String table, String condition, List<dynamic> args) async {
     final db = await database;
     return await db.query(table, where: condition, whereArgs: args);
+  }
+
+  Future<List<Map<String, dynamic>>> getByRawQuery(
+    String sql,
+    List<dynamic> arguments,
+  ) async {
+    final db = await database; // 你已经初始化好的数据库
+    return await db.rawQuery(sql, arguments);
   }
 
   Future<int> getCountByCondition(
@@ -241,17 +294,38 @@ class UserDBHelper {
   }
 
   Future<void> _onCreate(Database db, int version) async {
+    print("初始化用户数据库...");
+    await db.execute('''
+    CREATE TABLE IF NOT EXISTS IdentitySubject (
+        identity_id TEXT,
+        subject_id TEXT,
+        correct INTAGER DEFAULT 0 NOT NULL,
+        incorrect INTAGER DEFAULT 0 NOT NULL,
+        selected INTEGER DEFAULT 0 NOT NULL,
+        PRIMARY KEY (identity_id, subject_id)
+    )
+    ''');
+
+    await db.execute('''
+    CREATE TABLE IF NOT EXISTS IdentityChapter (
+        identity_id TEXT,
+        subject_id TEXT,
+        chapter_id TEXT,
+        correct INTAGER DEFAULT 0 NOT NULL,
+        incorrect INTAGER DEFAULT 0 NOT NULL,
+        PRIMARY KEY (identity_id, chapter_id)
+    )
+    ''');
+
     await db.execute('''
       CREATE TABLE IF NOT EXISTS Question (
         id TEXT PRIMARY KEY,
         chapter_id TEXT,
         chapter_parent_id TEXT,
-        cut_question TEXT NOT NULL,
-        user_answer TEXT NOT NULL,
-        status INTEGER NOT NULL,
-        collection INTEGER NOT NULL,
-        FOREIGN KEY(chapter_id) REFERENCES Chapter(id),
-        FOREIGN KEY(chapter_parent_id) REFERENCES Subject(id)
+        cut_question TEXT DEFAULT 0 NOT NULL,
+        user_answer TEXT DEFAULT "" NOT NULL,
+        status INTEGER DEFAULT 0 NOT NULL,
+        collection INTEGER DEFAULT 0 NOT NULL
       )
     ''');
 
@@ -285,144 +359,28 @@ class UserDBHelper {
     ''');
 
     await db.execute('''
-      CREATE TABLE IF NOT EXISTS Subject (
-          id TEXT PRIMARY KEY,
-          name TEXT NOT NULL,
-          selected INTEGER NOT NULL,
-          correct INTEGER NOT NULL,
-          incorrect INTEGER NOT NULL,
-          total INTEGER NOT NULL
-      )
-    ''');
-
-    await db.execute('''
-      CREATE TABLE IF NOT EXISTS Chapter (
-          id TEXT PRIMARY KEY,
-          name TEXT NOT NULL,
-          subject_id TEXT NOT NULL,
-          correct INTEGER NOT NULL,
-          incorrect INTEGER NOT NULL,
-          total INTEGER NOT NULL,
-          FOREIGN KEY(subject_id) REFERENCES Subject(id)
-      )
-    ''');
-
-    await db.execute('''
-      CREATE TRIGGER IF NOT EXISTS update_chapter_after_insert
-      AFTER INSERT ON Question
-      FOR EACH ROW
-      BEGIN
-          -- 如果插入的是正确的问题，增加correct
-          UPDATE Chapter
-          SET correct = correct + (CASE WHEN NEW.status = 1 THEN 1 ELSE 0 END)
-          WHERE id = NEW.chapter_id;
-
-          UPDATE Chapter
-          SET incorrect = incorrect + (CASE WHEN NEW.status = 2 THEN 1 ELSE 0 END)
-          WHERE id = NEW.chapter_id;
-
-          -- 增加总问题数
-          UPDATE Chapter
-          SET total = total + 1
-          WHERE id = NEW.chapter_id;
-      END;
-    ''');
-
-    await db.execute('''
-      CREATE TRIGGER IF NOT EXISTS update_chapter_after_delete
-      AFTER DELETE ON Question
-      FOR EACH ROW
-      BEGIN
-          -- 如果删除的是正确的问题，减少correct
-          UPDATE Chapter
-          SET correct = correct - (CASE WHEN OLD.status = 1 THEN 1 ELSE 0 END)
-          WHERE id = OLD.chapter_id;
-
-          UPDATE Chapter
-          SET incorrect = incorrect - (CASE WHEN OLD.status = 2 THEN 1 ELSE 0 END)
-          WHERE id = OLD.chapter_id;
-
-          -- 减少总问题数
-          UPDATE Chapter
-          SET question_count = question_count - 1
-          WHERE id = OLD.chapter_id;
-      END;
-    ''');
-
-    await db.execute('''
       CREATE TRIGGER IF NOT EXISTS update_chapter_after_update
       AFTER UPDATE ON Question
       FOR EACH ROW
       BEGIN
           -- 如果章节变化，更新章节的正确问题数量
           -- 先减少原章节的correct
-          UPDATE Chapter
+          UPDATE IdentityChapter
           SET correct = correct - (CASE WHEN OLD.status = 1 THEN 1 ELSE 0 END)
-          WHERE id = OLD.chapter_id;
+          WHERE chapter_id = OLD.chapter_id AND identity_id = 30401;
 
-          UPDATE Chapter
+          UPDATE IdentityChapter
           SET incorrect = incorrect - (CASE WHEN OLD.status = 2 THEN 1 ELSE 0 END)
-          WHERE id = OLD.chapter_id;
+          WHERE chapter_id = OLD.chapter_id AND identity_id = 30401;
 
           -- 之后增加新章节的correct
-          UPDATE Chapter
+          UPDATE IdentityChapter
           SET correct = correct + (CASE WHEN NEW.status = 1 THEN 1 ELSE 0 END)
-          WHERE id = NEW.chapter_id;
+          WHERE chapter_id = NEW.chapter_id AND identity_id = 30401;
 
-          UPDATE Chapter
+          UPDATE IdentityChapter
           SET incorrect = incorrect + (CASE WHEN NEW.status = 2 THEN 1 ELSE 0 END)
-          WHERE id = NEW.chapter_id;
-
-          -- 更新总问题数
-          UPDATE Chapter
-          SET total = total + (CASE WHEN NEW.chapter_id != OLD.chapter_id THEN 1 ELSE 0 END)
-          WHERE id = NEW.chapter_id;
-
-          UPDATE Chapter
-          SET total = total - (CASE WHEN NEW.chapter_id != OLD.chapter_id THEN 1 ELSE 0 END)
-          WHERE id = OLD.chapter_id;
-      END;
-    ''');
-
-    await db.execute('''
-      CREATE TRIGGER IF NOT EXISTS update_subject_after_insert
-      AFTER INSERT ON Question
-      FOR EACH ROW
-      BEGIN
-          -- 如果插入的是正确的问题，增加correct
-          UPDATE Subject
-          SET correct = correct + (CASE WHEN NEW.status = 1 THEN 1 ELSE 0 END)
-          WHERE id = NEW.chapter_parent_id;
-
-          UPDATE Subject
-          SET incorrect = incorrect + (CASE WHEN NEW.status = 2 THEN 1 ELSE 0 END)
-          WHERE id = NEW.chapter_parent_id;
-
-          -- 增加总问题数
-          UPDATE Subject
-          SET total = total + 1
-          WHERE id = NEW.chapter_parent_id;
-      END;
-    ''');
-
-    await db.execute('''
-      CREATE TRIGGER IF NOT EXISTS update_subject_after_delete
-      AFTER DELETE ON Question
-      FOR EACH ROW
-      BEGIN
-          -- 如果删除的是正确的问题，减少correct
-          UPDATE Subject
-          SET correct = correct - (CASE WHEN OLD.status = 1 THEN 1 ELSE 0 END)
-          WHERE id = OLD.chapter_parent_id;
-
-          UPDATE Subject
-          SET incorrect = incorrect - (CASE WHEN OLD.status = 2 THEN 1 ELSE 0 END)
-          WHERE id = OLD.chapter_parent_id;
-
-          -- 减少总问题数
-          UPDATE Subject
-          SET question_count = question_count - 1
-          WHERE id = OLD.chapter_parent_id;
+          WHERE chapter_id = NEW.chapter_id AND identity_id = 30401;
       END;
     ''');
 
@@ -433,33 +391,25 @@ class UserDBHelper {
       BEGIN
           -- 如果章节变化，更新章节的正确问题数量
           -- 先减少原章节的correct
-          UPDATE Subject
+          UPDATE IdentitySubject
           SET correct = correct - (CASE WHEN OLD.status = 1 THEN 1 ELSE 0 END)
-          WHERE id = OLD.chapter_parent_id;
+          WHERE subject_id = OLD.chapter_parent_id AND identity_id = 30401;
 
-          UPDATE Subject
+          UPDATE IdentitySubject
           SET incorrect = incorrect - (CASE WHEN OLD.status = 2 THEN 1 ELSE 0 END)
-          WHERE id = OLD.chapter_parent_id;
+          WHERE subject_id = OLD.chapter_parent_id AND identity_id = 30401;
 
           -- 之后增加新章节的correct
-          UPDATE Subject
+          UPDATE IdentitySubject
           SET correct = correct + (CASE WHEN NEW.status = 1 THEN 1 ELSE 0 END)
-          WHERE id = NEW.chapter_parent_id;
+          WHERE subject_id = NEW.chapter_parent_id AND identity_id = 30401;
 
-          UPDATE Subject
+          UPDATE IdentitySubject
           SET incorrect = incorrect + (CASE WHEN NEW.status = 2 THEN 1 ELSE 0 END)
-          WHERE id = NEW.chapter_parent_id;
-
-          -- 更新总问题数
-          UPDATE Subject
-          SET total = total + (CASE WHEN NEW.chapter_id != OLD.chapter_id THEN 1 ELSE 0 END)
-          WHERE id = NEW.chapter_parent_id;
-
-          UPDATE Subject
-          SET total = total - (CASE WHEN NEW.chapter_id != OLD.chapter_id THEN 1 ELSE 0 END)
-          WHERE id = OLD.chapter_parent_id;
+          WHERE subject_id = NEW.chapter_parent_id AND identity_id = 30401;
       END;
     ''');
+    print("用户数据库初始化完成～");
   }
 
   // Insert data into table
@@ -479,6 +429,14 @@ class UserDBHelper {
       String table, String condition, List<dynamic> args) async {
     final db = await database;
     return await db.query(table, where: condition, whereArgs: args);
+  }
+
+  Future<List<Map<String, dynamic>>> getByRawQuery(
+    String sql,
+    List<dynamic> arguments,
+  ) async {
+    final db = await database; // 你已经初始化好的数据库
+    return await db.rawQuery(sql, arguments);
   }
 
   Future<int> getCountByCondition(
