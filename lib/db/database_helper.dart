@@ -1,5 +1,6 @@
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
+import 'dart:io';
 import 'dart:async';
 
 class DatabaseHelper {
@@ -22,12 +23,14 @@ class DatabaseHelper {
   // Initialize the database
   _initDB() async {
     String path = join(await getDatabasesPath(), 'question_data.sqlite');
+    if (!await File(path).exists()) {
+      throw Exception("数据库文件($path)不存在。请下载！");
+    }
+
     return await openDatabase(
       path,
-      version: 1,
       readOnly: true,
       singleInstance: false, // 读连接可以多实例
-      onCreate: _onCreate,
     );
   }
 
@@ -51,176 +54,6 @@ class DatabaseHelper {
     } catch (e) {
       print('⚠️ Question data 执行完整性检查出错: $e');
     }
-  }
-
-  // Create tables
-  Future<void> _onCreate(Database db, int version) async {
-    await db.execute('''
-      CREATE TABLE IF NOT EXISTS Subject (
-          id TEXT PRIMARY KEY,
-          name TEXT NOT NULL
-      )
-    ''');
-
-    await db.execute('''
-      CREATE TABLE IF NOT EXISTS Chapter (
-          id TEXT PRIMARY KEY,
-          name TEXT NOT NULL
-      )
-    ''');
-
-    await db.execute('''
-      CREATE TABLE IF NOT EXISTS Question (
-          id TEXT PRIMARY KEY,
-          year TEXT,
-          unit TEXT,
-          title TEXT,
-          public_title TEXT,
-          title_img TEXT,
-          number TEXT,
-          public_number TEXT,
-          restore TEXT,
-          restore_img TEXT,
-          explain TEXT,
-          explain_img TEXT,
-          answer TEXT,
-          option TEXT,   -- 存储选项 JSON 数据
-          score TEXT,
-          score_describe TEXT,
-          native_app_id TEXT,
-          native_identity_id TEXT,
-          app_id TEXT,
-          identity_id TEXT,
-          chapter_id TEXT,
-          chapter_parent_id TEXT,
-          type TEXT,
-          part_id TEXT,
-          part_parent_id TEXT,
-          sort_chapter TEXT,
-          sort_chapter_am TEXT,
-          sort_chapter_pm TEXT,
-          outlines TEXT,
-          outlines_am TEXT,
-          outlines_pm TEXT,
-          sort_part TEXT,
-          sort_part_am TEXT,
-          sort_part_pm TEXT,
-          am_pm TEXT,
-          high_frequency TEXT,
-          is_collection_question TEXT,
-          is_real_question TEXT,
-          cases_id TEXT,
-          cases_parent_id TEXT,
-          sort_cases TEXT,
-          sort_cases_am TEXT,
-          sort_cases_pm TEXT,
-          source TEXT,
-          source_filter TEXT,
-          show_number TEXT,
-          created_at TEXT,
-          type_str TEXT,
-          origin_type TEXT,
-          sort TEXT,
-          is_new TEXT,
-          outlines_mastery TEXT,
-          filter_type TEXT,
-          cut_question TEXT,
-          user_answer TEXT,
-          FOREIGN KEY(chapter_id) REFERENCES Chapter(id),
-          FOREIGN KEY(chapter_parent_id) REFERENCES Subject(id)
-      )
-    ''');
-
-    await db.execute('''
-      CREATE TABLE IF NOT EXISTS Comment (
-          id TEXT PRIMARY KEY,
-          obj_id TEXT NOT NULL,
-          user_id TEXT NOT NULL,
-          content TEXT NOT NULL,
-          to_user_id TEXT NOT NULL,
-          parent_id TEXT NOT NULL,
-          praise_num TEXT NOT NULL,
-          floor_num TEXT NOT NULL,
-          app_id TEXT NOT NULL,
-          module_type TEXT NOT NULL,
-          is_read TEXT NOT NULL,
-          is_essence TEXT NOT NULL,
-          ctime TEXT NOT NULL,
-          oppose_num TEXT NOT NULL,
-          author_looked TEXT NOT NULL,
-          author_id TEXT NOT NULL,
-          imgs TEXT NOT NULL,
-          replies TEXT NOT NULL,
-          number_of_reports TEXT NOT NULL,
-          video_id TEXT NOT NULL,
-          status TEXT NOT NULL,
-          net_approval_number TEXT NOT NULL,
-          delete_way TEXT NOT NULL,
-          hkb_id TEXT NOT NULL,
-          hkb_parent_id TEXT NOT NULL,
-          reward_vip TEXT NOT NULL,
-          reward_svip TEXT NOT NULL,
-          is_logout TEXT NOT NULL,
-          nickname TEXT NOT NULL,
-          avatar TEXT NOT NULL,
-          school TEXT NOT NULL,
-          is_anonymous TEXT NOT NULL,
-          is_authentication TEXT NOT NULL,
-          user_identity TEXT NOT NULL,
-          is_vip TEXT NOT NULL,
-          is_svip TEXT NOT NULL,
-          is_praise TEXT NOT NULL,
-          is_oppose TEXT NOT NULL,
-          reply_num TEXT NOT NULL,
-          ctime_timestamp TEXT NOT NULL,
-          delete_skill TEXT NOT NULL,
-          is_author TEXT NOT NULL,
-          img_watermark TEXT NOT NULL,
-          c_imgs TEXT NOT NULL,
-          watch_permission TEXT NOT NULL,
-          user_identity_color TEXT NOT NULL,
-          on_the_top TEXT NOT NULL,
-          reply_primary_id TEXT NOT NULL,
-          is_hot INTEGER NOT NULL,
-          FOREIGN KEY(obj_id) REFERENCES Question(id)
-      )
-    ''');
-
-    await db.execute('''
-    CREATE TABLE IF NOT EXISTS IdentitySubject (
-        identity_id TEXT,
-        subject_id TEXT,
-        total INTAGER NOT NULL,
-        PRIMARY KEY (identity_id, subject_id),
-        FOREIGN KEY (identity_id) REFERENCES Identity(id),
-        FOREIGN KEY (subject_id) REFERENCES Subject(id)
-    )
-    ''');
-
-    await db.execute('''
-    CREATE TABLE IF NOT EXISTS IdentityChapter (
-        identity_id TEXT,
-        chapter_id TEXT,
-        total INTAGER NOT NULL,
-        PRIMARY KEY (identity_id, chapter_id),
-        FOREIGN KEY (identity_id) REFERENCES Identity(id),
-        FOREIGN KEY (chapter_id) REFERENCES Chapter(id)
-    )
-    ''');
-
-    await db.execute('''
-    CREATE TABLE IF NOT EXISTS IdentityQuestion (
-        identity_id TEXT,
-        subject_id TEXT,
-        chapter_id TEXT,
-        question_id TEXT,
-        PRIMARY KEY (identity_id, question_id),
-        FOREIGN KEY (identity_id) REFERENCES Identity(id),
-        FOREIGN KEY (subject_id) REFERENCES Subject(id),
-        FOREIGN KEY (chapter_id) REFERENCES Chapter(id),
-        FOREIGN KEY (question_id) REFERENCES Question(id)
-    )
-    ''');
   }
 
   // Insert data into table
