@@ -15,7 +15,7 @@ class DatabaseHelper {
 
     // Initialize database if it's not already done
     _database = await _initDB();
-    await checkDatabaseIntegrity(); // ← 添加完整性检查
+    await checkDatabaseIntegrity(); // 添加完整性检查
     return _database!;
   }
 
@@ -35,7 +35,7 @@ class DatabaseHelper {
   Future<void> checkDatabaseIntegrity([Database? db]) async {
     final database = db ?? _database;
     if (database == null) {
-      print('数据库尚未初始化，跳过完整性检查');
+      print('Question data 数据库尚未初始化，跳过完整性检查');
       return;
     }
 
@@ -43,13 +43,13 @@ class DatabaseHelper {
       final result = await database.rawQuery('PRAGMA integrity_check;');
       final checkResult = result.first.values.first;
       if (checkResult != 'ok') {
-        print('❌ 数据库完整性检查失败: $checkResult');
+        print('❌ Question data 数据库完整性检查失败: $checkResult');
         // 你可以选择在这里抛出异常或自动备份、恢复等
       } else {
-        print('✅ 数据库完整性良好');
+        print('✅ Question data 数据库完整性良好');
       }
     } catch (e) {
-      print('⚠️ 执行完整性检查出错: $e');
+      print('⚠️ Question data 执行完整性检查出错: $e');
     }
   }
 
@@ -187,30 +187,6 @@ class DatabaseHelper {
     ''');
 
     await db.execute('''
-    CREATE TRIGGER IF NOT EXISTS update_chapter_after_insert
-    AFTER INSERT ON Question
-    FOR EACH ROW
-    BEGIN
-        -- 增加总问题数
-        UPDATE IdentityChapter
-        SET total = total + 1
-        WHERE chapter_id = NEW.chapter_id;
-    END;
-    ''');
-
-    await db.execute('''
-    CREATE TRIGGER IF NOT EXISTS update_subject_after_insert
-    AFTER INSERT ON Question
-    FOR EACH ROW
-    BEGIN
-        -- 增加总问题数
-        UPDATE IdentitySubject
-        SET total = total + 1
-        WHERE subject_id = NEW.chapter_parent_id;
-    END;
-    ''');
-
-    await db.execute('''
     CREATE TABLE IF NOT EXISTS IdentitySubject (
         identity_id TEXT,
         subject_id TEXT,
@@ -310,12 +286,35 @@ class UserDBHelper {
   Future<Database> get database async {
     if (_database != null) return _database!;
     _database = await _initDatabase();
+    await checkDatabaseIntegrity(); // 添加完整性检查
     return _database!;
   }
 
   Future<Database> _initDatabase() async {
     String path = join(await getDatabasesPath(), 'user_data.sqlite');
     return await openDatabase(path, version: 1, onCreate: _onCreate);
+  }
+
+  /// 检查数据库完整性
+  Future<void> checkDatabaseIntegrity([Database? db]) async {
+    final database = db ?? _database;
+    if (database == null) {
+      print('User data 数据库尚未初始化，跳过完整性检查');
+      return;
+    }
+
+    try {
+      final result = await database.rawQuery('PRAGMA integrity_check;');
+      final checkResult = result.first.values.first;
+      if (checkResult != 'ok') {
+        print('❌ User data 数据库完整性检查失败: $checkResult');
+        // 你可以选择在这里抛出异常或自动备份、恢复等
+      } else {
+        print('✅ User data 数据库完整性良好');
+      }
+    } catch (e) {
+      print('⚠️ User data 执行完整性检查出错: $e');
+    }
   }
 
   Future<void> _onCreate(Database db, int version) async {
