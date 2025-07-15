@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:yibubang/screens/question_grid_page.dart';
 import '../common/app_strings.dart';
@@ -177,7 +178,7 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
       onTap: () async {
         await Navigator.push(
           context,
-          MaterialPageRoute(
+          CupertinoPageRoute(
             builder: (context) => QuestionGridPage(
               chapter: chapter,
             ),

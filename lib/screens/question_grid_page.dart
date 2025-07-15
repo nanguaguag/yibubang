@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
 import 'question_detail_page.dart';
@@ -354,7 +355,7 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
             _savedScrollOffset = _scrollController.offset;
             await Navigator.push(
               context,
-              MaterialPageRoute(
+              CupertinoPageRoute(
                 builder: (context) => QuestionDetailPage(
                   chapter: widget.chapter,
                   questions: questions,

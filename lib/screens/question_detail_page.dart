@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -310,7 +311,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
   ) {
     Navigator.push(
       context,
-      MaterialPageRoute(
+      CupertinoPageRoute(
         builder: (context) => FullScreenImageView(
           imageUrls: imageUrls,
           initialIndex: initialIndex,

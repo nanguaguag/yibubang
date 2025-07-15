@@ -15,13 +15,42 @@ class DatabaseHelper {
 
     // Initialize database if it's not already done
     _database = await _initDB();
+    await checkDatabaseIntegrity(); // ← 添加完整性检查
     return _database!;
   }
 
   // Initialize the database
   _initDB() async {
     String path = join(await getDatabasesPath(), 'question_data.sqlite');
-    return await openDatabase(path, version: 1, onCreate: _onCreate);
+    return await openDatabase(
+      path,
+      version: 1,
+      readOnly: true,
+      singleInstance: false, // 读连接可以多实例
+      onCreate: _onCreate,
+    );
+  }
+
+  /// 检查数据库完整性
+  Future<void> checkDatabaseIntegrity([Database? db]) async {
+    final database = db ?? _database;
+    if (database == null) {
+      print('数据库尚未初始化，跳过完整性检查');
+      return;
+    }
+
+    try {
+      final result = await database.rawQuery('PRAGMA integrity_check;');
+      final checkResult = result.first.values.first;
+      if (checkResult != 'ok') {
+        print('❌ 数据库完整性检查失败: $checkResult');
+        // 你可以选择在这里抛出异常或自动备份、恢复等
+      } else {
+        print('✅ 数据库完整性良好');
+      }
+    } catch (e) {
+      print('⚠️ 执行完整性检查出错: $e');
+    }
   }
 
   // Create tables

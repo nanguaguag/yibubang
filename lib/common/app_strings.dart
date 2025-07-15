@@ -2,8 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/material_symbols_icons.dart';
 
 class AppStrings {
-  static const List<String> choosableIdentities = ['20101', '30401']; // 支持的题库
-  static const List<String> choosableIdentiyDir = ['2', '201', '3', '304'];
+  static const List<String> choosableIdentities = [
+    '20101', // 临床
+    '30401', // 口腔
+    '11070', // 护理
+  ]; // 支持的题库
+  static const List<String> choosableIdentiyDir = [
+    '2',
+    '201',
+    '3',
+    '304',
+    '11',
+    '1107',
+  ];
   static const Map<String, IconData> identityIconMap = {
     '2': Symbols.health_metrics,
     '3': Symbols.dentistry_rounded,

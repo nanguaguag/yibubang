@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:yibubang/screens/home_page.dart';
 
@@ -14,7 +15,7 @@ class LoginSuccessfullyPage extends StatelessWidget {
           onPressed: () {
             Navigator.pushAndRemoveUntil(
               context,
-              MaterialPageRoute(
+              CupertinoPageRoute(
                 builder: (context) => HomePage(),
               ), // 这里换成你的上一级页面
               (route) => false,

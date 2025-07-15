@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
 import 'package:yibubang/common/ykb_encrypt.dart';
@@ -167,7 +168,7 @@ class _CommentPageState extends State<CommentPage>
                 onPressed: () {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(
+                    CupertinoPageRoute(
                       builder: (context) => AuthCheckPage(),
                     ),
                   );
@@ -230,7 +231,7 @@ class CommentItem extends StatelessWidget {
         onPressed: () {
           Navigator.push(
             context,
-            MaterialPageRoute(
+            CupertinoPageRoute(
               builder: (context) => CommentReplyPage(
                 comment: comment,
                 question: question,
@@ -318,7 +319,7 @@ class CommentItem extends StatelessWidget {
   ) {
     Navigator.push(
       context,
-      MaterialPageRoute(
+      CupertinoPageRoute(
         builder: (context) => FullScreenImageView(
           imageUrls: imageUrls,
           initialIndex: initialIndex,
