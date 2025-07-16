@@ -1,5 +1,7 @@
+import 'dart:ui';
 import 'dart:convert';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -10,6 +12,15 @@ import '../models/question.dart';
 import '../models/questionStat.dart';
 import '../common/request.dart';
 import 'commet_page.dart';
+
+class MyCustomScrollBehavior extends MaterialScrollBehavior {
+  @override
+  Set<PointerDeviceKind> get dragDevices => {
+        PointerDeviceKind.touch,
+        PointerDeviceKind.mouse, // 支持触控板/鼠标拖动
+        PointerDeviceKind.trackpad, // 一些 Flutter 版本不需要加这个
+      };
+}
 
 class QuestionDetailPage extends StatefulWidget {
   final Chapter chapter;
@@ -61,6 +72,14 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     );
   }
 
+  // 翻到上一页
+  void _previousPage() {
+    _pageController.previousPage(
+      duration: Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+    );
+  }
+
   String _getLastAnswer(String userAnswer) {
     /// userAnswer 格式：
     /// - 最后一次答案是DC：AB;ABC;DC
@@ -89,17 +108,27 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
   }
 
   Widget _submitButton(
-      Question question, UserQuestion userQuestion, int index) {
+    Question question,
+    UserQuestion userQuestion,
+    int index,
+  ) {
     // 如果是快刷/测试模式且为单选题，不显示提交按钮
     if ((mode == 1 || mode == 2) && question.type == '1') {
       return const SizedBox.shrink();
     }
+
     return Align(
       alignment: Alignment.bottomCenter,
       child: SizedBox(
-        width: double.infinity,
-        height: 60.0, // 按钮的高度
+        width: MediaQuery.of(context).size.width - 200,
+        height: 70,
         child: ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(40),
+            ),
+            elevation: 3,
+          ),
           onPressed: () {
             submitAnswer(question, userQuestion, index);
           },
@@ -358,7 +387,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     // 1. (?:[\u4e00-\u9fa5]+)? : optional chinese characters
     // 2. P\d+ : P + digits
     // 3. (?:-P\d+)? : optional -P + digits
-    final RegExp regex = RegExp(r'(?:[\u4e00-\u9fa5]+)?P\d+(?:-P\d+)?');
+    final RegExp regex = RegExp(r'(?:[0-9\u4e00-\u9fa5]+)?P\d+(?:-P\d+)?');
     final List<String> parts = text.split(regex);
     final List<String> imageUrls = [];
     List<String> matches =
@@ -705,52 +734,11 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
             ],
           ),
         ),
-        //// 悬浮底栏
-        //Positioned(
-        //  left: 0,
-        //  right: 0,
-        //  bottom: 0,
-        //  child: Container(
-        //    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        //    decoration: BoxDecoration(
-        //      color: Colors.white,
-        //      border: Border(
-        //        top: BorderSide(
-        //          color: Colors.grey.shade300,
-        //        ),
-        //      ),
-        //      boxShadow: [
-        //        BoxShadow(
-        //          color: Colors.black12,
-        //          blurRadius: 4,
-        //          spreadRadius: 2,
-        //        )
-        //      ],
-        //    ),
-        //    child: Row(
-        //      children: [
-        //        Expanded(
-        //          child: TextField(
-        //            decoration: InputDecoration(
-        //              hintText: "记个笔记吧",
-        //              border: OutlineInputBorder(
-        //                borderRadius: BorderRadius.circular(20),
-        //              ),
-        //              contentPadding: EdgeInsets.symmetric(horizontal: 16),
-        //            ),
-        //          ),
-        //        ),
-        //        SizedBox(width: 10),
-        //        IconButton(icon: Icon(Icons.send), onPressed: () {}),
-        //      ],
-        //    ),
-        //  ),
-        //),
       ],
     );
   }
 
-  Widget cuttedQuestion(
+  Widget _cuttedQuestion(
     Question question,
     UserQuestion userQuestion,
     int index,
@@ -761,7 +749,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     );
   }
 
-  Widget buildQuestion(
+  Widget _buildQuestion(
     Question question,
     UserQuestion userQuestion,
     int index,
@@ -778,7 +766,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
       case 2: // 错误回答
         return _answeredQuestion(question, userQuestion, index);
       case 3: // 已斩题
-        return cuttedQuestion(question, userQuestion, index);
+        return _cuttedQuestion(question, userQuestion, index);
       case 4: // 测试模式 - 已作答
         return _unansweredQuestion(question, userQuestion, index);
       default:
@@ -817,6 +805,66 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     );
   }
 
+  Widget _backForwardBtm() {
+    return Stack(
+      children: [
+        // 左下角按钮
+        Positioned(
+          bottom: 20,
+          left: 20,
+          child: ElevatedButton(
+            onPressed: _currentPage == 0 ? null : () => _previousPage(),
+            style: ElevatedButton.styleFrom(
+              shape: CircleBorder(),
+              padding: EdgeInsets.all(15), // 控制按钮大小
+              elevation: 3,
+            ),
+            child: Icon(
+              Icons.arrow_left,
+              size: 50, // 图标更大
+            ),
+          ),
+        ),
+        // 右下角按钮
+        Positioned(
+          bottom: 20,
+          right: 20,
+          child: ElevatedButton(
+            onPressed: _currentPage == widget.questions.length - 1
+                ? null
+                : () => _nextPage(),
+            style: ElevatedButton.styleFrom(
+              shape: CircleBorder(),
+              padding: EdgeInsets.all(15),
+              elevation: 3,
+            ),
+            child: Icon(
+              Icons.arrow_right,
+              size: 50,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildButtom() {
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.android:
+        break;
+      case TargetPlatform.iOS:
+        break;
+      case TargetPlatform.macOS:
+        return _backForwardBtm();
+      case TargetPlatform.windows:
+      case TargetPlatform.linux:
+        return _backForwardBtm();
+      default:
+        break;
+    }
+    return Container();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -832,7 +880,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
               shape: CircleBorder(), // 圆形
               backgroundColor: Colors.transparent, // 设置透明背景
               shadowColor: Colors.transparent, // 去掉阴影
-              elevation: 4, // 按钮阴影
+              elevation: 3, // 按钮阴影
               padding: EdgeInsets.all(0), // 去掉内边距
             ),
             child: Padding(
@@ -873,21 +921,29 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
         ],
         centerTitle: true,
       ),
-      body: PageView.builder(
-        controller: _pageController,
-        onPageChanged: (int page) {
-          setState(() {
-            _currentPage = page; // 更新当前页索引
-          });
-        },
-        itemCount: widget.questions.length,
-        itemBuilder: (context, index) {
-          return buildQuestion(
-            widget.questions[index],
-            widget.userQuestions[index],
-            index,
-          );
-        },
+      body: ScrollConfiguration(
+        behavior: MyCustomScrollBehavior(),
+        child: Stack(
+          children: [
+            PageView.builder(
+              controller: _pageController,
+              onPageChanged: (int page) {
+                setState(() {
+                  _currentPage = page; // 更新当前页索引
+                });
+              },
+              itemCount: widget.questions.length,
+              itemBuilder: (context, index) {
+                return _buildQuestion(
+                  widget.questions[index],
+                  widget.userQuestions[index],
+                  index,
+                );
+              },
+            ),
+            _buildButtom(),
+          ],
+        ),
       ),
     );
   }
