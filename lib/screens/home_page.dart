@@ -10,7 +10,8 @@ import '../db/database_helper.dart';
 import '../common/app_strings.dart';
 import '../screens/choosed_subjects_page.dart';
 import '../screens/my_page.dart';
-//import '../db/data_transfer.dart';
+import '../db/data_transfer.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 Future<bool> checkTransferScuess() async {
   UserDBHelper userdb = UserDBHelper();
@@ -252,7 +253,7 @@ class _HomePageState extends State<HomePage> {
       builder: (BuildContext context) {
         return AlertDialog(
           title: const Text("完成"),
-          content: const Text("数据迁移完成，请重启应用以完成更新"),
+          content: const Text("题目对错数量统计完成，请重启应用以完成更新"),
           actions: [
             TextButton(
               onPressed: () {
@@ -272,21 +273,15 @@ class _HomePageState extends State<HomePage> {
   void _checkForAppUpdate() async {
     String latestVersion = updateData["latest_app"] ?? currentVersion;
     //// 当前版本在1.0.3以上，意味着需要增加user_data数据库
-    //SharedPreferences prefs = await SharedPreferences.getInstance();
-    //if (_compareVersions(currentVersion, '1.0.3') > 0) {
-    //  bool transfered = prefs.getBool('transfered') ?? false;
-    //  // 显示加载对话框，禁止用户操作
-    //  if (AppStrings.needTransfer &&
-    //      (!await checkTransferScuess() || !transfered)) {
-    //    showLoadingDialog(context);
-    //    if (await transferData()) {
-    //      // 迁移成功
-    //      prefs.setBool('transfered', true);
-    //    }
-    //    Navigator.of(context, rootNavigator: true).pop();
-    //    showRestartDialog(context);
-    //  }
-    //}
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool('needToRebuildQuestionCount') ?? false) {
+      if (await rebuildQuestionCount()) {
+        // 重算成功
+        prefs.setBool('needToRebuildQuestionCount', false);
+      }
+      //Navigator.of(context, rootNavigator: true).pop();
+      showRestartDialog(context);
+    }
     if (_compareVersions(latestVersion, currentVersion) > 0) {
       // 弹窗提示更新
       showDialog(

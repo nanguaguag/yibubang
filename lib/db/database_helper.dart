@@ -114,6 +114,11 @@ class DatabaseHelper {
     final db = await database;
     return await db.delete(table, where: condition, whereArgs: args);
   }
+
+  Future<String> getDatabasePath() async {
+    final databasesPath = await getDatabasesPath();
+    return join(databasesPath, 'question_data.sqlite'); // 你的真实文件名
+  }
 }
 
 class UserDBHelper {
@@ -170,6 +175,9 @@ class UserDBHelper {
     )
     ''');
 
+    // IdentityChapter 的主键不完整
+    // 如果同一个 chapter_id 能出现在不同 subject 下 → 数据一定错
+    // 正确设计应是：PRIMARY KEY (identity_id, subject_id, chapter_id)
     await db.execute('''
     CREATE TABLE IF NOT EXISTS IdentityChapter (
         identity_id TEXT,
@@ -177,7 +185,7 @@ class UserDBHelper {
         chapter_id TEXT,
         correct INTAGER DEFAULT 0 NOT NULL,
         incorrect INTAGER DEFAULT 0 NOT NULL,
-        PRIMARY KEY (identity_id, chapter_id)
+        PRIMARY KEY (identity_id, subject_id, chapter_id)
     )
     ''');
 
