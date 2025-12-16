@@ -3,6 +3,12 @@ import 'package:path/path.dart';
 import 'dart:io';
 import 'dart:async';
 
+String generateSimpleId() {
+  final timestamp = DateTime.now().millisecondsSinceEpoch;
+  final random = (100000 + (DateTime.now().microsecond % 900000));
+  return '$timestamp$random';
+}
+
 class DatabaseHelper {
   static final DatabaseHelper _instance = DatabaseHelper._internal();
   factory DatabaseHelper() => _instance;
@@ -16,7 +22,8 @@ class DatabaseHelper {
 
     // Initialize database if it's not already done
     _database = await _initDB();
-    await checkDatabaseIntegrity(); // 添加完整性检查
+    // 由于数据完整性检查会严重影响性能，暂时禁用
+    //await checkDatabaseIntegrity(); // 添加完整性检查
     return _database!;
   }
 

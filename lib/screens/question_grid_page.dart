@@ -128,8 +128,9 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
   }
 
   void clearUserAnswers() async {
-    final questions = getQuestionsFromChapter(widget.chapter);
-    List<UserQuestion> userQuestions = await getUserQuestions(questions);
+    final futureQuestions = getQuestionsFromChapter(widget.chapter);
+    List<UserQuestion> userQuestions = await getUserQuestions(futureQuestions);
+    List<Question> questions = await futureQuestions;
     showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -146,11 +147,14 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
             TextButton(
               onPressed: () {
                 Navigator.of(context).pop(); // 关闭对话框
-                for (UserQuestion q in userQuestions) {
-                  if (q.userAnswer.isNotEmpty) {
-                    q.userAnswer += ';'; // 末尾加上 ; 表示清除前面的做题记录
-                    q.status = 0;
-                    updateQuestion(q);
+                for (int i = 0; i < questions.length; i++) {
+                  final uq = userQuestions[i];
+                  final q = questions[i];
+                  if (uq.status == 1 || uq.status == 2) {
+                    bool prevCorrect = uq.status == 1; // 储存之前的状态
+                    uq.userAnswer += ';'; // 末尾加上 ; 表示清除前面的做题记录
+                    uq.status = 0;
+                    updateQuestion(uq, q, prevCorrect: prevCorrect);
                   }
                 }
                 ScaffoldMessenger.of(context).showSnackBar(
@@ -171,8 +175,9 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
 
   void clearWrongAnswers() async {
     bool doneAll = true;
-    final questions = getQuestionsFromChapter(widget.chapter);
-    List<UserQuestion> userQuestions = await getUserQuestions(questions);
+    final futureQuestions = getQuestionsFromChapter(widget.chapter);
+    List<UserQuestion> userQuestions = await getUserQuestions(futureQuestions);
+    List<Question> questions = await futureQuestions;
     for (UserQuestion q in userQuestions) {
       if (q.userAnswer.isEmpty || q.status == 0) {
         doneAll = false;
@@ -204,11 +209,13 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
             TextButton(
               onPressed: () {
                 Navigator.of(context).pop(); // 关闭对话框
-                for (UserQuestion q in userQuestions) {
-                  if (q.userAnswer.isNotEmpty && q.status == 2) {
-                    q.userAnswer += ';'; // 末尾加上 ; 表示清除前面的做题记录
-                    q.status = 0;
-                    updateQuestion(q);
+                for (int i = 0; i < questions.length; i++) {
+                  final uq = userQuestions[i];
+                  final q = questions[i];
+                  if (uq.status == 2) {
+                    uq.userAnswer += ';'; // 末尾加上 ; 表示清除前面的做题记录
+                    uq.status = 0;
+                    updateQuestion(uq, q, prevCorrect: false);
                   }
                 }
                 ScaffoldMessenger.of(context).showSnackBar(

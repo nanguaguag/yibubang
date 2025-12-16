@@ -6,7 +6,6 @@ import 'package:archive/archive.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:crypto/crypto.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../db/database_helper.dart';
 import '../common/app_strings.dart';
 import '../screens/choosed_subjects_page.dart';

@@ -21,6 +21,9 @@ Future<void> initSettings() async {
   if (!prefs.containsKey('identityId')) {
     await prefs.setString('identityId', '30401'); // 默认identity: 口腔题库
   }
+  if (!prefs.containsKey('questionUploud')) {
+    await prefs.setBool('questionUploud', true); // 打开后启用做题上传功能
+  }
 }
 
 Future<void> clearUserInfo() async {

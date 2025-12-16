@@ -80,20 +80,6 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     );
   }
 
-  String _getLastAnswer(String userAnswer) {
-    /// userAnswer 格式：
-    /// - 最后一次答案是DC：AB;ABC;DC
-    /// - 还没做：AB;ABC;
-    List<String> answers = userAnswer.split(';');
-    return answers.last;
-  }
-
-  String _changeLastAnswer(String userAnswer, String lastAnswer) {
-    List<String> answers = userAnswer.split(';');
-    answers.last = lastAnswer;
-    return answers.join(';');
-  }
-
   // 获取数据
   Future<void> _loadSettings() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -157,10 +143,10 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
               return RadioListTile<String>(
                 title: Text("${option['key']}. ${option['title']}"),
                 value: option['key'],
-                groupValue: _getLastAnswer(userQuestion.userAnswer),
+                groupValue: getLastAnswer(userQuestion.userAnswer),
                 onChanged: (String? value) {
                   setState(() {
-                    userQuestion.userAnswer = _changeLastAnswer(
+                    userQuestion.userAnswer = changeLastAnswer(
                       userQuestion.userAnswer,
                       value ?? '',
                     );
@@ -174,22 +160,22 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
             case '2': // 多选题
               return CheckboxListTile(
                 title: Text("${option['key']}. ${option['title']}"),
-                value: _getLastAnswer(userQuestion.userAnswer)
+                value: getLastAnswer(userQuestion.userAnswer)
                     .contains(option['key']),
                 controlAffinity: ListTileControlAffinity.leading,
                 onChanged: (bool? value) {
                   setState(() {
-                    bool checked = _getLastAnswer(userQuestion.userAnswer)
+                    bool checked = getLastAnswer(userQuestion.userAnswer)
                         .contains(option['key']);
                     if (value == true && !checked) {
-                      userQuestion.userAnswer = _changeLastAnswer(
+                      userQuestion.userAnswer = changeLastAnswer(
                         userQuestion.userAnswer,
-                        _getLastAnswer(userQuestion.userAnswer) + option['key'],
+                        getLastAnswer(userQuestion.userAnswer) + option['key'],
                       );
                     } else if (value == false && checked) {
-                      userQuestion.userAnswer = _changeLastAnswer(
+                      userQuestion.userAnswer = changeLastAnswer(
                         userQuestion.userAnswer,
-                        _getLastAnswer(userQuestion.userAnswer).replaceAll(
+                        getLastAnswer(userQuestion.userAnswer).replaceAll(
                           option['key'],
                           '',
                         ),
@@ -207,6 +193,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
   }
 
   Widget _questionHeaders(Question question, int index) {
+    final titleImg = question.titleImg;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -251,7 +238,24 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
             fontWeight: FontWeight.bold,
           ),
         ),
-        const SizedBox(height: 10),
+        titleImg != null && titleImg.isNotEmpty
+            ? InkWell(
+                onTap: () {
+                  _showFullScreenImage(
+                    context,
+                    [titleImg],
+                    0,
+                  );
+                },
+                child: Padding(
+                  padding: const EdgeInsets.all(6),
+                  child: Image.network(
+                    titleImg,
+                    height: 200,
+                  ),
+                ),
+              )
+            : const SizedBox.shrink(),
       ],
     );
   }
@@ -280,7 +284,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
       final String key = option['key'];
       final bool answerContains = question.answer!.contains(key);
       final bool userAnswerContains =
-          _getLastAnswer(userQuestion.userAnswer).contains(key);
+          getLastAnswer(userQuestion.userAnswer).contains(key);
       if ((mode == 3 && userQuestion.status == 0) || userQuestion.status == 4) {
         if (answerContains) {
           option['color'] = null;
@@ -666,7 +670,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     UserQuestion userQuestion,
     int index,
   ) {
-    final String userAnswer = _getLastAnswer(userQuestion.userAnswer);
+    final String userAnswer = getLastAnswer(userQuestion.userAnswer);
     final String answer = question.answer ?? '';
     return Stack(
       children: [
@@ -786,6 +790,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
 
   Widget _collectionBtn() {
     UserQuestion userQuestion = widget.userQuestions[_currentPage];
+    Question question = widget.questions[_currentPage];
     return IconButton(
       icon: userQuestion.collection == 0
           ? Icon(Icons.favorite_outline)
@@ -796,7 +801,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
         } else {
           userQuestion.collection = 0;
         }
-        updateQuestion(userQuestion); // 在数据库中 update
+        updateQuestion(userQuestion, question); // 在数据库中 update
         setState(() {
           widget.userQuestions[_currentPage].collection =
               userQuestion.collection;
@@ -857,6 +862,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
       case TargetPlatform.macOS:
         return _backForwardBtm();
       case TargetPlatform.windows:
+        return _backForwardBtm();
       case TargetPlatform.linux:
         return _backForwardBtm();
       default:
@@ -986,7 +992,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
   }
 
   void submitAnswer(Question question, UserQuestion userQuestion, int index) {
-    final String userAnswer = _getLastAnswer(userQuestion.userAnswer);
+    final String userAnswer = getLastAnswer(userQuestion.userAnswer);
     if (question.type == '1' && userAnswer.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -1003,7 +1009,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
       );
     } else if (mode == 2) {
       userQuestion.status = 4; // 测试模式 - 已作答
-      updateQuestion(userQuestion);
+      updateQuestion(userQuestion, question);
       setState(() {
         widget.userQuestions[index].status = userQuestion.status;
       });
@@ -1014,7 +1020,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
       } else {
         userQuestion.status = 2; // 回答错误
       }
-      updateQuestion(userQuestion);
+      updateQuestion(userQuestion, question);
       setState(() {
         widget.userQuestions[index].status = userQuestion.status;
       });

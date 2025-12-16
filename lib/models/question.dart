@@ -284,6 +284,20 @@ class Question {
   }
 }
 
+String getLastAnswer(String userAnswer) {
+  /// userAnswer 格式：
+  /// - 最后一次答案是DC：AB;ABC;DC
+  /// - 还没做：AB;ABC;
+  List<String> answers = userAnswer.split(';');
+  return answers.last;
+}
+
+String changeLastAnswer(String userAnswer, String lastAnswer) {
+  List<String> answers = userAnswer.split(';');
+  answers.last = lastAnswer;
+  return answers.join(';');
+}
+
 Future<List<Question>> getQuestionsFromChapter(Chapter chapter) async {
   final dbh = DatabaseHelper();
   final prefs = await SharedPreferences.getInstance();
@@ -367,7 +381,11 @@ Future<List<UserQuestion>> getUserQuestions(
   return resultList;
 }
 
-Future<void> updateQuestion(UserQuestion question) async {
+Future<void> updateQuestion(
+  UserQuestion uq,
+  Question q, {
+  bool prevCorrect = true,
+}) async {
   final db = await DatabaseHelper().database;
   final userDb = await UserDBHelper().database;
 
@@ -376,65 +394,143 @@ Future<void> updateQuestion(UserQuestion question) async {
     'IdentityQuestion',
     columns: ['identity_id', 'subject_id', 'chapter_id'],
     where: 'question_id = ?',
-    whereArgs: [question.id],
+    whereArgs: [uq.id],
   );
 
   // 2. 对每一行做 UPSERT
   final batch = userDb.batch();
   for (final row in iqRows) {
-    final identityId = row['identity_id'] as String;
-    final subjectId = row['subject_id'] as String;
-    final chapterId = row['chapter_id'] as String;
+    final String identityId = row['identity_id'] as String;
+    final String subjectId = row['subject_id'] as String;
+    final String chapterId = row['chapter_id'] as String;
+    final int deltaCorrect;
+    final int deltaIncorrect;
 
-    // 2.1 IdentitySubject 的 UPSERT
-    batch.rawInsert('''
-      INSERT INTO IdentitySubject(identity_id, subject_id, correct, incorrect, selected)
-      VALUES(?, ?, ?, ?, COALESCE((SELECT selected FROM IdentitySubject WHERE identity_id=? AND subject_id=?), 0))
-      ON CONFLICT(identity_id, subject_id) DO UPDATE SET
-        correct   = correct + ?,
-        incorrect = incorrect + ?;
-    ''', [
-      identityId, subjectId,
-      // 本次增量：status==1 -> correct+1；status==2 -> incorrect+1；否则0
-      if (question.status == 1) 1 else 0,
-      if (question.status == 2) 1 else 0,
-      // 用于 COALESCE 取原来的 selected
-      identityId, subjectId,
-      // UPSERT 更新时的增量
-      if (question.status == 1) 1 else 0,
-      if (question.status == 2) 1 else 0,
-    ]);
+    if (uq.status == 1) {
+      // 新增：做对一次
+      deltaCorrect = 1;
+      deltaIncorrect = 0;
+    } else if (uq.status == 2) {
+      // 新增：做错一次
+      deltaCorrect = 0;
+      deltaIncorrect = 1;
+    } else if (uq.status == 0) {
+      // 撤回：根据 prevCorrect 决定撤回哪一类
+      deltaCorrect = prevCorrect ? -1 : 0;
+      deltaIncorrect = prevCorrect ? 0 : -1;
+    } else {
+      // 其他：不处理
+      deltaCorrect = 0;
+      deltaIncorrect = 0;
+    }
+
+    //// 2.1 IdentitySubject 的 UPSERT
+    if (uq.status == 1 || uq.status == 2) {
+      // 2.1 新增作答：UPSERT（用 delta 变量更清晰）
+      batch.rawInsert('''
+        INSERT INTO IdentitySubject(identity_id, subject_id, correct, incorrect, selected)
+        VALUES(?, ?, ?, ?, COALESCE((SELECT selected FROM IdentitySubject WHERE identity_id=? AND subject_id=?), 0))
+        ON CONFLICT(identity_id, subject_id) DO UPDATE SET
+          correct   = correct + excluded.correct,
+          incorrect = incorrect + excluded.incorrect;
+      ''', [
+        identityId,
+        subjectId,
+        deltaCorrect,
+        deltaIncorrect,
+        identityId,
+        subjectId,
+      ]);
+    } else if (uq.status == 0) {
+      // 2.2 撤回作答：只 UPDATE（避免“撤回但记录不存在”导致插入奇怪数据）
+      // 并且把结果截断到 >=0，防止撤回过头出现负数
+      batch.rawUpdate('''
+        UPDATE IdentitySubject
+        SET
+          correct   = CASE WHEN correct + ? < 0 THEN 0 ELSE correct + ? END,
+          incorrect = CASE WHEN incorrect + ? < 0 THEN 0 ELSE incorrect + ? END
+        WHERE identity_id = ? AND subject_id = ?;
+      ''', [
+        deltaCorrect,
+        deltaCorrect,
+        deltaIncorrect,
+        deltaIncorrect,
+        identityId,
+        subjectId,
+      ]);
+    }
 
     // 2.2 IdentityChapter 的 UPSERT
-    batch.rawInsert('''
-      INSERT INTO IdentityChapter(identity_id, subject_id, chapter_id, correct, incorrect)
-      VALUES(?, ?, ?, ?, ?)
-      ON CONFLICT(identity_id, chapter_id) DO UPDATE SET
-        correct   = correct + ?,
-        incorrect = incorrect + ?;
-    ''', [
-      identityId,
-      subjectId,
-      chapterId,
-      if (question.status == 1) 1 else 0,
-      if (question.status == 2) 1 else 0,
-      if (question.status == 1) 1 else 0,
-      if (question.status == 2) 1 else 0,
-    ]);
+    if (uq.status == 1 || uq.status == 2) {
+      // 新增作答：UPSERT（插入或累加）
+      batch.rawInsert('''
+        INSERT INTO IdentityChapter(identity_id, subject_id, chapter_id, correct, incorrect)
+        VALUES(?, ?, ?, ?, ?)
+        ON CONFLICT(identity_id, chapter_id) DO UPDATE SET
+          correct   = correct + excluded.correct,
+          incorrect = incorrect + excluded.incorrect;
+      ''', [
+        identityId,
+        subjectId,
+        chapterId,
+        deltaCorrect,
+        deltaIncorrect,
+      ]);
+    } else if (uq.status == 0) {
+      // 撤回作答：只 UPDATE，且截断到 >=0，避免负数
+      batch.rawUpdate('''
+        UPDATE IdentityChapter
+        SET
+          correct   = CASE WHEN correct + ? < 0 THEN 0 ELSE correct + ? END,
+          incorrect = CASE WHEN incorrect + ? < 0 THEN 0 ELSE incorrect + ? END
+        WHERE identity_id = ? AND chapter_id = ?;
+      ''', [
+        deltaCorrect,
+        deltaCorrect,
+        deltaIncorrect,
+        deltaIncorrect,
+        identityId,
+        chapterId,
+      ]);
+    }
   }
 
   // 3. 更新 UserDB 中的 Question 表
   batch.update(
     'Question',
     {
-      'status': question.status,
-      'collection': question.collection,
-      'user_answer': question.userAnswer,
+      'status': uq.status,
+      'collection': uq.collection,
+      'user_answer': uq.userAnswer,
     },
     where: 'id = ?',
-    whereArgs: [question.id],
+    whereArgs: [uq.id],
   );
 
+  // 3. UserDB Activity 表中插入记录
+  final int isCorrect = 2 - uq.status; // 1 -> 1, 2 -> 0
+  batch.insert(
+    'Activities',
+    {
+      'id': generateSimpleId(),
+      'title': 'NewAnswer',
+      'description': '''{
+        "paper_id": "0",
+        "identity_id": "${q.identityId}",
+        "chapter_id": "${q.chapterId}",
+        "collection_id": "",
+        "category_id": "",
+        "chapter_parent_id": "${q.chapterParentId}",
+        "answer": "${getLastAnswer(uq.userAnswer)}",
+        "question_id": ${q.id},
+        "is_right": "$isCorrect",
+        "app_id": "${q.nativeAppId}",
+        "duration": "10",
+        "subject_id": "20101"
+      }''',
+      'timestamp': DateTime.now().millisecondsSinceEpoch,
+    },
+  );
   // 一次性提交
   await batch.commit(noResult: true);
 }
