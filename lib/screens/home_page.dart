@@ -12,6 +12,7 @@ import '../screens/choosed_subjects_page.dart';
 import '../screens/my_page.dart';
 import '../db/data_transfer.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 Future<bool> checkTransferScuess() async {
   UserDBHelper userdb = UserDBHelper();
@@ -34,25 +35,51 @@ class _HomePageState extends State<HomePage> {
   String statusText = '点击按钮下载题库';
   Map<String, dynamic> updateData = {}; // 更新信息
 
+  // 当前应用版本号
+  late String currentVersion;
   // 缓存判断是否需要下载的 Future
-  late Future<bool> _needToDownloadFuture;
-  // 当前应用版本号（请根据实际情况修改）
-  final String currentVersion = AppStrings.appVersion;
+  late bool needToDownload;
+  //late Future<bool> _needToDownloadFuture;
 
   @override
   void initState() {
     super.initState();
-    _needToDownloadFuture = _needToDownload();
-    // 如果需要下载，则自动触发下载任务
-    _needToDownloadFuture.then((needDownload) {
-      if (needDownload) {
-        _downloadAndExtractZip();
-      }
-      // 检查应用更新（注意此处依赖于 updateData 已经加载）
-      if (updateData.isNotEmpty) {
-        _checkForAppUpdate();
-      }
+    // 先给个默认值，避免 late 未初始化被读到
+    currentVersion = "0.0.0";
+    needToDownload = false;
+    // 异步初始化放到单独方法里
+    _initAsync();
+  }
+
+  Future<void> _initAsync() async {
+    final info = await PackageInfo.fromPlatform();
+
+    debugPrint("App 名称: ${info.appName}");
+    debugPrint("包名: ${info.packageName}");
+    debugPrint("版本号: ${info.version}");
+    debugPrint("构建号: ${info.buildNumber}");
+
+    // 如果这个 async 结束时页面已经销毁，直接 return
+    if (!mounted) return;
+
+    setState(() {
+      currentVersion = info.version;
     });
+
+    final needDownload = await _needToDownload();
+
+    if (!mounted) return;
+
+    // 如果需要下载，则自动触发下载任务
+    if (needDownload) {
+      debugPrint("需要下载，downloading...");
+      _downloadAndExtractZip();
+    }
+    // 检查应用更新（注意此处依赖于 updateData 已经加载）
+    // 如果 updateData 是异步加载来的，你需要确保它在这里之前已经加载完
+    if (updateData.isNotEmpty) {
+      _checkForAppUpdate();
+    }
   }
 
   // 两个页面对应底部导航栏
@@ -87,7 +114,7 @@ class _HomePageState extends State<HomePage> {
         },
       );
       if (updateResponse.statusCode != 200) {
-        print('请求失败，状态码: ${updateResponse.statusCode}');
+        debugPrint('请求失败，状态码: ${updateResponse.statusCode}');
         return true;
       }
       // 初始化更新信息
@@ -101,18 +128,26 @@ class _HomePageState extends State<HomePage> {
     String filePath = '$appDocDir/question_data.sqlite.zip';
     File file = File(filePath);
 
-    // Step 2: 下载 ZIP 文件
-    final dataMd5 = updateData['data_for_version'][currentVersion]["md5"] ??
-        updateData['latest_data_md5'];
+    final dataForVersion = updateData['data_for_version'];
 
-    if (await file.exists()) {
-      String fileMd5 = await _calculateMd5(file);
-      if (fileMd5 == dataMd5) {
-        return false;
+    // 如果远程JSON文件包含当前版本的数据库信息，则进行MD5校验
+    if (dataForVersion is Map && dataForVersion.containsKey(currentVersion)) {
+      final dataMd5 = dataForVersion[currentVersion]["md5"];
+      debugPrint("目标数据库md5: $dataMd5");
+      if (await file.exists()) {
+        String fileMd5 = await _calculateMd5(file);
+        debugPrint("本地数据库md5: $fileMd5");
+        if (fileMd5 == dataMd5) {
+          return false;
+        }
+        return true;
       }
       return true;
+    } else {
+      // 否则跳过下载
+      debugPrint("当前版本无对应题库，跳过下载");
+      return false;
     }
-    return true;
   }
 
   /// 下载并解压 ZIP 文件
@@ -121,6 +156,7 @@ class _HomePageState extends State<HomePage> {
     if (!await _needToDownload()) return;
 
     setState(() {
+      needToDownload = true;
       isDownloading = true;
       statusText = '正在下载题库...请将APP保持在前台';
       downloadProgress = 0.00;
@@ -179,7 +215,7 @@ class _HomePageState extends State<HomePage> {
         isDownloading = false;
         statusText = '题库下载并解压完成';
         // 下载完成后更新 Future 状态，进入主页
-        _needToDownloadFuture = Future.value(false);
+        needToDownload = false;
       });
     } catch (error) {
       setState(() {
@@ -253,7 +289,7 @@ class _HomePageState extends State<HomePage> {
       builder: (BuildContext context) {
         return AlertDialog(
           title: const Text("完成"),
-          content: const Text("题目对错数量统计完成，请重启应用以完成更新"),
+          content: const Text("题目对错数量统计完成，建议重启应用以完成更新"),
           actions: [
             TextButton(
               onPressed: () {
@@ -272,7 +308,6 @@ class _HomePageState extends State<HomePage> {
   /// 检查应用更新，如果有新版本则弹窗提示
   void _checkForAppUpdate() async {
     String latestVersion = updateData["latest_app"] ?? currentVersion;
-    //// 当前版本在1.0.3以上，意味着需要增加user_data数据库
     SharedPreferences prefs = await SharedPreferences.getInstance();
     if (prefs.getBool('needToRebuildQuestionCount') ?? false) {
       if (await rebuildQuestionCount()) {
@@ -306,7 +341,7 @@ class _HomePageState extends State<HomePage> {
                 if (await canLaunchUrl(uri)) {
                   await launchUrl(uri);
                 } else {
-                  print("无法打开更新页面：$url");
+                  debugPrint("无法打开更新页面：$url");
                 }
               },
               child: Text('前往GitHub下载'),
@@ -319,54 +354,42 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<bool>(
-      future: _needToDownloadFuture,
-      builder: (context, snapshot) {
-        // // 加载中时显示加载指示器
-        //if (snapshot.connectionState == ConnectionState.waiting) {
-        //  return Scaffold(
-        //    body: Center(child: CircularProgressIndicator()),
-        //  );
-        //}
-
-        // 如果需要下载，则显示下载页面
-        if (snapshot.hasData && snapshot.data == true) {
-          return Scaffold(
-            appBar: AppBar(
-              title: Text('需要下载题库'),
+    // 如果需要下载，则显示下载页面
+    if (needToDownload) {
+      return Scaffold(
+        appBar: AppBar(
+          title: Text('需要下载题库'),
+        ),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(statusText),
+              SizedBox(height: 20),
+              _buildProgress(),
+            ],
+          ),
+        ),
+      );
+    } else {
+      // 下载成功或不需要下载，则进入主页
+      return Scaffold(
+        body: _screens[_selectedIndex],
+        bottomNavigationBar: BottomNavigationBar(
+          currentIndex: _selectedIndex,
+          onTap: _onItemTapped,
+          items: const <BottomNavigationBarItem>[
+            BottomNavigationBarItem(
+              icon: Icon(Icons.book),
+              label: AppStrings.selectedSubjectsTitle,
             ),
-            body: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(statusText),
-                  SizedBox(height: 20),
-                  _buildProgress(),
-                ],
-              ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.person),
+              label: AppStrings.myPageTitle,
             ),
-          );
-        } else {
-          // 下载成功或不需要下载，则进入主页
-          return Scaffold(
-            body: _screens[_selectedIndex],
-            bottomNavigationBar: BottomNavigationBar(
-              currentIndex: _selectedIndex,
-              onTap: _onItemTapped,
-              items: const <BottomNavigationBarItem>[
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.book),
-                  label: AppStrings.selectedSubjectsTitle,
-                ),
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.person),
-                  label: AppStrings.myPageTitle,
-                ),
-              ],
-            ),
-          );
-        }
-      },
-    );
+          ],
+        ),
+      );
+    }
   }
 }

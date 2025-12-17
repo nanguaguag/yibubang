@@ -1,5 +1,4 @@
 import 'database_helper.dart'; // 假设此文件中包含 DatabaseHelper 和 UserDBHelper 的定义
-import 'package:sqflite/sqflite.dart';
 
 /// 将 question_data.sqlite 中与用户数据相关的数据迁移到 user_data.sqlite 中
 Future<bool> transferData() async {
@@ -91,63 +90,61 @@ Future<bool> transferData() async {
 
 // 重新统计刷题数量
 Future<bool> rebuildQuestionCount() async {
-  // 注意：路径里单引号要转义
-  final qbankPath = await DatabaseHelper().getDatabasePath();
+  final qbankPath = await DatabaseHelper().getDatabasePath(); 
   final escaped = qbankPath.replaceAll("'", "''");
-  final userDb = await UserDBHelper().database; // 用户 DB
-  await userDb.transaction((txn) async {
-    // 可选：等待锁（ffi 下很有用）
-    await txn.execute('PRAGMA busy_timeout = 3000;');
-    // 0) ATTACH 题库数据库到当前连接（txn 属于 userDb 连接）
-    await txn.execute("ATTACH DATABASE '$escaped' AS qbank;");
+  final userDb = await UserDBHelper().database;
 
-    try {
-      // 1) 清空旧统计（不动 selected）
+  // 1) 先 attach（同一个连接）
+  await userDb.execute("PRAGMA busy_timeout = 3000;");
+  await userDb.execute("ATTACH DATABASE '$escaped' AS qbank;");
+
+  try {
+    // 2) 再做事务（不要在 txn 里 detach）
+    await userDb.transaction((txn) async {
       await txn
           .rawUpdate('UPDATE IdentitySubject SET correct = 0, incorrect = 0');
       await txn
           .rawUpdate('UPDATE IdentityChapter SET correct = 0, incorrect = 0');
 
-      // 2) 重算 Chapter 级别
-      // uq = userDb.Question（用户最终状态）
-      // iq = qbank.IdentityQuestion（题库映射：一题可属于多个 identity/chapter）
       await txn.rawInsert(r'''
-      INSERT INTO IdentityChapter (identity_id, subject_id, chapter_id, correct, incorrect)
-      SELECT
-        iq.identity_id,
-        iq.subject_id,
-        iq.chapter_id,
-        SUM(CASE WHEN uq.status = 1 THEN 1 ELSE 0 END) AS correct,
-        SUM(CASE WHEN uq.status = 2 THEN 1 ELSE 0 END) AS incorrect
-      FROM Question AS uq
-      JOIN qbank.IdentityQuestion AS iq
-        ON uq.id = iq.question_id
-      WHERE uq.status IN (1, 2)
-      GROUP BY iq.identity_id, iq.subject_id, iq.chapter_id
-      ON CONFLICT(identity_id, chapter_id) DO UPDATE SET
-        correct   = excluded.correct,
-        incorrect = excluded.incorrect;
-    ''');
+        INSERT INTO IdentityChapter (identity_id, subject_id, chapter_id, correct, incorrect)
+        SELECT
+          iq.identity_id,
+          iq.subject_id,
+          iq.chapter_id,
+          SUM(CASE WHEN uq.status = 1 THEN 1 ELSE 0 END) AS correct,
+          SUM(CASE WHEN uq.status = 2 THEN 1 ELSE 0 END) AS incorrect
+        FROM Question AS uq
+        JOIN qbank.IdentityQuestion AS iq
+          ON uq.id = iq.question_id
+        WHERE uq.status IN (1, 2)
+        GROUP BY iq.identity_id, iq.subject_id, iq.chapter_id
+        ON CONFLICT(identity_id, chapter_id) DO UPDATE SET
+          correct   = excluded.correct,
+          incorrect = excluded.incorrect;
+      ''');
 
-      // 3) 从 Chapter 聚合 Subject
-      await txn.rawInsert(r'''
-      INSERT INTO IdentitySubject (identity_id, subject_id, correct, incorrect)
-      SELECT
-        identity_id,
-        subject_id,
-        SUM(correct)   AS correct,
-        SUM(incorrect) AS incorrect
-      FROM IdentityChapter
-      GROUP BY identity_id, subject_id
-      ON CONFLICT(identity_id, subject_id) DO UPDATE SET
-        correct   = excluded.correct,
-        incorrect = excluded.incorrect;
-    ''');
-    } finally {
-      // 4) 解绑（建议做，避免后续同连接里误用）
-      //await txn.execute("DETACH DATABASE qbank;");
-    }
-  });
+      await txn.execute(r'''
+        INSERT INTO IdentitySubject (identity_id, subject_id, correct, incorrect)
+        SELECT
+          iq.identity_id,
+          iq.subject_id,
+          SUM(CASE WHEN uq.status = 1 THEN 1 ELSE 0 END) AS correct,
+          SUM(CASE WHEN uq.status = 2 THEN 1 ELSE 0 END) AS incorrect
+        FROM Question AS uq
+        JOIN qbank.IdentityQuestion AS iq
+          ON uq.id = iq.question_id
+        WHERE uq.status IN (1, 2)
+        GROUP BY iq.identity_id, iq.subject_id
+        ON CONFLICT(identity_id, subject_id) DO UPDATE SET
+          correct   = excluded.correct,
+          incorrect = excluded.incorrect;
+      ''');
+    });
+  } finally {
+    // 3) 事务结束后再 detach
+    await userDb.execute("DETACH DATABASE qbank;");
+  }
 
   return true;
 }

@@ -4,6 +4,7 @@ import 'package:yibubang/db/settings.dart';
 import 'package:yibubang/screens/home_page.dart';
 import '../common/request.dart';
 import 'login_successfully.dart';
+import '../db/data_transfer.dart';
 
 ///// 我的页面，展示用户的收藏/评论/笔记
 //class MyPage extends StatelessWidget {
@@ -152,6 +153,48 @@ class _LoginPageState extends State<LoginPage> {
 
     return Scaffold(
       appBar: AppBar(
+        actions: <Widget>[
+          IconButton(
+            icon: Icon(Icons.build),
+            onPressed: () async {
+              showDialog(
+                context: context,
+                barrierDismissible: false, // 禁止点空白关闭
+                builder: (BuildContext context) {
+                  return AlertDialog(
+                    title: const Text("重新统计"),
+                    content: const Text(
+                      "由于开发者之前对数据库的了解非常稀烂，"
+                      "2.0.0版本的刷题数出现了各种各样的问题，"
+                      "如果出现章节正确数和错误数不正确，请点击下方的确认按钮，统计完后请重启本应用。",
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                        },
+                        child: Text("取消"),
+                      ),
+                      TextButton(
+                        onPressed: () async {
+                          await rebuildQuestionCount();
+                          Navigator.of(context).pop(); // 或者只是关闭对话框
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('做题数量统计已更新'),
+                              duration: Duration(seconds: 1),
+                            ),
+                          );
+                        },
+                        child: const Text("确认"),
+                      ),
+                    ],
+                  );
+                },
+              );
+            },
+          ),
+        ],
         title: const Text("登录医考帮"),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),

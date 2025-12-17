@@ -1,4 +1,5 @@
 import 'package:sqflite/sqflite.dart';
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart';
 import 'dart:io';
 import 'dart:async';
@@ -45,7 +46,7 @@ class DatabaseHelper {
   Future<void> checkDatabaseIntegrity([Database? db]) async {
     final database = db ?? _database;
     if (database == null) {
-      print('Question data 数据库尚未初始化，跳过完整性检查');
+      debugPrint('Question data 数据库尚未初始化，跳过完整性检查');
       return;
     }
 
@@ -53,13 +54,13 @@ class DatabaseHelper {
       final result = await database.rawQuery('PRAGMA integrity_check;');
       final checkResult = result.first.values.first;
       if (checkResult != 'ok') {
-        print('❌ Question data 数据库完整性检查失败: $checkResult');
+        debugPrint('❌ Question data 数据库完整性检查失败: $checkResult');
         // 你可以选择在这里抛出异常或自动备份、恢复等
       } else {
-        print('✅ Question data 数据库完整性良好');
+        debugPrint('✅ Question data 数据库完整性良好');
       }
     } catch (e) {
-      print('⚠️ Question data 执行完整性检查出错: $e');
+      debugPrint('⚠️ Question data 执行完整性检查出错: $e');
     }
   }
 
@@ -144,7 +145,7 @@ class UserDBHelper {
   Future<void> checkDatabaseIntegrity([Database? db]) async {
     final database = db ?? _database;
     if (database == null) {
-      print('User data 数据库尚未初始化，跳过完整性检查');
+      debugPrint('User data 数据库尚未初始化，跳过完整性检查');
       return;
     }
 
@@ -152,18 +153,18 @@ class UserDBHelper {
       final result = await database.rawQuery('PRAGMA integrity_check;');
       final checkResult = result.first.values.first;
       if (checkResult != 'ok') {
-        print('❌ User data 数据库完整性检查失败: $checkResult');
+        debugPrint('❌ User data 数据库完整性检查失败: $checkResult');
         // 你可以选择在这里抛出异常或自动备份、恢复等
       } else {
-        print('✅ User data 数据库完整性良好');
+        debugPrint('✅ User data 数据库完整性良好');
       }
     } catch (e) {
-      print('⚠️ User data 执行完整性检查出错: $e');
+      debugPrint('⚠️ User data 执行完整性检查出错: $e');
     }
   }
 
   Future<void> _onCreate(Database db, int version) async {
-    print("初始化用户数据库...");
+    debugPrint("初始化用户数据库...");
     await db.execute('''
     CREATE TABLE IF NOT EXISTS IdentitySubject (
         identity_id TEXT,
@@ -248,7 +249,7 @@ class UserDBHelper {
         ON Question(status);
     ''');
 
-    print("用户数据库初始化完成～");
+    debugPrint("用户数据库初始化完成～");
   }
 
   // Insert data into table
