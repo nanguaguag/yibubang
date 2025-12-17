@@ -1,6 +1,7 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import '../db/database_helper.dart';
 import 'chapter.dart';
+import 'package:flutter/foundation.dart';
 
 class UserQuestion {
   String id;
@@ -423,6 +424,11 @@ Future<void> updateQuestion(
       deltaCorrect = 0;
       deltaIncorrect = 0;
     }
+
+    debugPrint(
+      "Updating for identity $identityId, subject $subjectId, chapter $chapterId: "
+      "deltaCorrect=$deltaCorrect, deltaIncorrect=$deltaIncorrect",
+    );
 
     //// 2.1 IdentitySubject 的 UPSERT
     if (uq.status == 1 || uq.status == 2) {

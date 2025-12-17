@@ -10,6 +10,20 @@ String generateSimpleId() {
   return '$timestamp$random';
 }
 
+Future<void> dropAllTriggers(Database db) async {
+  final triggers = await db.rawQuery('''
+      SELECT name
+      FROM sqlite_master
+      WHERE type = 'trigger';
+    ''');
+
+  for (final row in triggers) {
+    final triggerName = row['name'] as String;
+    await db.execute('DROP TRIGGER IF EXISTS $triggerName');
+    debugPrint(triggerName);
+  }
+}
+
 class DatabaseHelper {
   static final DatabaseHelper _instance = DatabaseHelper._internal();
   factory DatabaseHelper() => _instance;
@@ -24,7 +38,8 @@ class DatabaseHelper {
     // Initialize database if it's not already done
     _database = await _initDB();
     // 由于数据完整性检查会严重影响性能，暂时禁用
-    //await checkDatabaseIntegrity(); // 添加完整性检查
+    // dropAllTriggers(_database!); // 删除所有触发器
+    // await checkDatabaseIntegrity(); // 添加完整性检查
     return _database!;
   }
 
@@ -132,6 +147,7 @@ class UserDBHelper {
   Future<Database> get database async {
     if (_database != null) return _database!;
     _database = await _initDatabase();
+    dropAllTriggers(_database!); // 删除所有触发器
     await checkDatabaseIntegrity(); // 添加完整性检查
     return _database!;
   }
