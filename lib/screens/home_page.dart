@@ -164,16 +164,21 @@ class _HomePageState extends State<HomePage> {
 
     try {
       // Step 1: 获取存储目录并创建下载文件
+      debugPrint("Step1");
       String appDocDir = await getDatabasesPath();
       String filePath = '$appDocDir/question_data.sqlite.zip';
       File file = File(filePath);
+      debugPrint(filePath);
 
       // Step 2: 下载 ZIP 文件
+      debugPrint("Step2");
       final dataUrl = updateData['data_for_version'][currentVersion]["url"] ??
           updateData['latest_data_url'];
+      debugPrint(dataUrl);
 
       var request = http.Request('GET', Uri.parse(dataUrl));
       var response = await request.send();
+      debugPrint("response: ${response.statusCode.toString()}");
 
       int totalBytes = response.contentLength ?? 0;
       int receivedBytes = 0;
@@ -193,6 +198,7 @@ class _HomePageState extends State<HomePage> {
       await sink.flush();
       await sink.close();
 
+      debugPrint("Step3");
       // Step 3: 解压 ZIP 文件
       List<int> bytes = await file.readAsBytes();
       Archive archive = ZipDecoder().decodeBytes(bytes);
@@ -201,18 +207,16 @@ class _HomePageState extends State<HomePage> {
         if (fileInArchive.isFile &&
             !fileInArchive.name.startsWith('__MACOSX')) {
           String fileName = fileInArchive.name;
+          debugPrint("Extracting: $fileName");
           File extractedFile = File('$appDocDir/$fileName');
           await extractedFile.writeAsBytes(fileInArchive.content as List<int>);
         }
       }
 
-      //// Step 4: 解压后删除 ZIP 文件以节省空间
-      //if (await file.exists()) {
-      //  await file.delete();
-      //}
-
+      debugPrint("Step4");
       setState(() {
         isDownloading = false;
+        debugPrint("题库下载并解压完成");
         statusText = '题库下载并解压完成';
         // 下载完成后更新 Future 状态，进入主页
         needToDownload = false;
@@ -220,6 +224,7 @@ class _HomePageState extends State<HomePage> {
     } catch (error) {
       setState(() {
         isDownloading = false;
+        debugPrint("题库下载失败：$error");
         statusText = '题库下载失败：$error';
       });
     }
@@ -307,6 +312,10 @@ class _HomePageState extends State<HomePage> {
 
   /// 检查应用更新，如果有新版本则弹窗提示
   void _checkForAppUpdate() async {
+    if (await _needToDownload()) {
+      // 下载过程中不检查更新
+      return;
+    }
     String latestVersion = updateData["latest_app"] ?? currentVersion;
     SharedPreferences prefs = await SharedPreferences.getInstance();
     if (prefs.getBool('needToRebuildQuestionCount') ?? false) {

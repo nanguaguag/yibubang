@@ -186,7 +186,7 @@ class UserDBHelper {
         chapter_id TEXT,
         correct INTAGER DEFAULT 0 NOT NULL,
         incorrect INTAGER DEFAULT 0 NOT NULL,
-        PRIMARY KEY (identity_id, subject_id, chapter_id)
+        PRIMARY KEY (identity_id, chapter_id)
     )
     ''');
 
