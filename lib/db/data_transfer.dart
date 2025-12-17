@@ -90,13 +90,13 @@ Future<bool> transferData() async {
 
 // 重新统计刷题数量
 Future<bool> rebuildQuestionCount() async {
-  final qbankPath = await DatabaseHelper().getDatabasePath(); 
+  final qbankPath = await DatabaseHelper().getDatabasePath();
   final escaped = qbankPath.replaceAll("'", "''");
   final userDb = await UserDBHelper().database;
 
   // 1) 先 attach（同一个连接）
-  await userDb.execute("PRAGMA busy_timeout = 3000;");
-  await userDb.execute("ATTACH DATABASE '$escaped' AS qbank;");
+  await userDb.rawQuery("PRAGMA busy_timeout = 3000;");
+  await userDb.rawQuery("ATTACH DATABASE '$escaped' AS qbank;");
 
   try {
     // 2) 再做事务（不要在 txn 里 detach）
