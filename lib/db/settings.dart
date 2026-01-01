@@ -21,6 +21,15 @@ Future<void> initSettings() async {
   if (!prefs.containsKey('identityId')) {
     await prefs.setString('identityId', '30401'); // 默认identity: 口腔题库
   }
+  if (!prefs.containsKey('lastSubjectId')) {
+    await prefs.setString('lastSubjectId', ''); // 上次做到的的课程ID
+  }
+  if (!prefs.containsKey('lastChapterId')) {
+    await prefs.setString('lastChapterId', ''); // 上次做到的的章节ID
+  }
+  if (!prefs.containsKey('lastQIndex')) {
+    await prefs.setInt('lastQIndex', -1); // 上次做到的的题目ID
+  }
   if (!prefs.containsKey('questionUploud')) {
     await prefs.setBool('questionUploud', true); // 打开后启用做题上传功能
   }

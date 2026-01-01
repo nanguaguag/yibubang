@@ -425,11 +425,6 @@ Future<void> updateQuestion(
       deltaIncorrect = 0;
     }
 
-    debugPrint(
-      "Updating for identity $identityId, subject $subjectId, chapter $chapterId: "
-      "deltaCorrect=$deltaCorrect, deltaIncorrect=$deltaIncorrect",
-    );
-
     //// 2.1 IdentitySubject 的 UPSERT
     if (uq.status == 1 || uq.status == 2) {
       // 2.1 新增作答：UPSERT（用 delta 变量更清晰）

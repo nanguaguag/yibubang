@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../common/app_strings.dart';
@@ -49,6 +50,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
   @override
   void initState() {
     _loadSettings();
+    _saveLastQIndex();
     super.initState();
     _currentPage = widget.questionIndex;
     _pageController = PageController(initialPage: _currentPage);
@@ -62,6 +64,14 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
       'app_id': question.appId,
     });
     return QuestionStat.fromMap(response['data']);
+  }
+
+  Future<void> _saveLastQIndex() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.containsKey('lastQIndex')) {
+      await prefs.setInt('lastQIndex', _currentPage);
+    }
+    debugPrint('保存上次做题记录: $_currentPage');
   }
 
   // 控制翻到下一页的方法
@@ -778,13 +788,38 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     }
   }
 
-  // 额外的图标按钮功能
-  void _onQuestionCutted() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('该功能仍在开发中，敬请期待！'),
-        duration: Duration(seconds: 1),
-      ),
+  _copyBtn() {
+    UserQuestion userQuestion = widget.userQuestions[_currentPage];
+    Question question = widget.questions[_currentPage];
+    if (userQuestion.status == 0 || userQuestion.status == 3) {
+      return Container();
+    }
+    return IconButton(
+      icon: Icon(Icons.copy),
+      onPressed: () {
+        final String userAnswer = getLastAnswer(userQuestion.userAnswer);
+        final String answer = question.answer ?? '';
+        final List<dynamic> optionJson = _getOptionJson(question);
+        String optionText = "";
+        for (Map<String, dynamic> option in optionJson) {
+          final String key = option['key'];
+          final String title = option['title'];
+          optionText += '\n$key. $title';
+        }
+        String copyText = '## 题目\n\n'
+            '${question.publicTitle ?? ''}'
+            '${question.title ?? ''}$optionText\n\n'
+            '## 正确答案：$answer\n\n'
+            '## 我的答案：$userAnswer\n\n'
+            '## 参考解析\n\n${question.explain}';
+        Clipboard.setData(ClipboardData(text: copyText));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('题目、答案、解析已复制，去问AI吧～'),
+            duration: Duration(seconds: 1),
+          ),
+        );
+      },
     );
   }
 
@@ -880,26 +915,27 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
           overflow: TextOverflow.ellipsis,
         ),
         actions: <Widget>[
-          ElevatedButton(
-            onPressed: _onQuestionCutted,
-            style: ElevatedButton.styleFrom(
-              shape: CircleBorder(), // 圆形
-              backgroundColor: Colors.transparent, // 设置透明背景
-              shadowColor: Colors.transparent, // 去掉阴影
-              elevation: 3, // 按钮阴影
-              padding: EdgeInsets.all(0), // 去掉内边距
-            ),
-            child: Padding(
-              padding: EdgeInsets.all(7),
-              child: Text(
-                "斩",
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ),
+          //ElevatedButton(
+          //  onPressed: _onQuestionCutted,
+          //  style: ElevatedButton.styleFrom(
+          //    shape: CircleBorder(), // 圆形
+          //    backgroundColor: Colors.transparent, // 设置透明背景
+          //    shadowColor: Colors.transparent, // 去掉阴影
+          //    elevation: 3, // 按钮阴影
+          //    padding: EdgeInsets.all(0), // 去掉内边距
+          //  ),
+          //  child: Padding(
+          //    padding: EdgeInsets.all(7),
+          //    child: Text(
+          //      "斩",
+          //      style: TextStyle(
+          //        fontSize: 18,
+          //        fontWeight: FontWeight.bold,
+          //      ),
+          //    ),
+          //  ),
+          //),
+          _copyBtn(),
           _collectionBtn(),
           PopupMenuButton<int>(
             icon: Icon(Icons.more_vert),
@@ -937,6 +973,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
                 setState(() {
                   _currentPage = page; // 更新当前页索引
                 });
+                _saveLastQIndex(); // 更新上次做到的题目
               },
               itemCount: widget.questions.length,
               itemBuilder: (context, index) {

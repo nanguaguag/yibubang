@@ -15,8 +15,13 @@ import '../models/question.dart';
 
 class QuestionGridPage extends StatefulWidget {
   final Chapter chapter;
+  final bool directJump;
 
-  const QuestionGridPage({super.key, required this.chapter});
+  const QuestionGridPage({
+    super.key,
+    required this.chapter,
+    this.directJump = false,
+  });
 
   @override
   _QuestionGridPageState createState() => _QuestionGridPageState();
@@ -47,6 +52,7 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
     allQuestions = getQuestionsFromChapter(widget.chapter);
     allUserQuestions = getUserQuestions(allQuestions);
     _loadSettings();
+    _jump2Question();
   }
 
   @override
@@ -115,6 +121,32 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
       category = prefs.getInt('category') ?? 0;
       mode = prefs.getInt('mode') ?? 0;
     });
+  }
+
+  Future<void> _jump2Question() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    int lastQIndex = prefs.getInt('lastQIndex') ?? -1;
+    if (widget.directJump && lastQIndex >= 0) {
+      //WidgetsBinding.instance.addPostFrameCallback((_) {
+      //  // 延迟跳转到指定题目
+      //  _scrollController.jumpTo(
+      //    (lastQIndex / 5).floor() * 100.0,
+      //  );
+      //});
+      List<Question> questions = await allQuestions;
+      List<UserQuestion> userQuestions = await allUserQuestions;
+      await Navigator.push(
+        context,
+        CupertinoPageRoute(
+          builder: (context) => QuestionDetailPage(
+            chapter: widget.chapter,
+            questions: questions,
+            userQuestions: userQuestions,
+            questionIndex: lastQIndex,
+          ),
+        ),
+      );
+    }
   }
 
   /// 保存设置

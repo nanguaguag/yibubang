@@ -74,7 +74,7 @@ class _IdentityListPageState extends State<IdentityListPage> {
       onPressed: (choosable || choosabledir) ? () => _onSelect(item) : null,
       style: ElevatedButton.styleFrom(
         backgroundColor:
-            selected ? Theme.of(context).colorScheme.primary : Colors.grey[100],
+            selected ? Theme.of(context).colorScheme.primary : Colors.white,
         foregroundColor: selected ? Colors.white : Colors.black87,
         elevation: selected ? 4 : 2,
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
@@ -83,35 +83,43 @@ class _IdentityListPageState extends State<IdentityListPage> {
         ),
       ),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Row(
-            children: [
-              Icon(
-                AppStrings.identityIconMap[item.id] ?? Icons.book_outlined,
-                size: 20,
-                color: selected
-                    ? Colors.white
-                    : Theme.of(context).colorScheme.primary,
-              ),
-              const SizedBox(width: 12),
-              Text(item.name, style: TextStyle(fontSize: 16)),
-            ],
+          Expanded(
+            child: Row(
+              children: [
+                Icon(
+                  AppStrings.identityIconMap[item.id] ?? Icons.book_outlined,
+                  size: 20,
+                  color: selected
+                      ? Colors.white
+                      : Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    item.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 16),
+                  ),
+                ),
+              ],
+            ),
           ),
+
+          const SizedBox(width: 8), // 固定间距，避免挤压
+
           if (selected)
             const Icon(Icons.check_circle, color: Colors.white)
           else if (choosable)
-            const Icon(
-              Icons.radio_button_unchecked,
-              color: Colors.black87,
-            )
+            const Icon(Icons.radio_button_unchecked, color: Colors.black87)
           else if (choosabledir)
             const Icon(Icons.arrow_forward_ios, size: 16)
           else
             const Text(
               '（暂不提供）',
               style: TextStyle(fontSize: 12),
-            )
+            ),
         ],
       ),
     );
