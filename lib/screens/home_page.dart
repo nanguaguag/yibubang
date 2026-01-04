@@ -13,6 +13,7 @@ import '../screens/my_page.dart';
 import '../db/data_transfer.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:path/path.dart' as path;
 
 Future<bool> checkTransferScuess() async {
   UserDBHelper userdb = UserDBHelper();
@@ -165,9 +166,17 @@ class _HomePageState extends State<HomePage> {
     try {
       // Step 1: 获取存储目录并创建下载文件
       debugPrint("Step1");
-      String appDocDir = await getDatabasesPath();
-      String filePath = '$appDocDir/question_data.sqlite.zip';
-      File file = File(filePath);
+
+      // 获取数据库目录
+      final String appDocDir = await getDatabasesPath();
+      // 关键：Windows 下必须手动创建目录
+      final dbDir = Directory(appDocDir);
+      if (!await dbDir.exists()) {
+        await dbDir.create(recursive: true);
+      }
+      // 使用 path.join，避免 Windows 路径问题
+      final String filePath = path.join(appDocDir, 'question_data.sqlite.zip');
+      final File file = File(filePath);
       debugPrint(filePath);
 
       // Step 2: 下载 ZIP 文件
