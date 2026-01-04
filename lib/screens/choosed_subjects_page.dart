@@ -75,6 +75,10 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
     if (prefs.containsKey('lastChapterId')) {
       await prefs.setString('lastChapterId', lastChapterId);
     }
+    // 重置题目索引
+    if (prefs.containsKey('lastQIndex')) {
+      await prefs.setInt('lastQIndex', -1);
+    }
     debugPrint('保存上次做题记录: $lastSubjectId, $lastChapterId');
   }
 

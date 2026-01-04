@@ -185,7 +185,7 @@ class _HomePageState extends State<HomePage> {
       var sink = file.openWrite();
 
       // 使用 forEach 遍历 stream 中的每个 chunk
-      await response.stream.forEach((List<int> chunk) {
+      await for (final chunk in response.stream) {
         sink.add(chunk);
         receivedBytes += chunk.length;
         if (totalBytes != 0) {
@@ -193,10 +193,9 @@ class _HomePageState extends State<HomePage> {
             downloadProgress = receivedBytes / totalBytes;
           });
         }
-      });
+      }
 
-      await sink.flush();
-      await sink.close();
+      await sink.close(); // close 本身已包含 flush
 
       debugPrint("Step3");
       // Step 3: 解压 ZIP 文件
