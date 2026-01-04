@@ -1,10 +1,15 @@
 {
-    "latest_app": "2.0.1",
+    "latest_app": "2.0.2",
     "latest_app_url": "https://github.com/nanguaguag/yibubang/releases/",
-    "update_info": "【医不帮v2.0.1】：\n\n\t ！！重要！！\n\n抱歉，由于开发者之前对数据库的了解非常稀烂，2.0.0版本的刷题数出现了各种各样的问题，因此本次更新后第一次启动将重新计算刷题数（正确数、错误数），统计完后请重启本应用。\n\n1. 全平台统一切换页面动画（PageRoute）\n2. question_data.sqlite设置为只读+多实例（#6）\n3. 解决刷题数出现错误(#9)，即使重做本章题目，刷题数仍不变(#9) \n4. 解决Windows端翻页问题(#5)\n 5. 新增：如果标题带图则显示图片（之前一直没发现题还能带图啊喂！）",
+    "update_info": "【医不帮v2.0.2】：\n\n1. 做完题可以一键复制题干和解析，便于询问AI \n2. 增加“一键回到上次做的题”按钮\n修复Windows上下载题库卡在100%的问题#12",
     "latest_data_url": "https://gitee.com/pumpkin_melon/yibubang/releases/download/database-1.0.3/question_data.sqlite.zip",
     "latest_data_md5": "59cef99484946b17167aa7e34d5b3cf1",
     "data_for_version": {
+        "2.0.2": {
+            "url": "https://gitee.com/pumpkin_melon/yibubang/releases/download/database-2.0.0/question_data.sqlite.zip",
+            "description": "数据库结构已重构，支持切换题库",
+            "md5": "a146c7c9dd316326efa985a1803d2076"
+        },
         "2.0.1": {
             "url": "https://gitee.com/pumpkin_melon/yibubang/releases/download/database-2.0.0/question_data.sqlite.zip",
             "description": "数据库结构已重构，支持切换题库",

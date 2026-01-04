@@ -55,6 +55,7 @@
 
 ## TODO
 
+- [ ] 默认题库改成7zip + 内置
 - [ ] 全题库范围内搜题
 - [ ] 做题日历 + 做题数量统计
 - [ ] 登录医考帮后，同步做题记录
@@ -68,6 +69,9 @@
 ## Snapshots
 
 ![](assets/images/app_image.png)
+![](assets/images/mobile_image.png)
+![](assets/images/windows_snipshot1.png)
+![](assets/images/windows_snipshot2.png)
 
 ## Download
 

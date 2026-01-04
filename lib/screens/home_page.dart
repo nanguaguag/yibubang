@@ -11,6 +11,7 @@ import '../common/app_strings.dart';
 import '../screens/choosed_subjects_page.dart';
 import '../screens/my_page.dart';
 import '../db/data_transfer.dart';
+import '../widgets/theme_controller.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path/path.dart' as path;
@@ -53,6 +54,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _initAsync() async {
+    // 获取应用信息
     final info = await PackageInfo.fromPlatform();
 
     debugPrint("App 名称: ${info.appName}");
@@ -326,6 +328,7 @@ class _HomePageState extends State<HomePage> {
     }
     String latestVersion = updateData["latest_app"] ?? currentVersion;
     SharedPreferences prefs = await SharedPreferences.getInstance();
+
     if (prefs.getBool('needToRebuildQuestionCount') ?? false) {
       if (await rebuildQuestionCount()) {
         // 重算成功

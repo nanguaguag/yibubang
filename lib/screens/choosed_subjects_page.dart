@@ -42,11 +42,13 @@ class ChoosedSubjectsPage extends StatefulWidget {
 class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
   String? _lastSubjectId;
   late Future<List<SubjectWithChapters>> subjectsWithChapters;
+  final ThemeController themeController = Get.put(ThemeController());
 
   @override
   void initState() {
     super.initState();
     _loadLastProgress();
+    themeController.recoverTheme(); // 恢复主题
     subjectsWithChapters = getSubjectsWithChapters();
   }
 
@@ -274,8 +276,6 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeController themeController = Get.put(ThemeController());
-
     return Scaffold(
       appBar: AppBar(
         title: const Text(AppStrings.selectedSubjectsTitle),

@@ -3,8 +3,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 // 存储数据
 Future<void> initSettings() async {
   SharedPreferences prefs = await SharedPreferences.getInstance();
-  if (!prefs.containsKey('isDarkMode')) {
-    await prefs.setBool('isDarkMode', false); // 默认关闭暗黑模式
+  if (!prefs.containsKey('themeMode')) {
+    await prefs.setString('themeMode', 'system'); // 默认暗黑模式为自动(系统)
   }
   if (!prefs.containsKey('cutType')) {
     await prefs.setInt('cutType', 0); // 斩题: 全部
