@@ -1,7 +1,6 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import '../db/database_helper.dart';
 import 'chapter.dart';
-import 'package:flutter/foundation.dart';
 
 class UserQuestion {
   String id;
@@ -380,6 +379,24 @@ Future<List<UserQuestion>> getUserQuestions(
   }
 
   return resultList;
+}
+
+Future<void> updateQuestionSimple(
+  UserQuestion uq,
+  Question q,
+) async {
+  final userDb = await UserDBHelper().database;
+  await userDb.update(
+    'Question',
+    {
+      'status': uq.status,
+      'collection': uq.collection,
+      'user_answer': uq.userAnswer,
+      'cut_question': uq.cutQuestion,
+    },
+    where: 'id = ?',
+    whereArgs: [uq.id],
+  );
 }
 
 Future<void> updateQuestion(

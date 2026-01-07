@@ -12,6 +12,7 @@ import '../models/question.dart';
 // - 1: 正确
 // - 2: 错误
 // - 3: 已斩
+// - 4: 待提交
 
 class QuestionGridPage extends StatefulWidget {
   final Chapter chapter;
@@ -87,26 +88,35 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
   ) async {
     List<Question> questions = await questionsFuture;
     List<UserQuestion> userQuestions = await userQuestionsFuture;
-
-    // 根据不同的筛选条件进行筛选
-    userQuestions = userQuestions.where((q) {
-      if (category == 1 && q.status != 2) return false; // 只保留做错的题目
-      if (category == 2 && q.collection != 1) return false; // 只保留收藏的题目
-      if (category == 3 && q.status != 0) return false; // 只保留未做的题目
-      if (cutType != 0 && q.cutQuestion != "") return false; // 过滤 cutType
-      return true;
-    }).toList();
-
-    questions = questions.where((q) {
-      // 过滤q.id不在userQuestions里的题目
-      if (userQuestions.where((userQ) => userQ.id == q.id).isEmpty) {
+    // 1️⃣ 根据 category 和 cutType 先过滤 userQuestions
+    userQuestions = userQuestions.where((uq) {
+      if (category == 1 && uq.status != 2) return false; // 只保留做错的题目
+      if (category == 2 && uq.collection != 1) return false; // 只保留收藏的题目
+      if (category == 3 && uq.status != 0) return false; // 只保留未做的题目
+      if (cutType == 1 && uq.cutQuestion != "cutted") {
         return false;
-      }
+      } // 过滤 cutType
+      if (cutType == 2 && uq.cutQuestion != "") {
+        return false;
+      } // 过滤 cutType
+      return true;
+    }).toList();
+    // 2️⃣ 根据 questionType 先过滤 questions
+    questions = questions.where((q) {
       if (questionType != 0 && int.parse(q.type!) != questionType) {
-        return false; // 过滤 单选题、多选题
+        return false; // 过滤单选题、多选题
       }
       return true;
     }).toList();
+    // 3️⃣ 构造两个 id 集合
+    final Set<String> userIds = userQuestions.map((q) => q.id).toSet();
+    final Set<String> questionIds = questions.map((q) => q.id).toSet();
+    // 4️⃣ 取交集
+    final Set<String> commonIds = userIds.intersection(questionIds);
+    // 5️⃣ 双向同步过滤
+    userQuestions =
+        userQuestions.where((uq) => commonIds.contains(uq.id)).toList();
+    questions = questions.where((q) => commonIds.contains(q.id)).toList();
 
     return MapEntry(questions, userQuestions);
   }
@@ -160,9 +170,8 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
   }
 
   void clearUserAnswers() async {
-    final futureQuestions = getQuestionsFromChapter(widget.chapter);
-    List<UserQuestion> userQuestions = await getUserQuestions(futureQuestions);
-    List<Question> questions = await futureQuestions;
+    final List<Question> questions = await allQuestions;
+    final List<UserQuestion> userQuestions = await allUserQuestions;
     showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -207,9 +216,10 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
 
   void clearWrongAnswers() async {
     bool doneAll = true;
-    final futureQuestions = getQuestionsFromChapter(widget.chapter);
-    List<UserQuestion> userQuestions = await getUserQuestions(futureQuestions);
-    List<Question> questions = await futureQuestions;
+    final MapEntry<List<Question>, List<UserQuestion>> filteredQuestions =
+        await _filter(allQuestions, allUserQuestions);
+    final List<Question> questions = filteredQuestions.key;
+    final List<UserQuestion> userQuestions = filteredQuestions.value;
     for (UserQuestion q in userQuestions) {
       if (q.userAnswer.isEmpty || q.status == 0) {
         doneAll = false;
@@ -366,6 +376,7 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
       itemCount: questions.length,
       itemBuilder: (context, index) {
         final int questionState = userQuestions[index].status;
+        final bool cutted = userQuestions[index].cutQuestion == "cutted";
         Color buttonColor;
 
         switch (questionState) {
@@ -382,10 +393,10 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
             buttonColor = Colors.orange;
             break;
           case 4:
-            buttonColor = Colors.black26;
+            buttonColor = Colors.grey.withValues(alpha: 0.5);
             break;
           default:
-            buttonColor = Colors.black26;
+            buttonColor = Colors.grey.withValues(alpha: 0.5);
             break;
         }
 
@@ -406,15 +417,29 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
             await _loadSettings();
             _refreshPage();
           },
-          style: ElevatedButton.styleFrom(
-            padding: EdgeInsets.zero,
-            foregroundColor: questionState == 0 ? Colors.black : Colors.white,
-            backgroundColor: buttonColor,
-            minimumSize: Size(buttonSize, buttonSize),
-            shape: const RoundedRectangleBorder(
-              borderRadius: BorderRadius.all(Radius.circular(8)),
-            ),
-          ),
+          style: cutted
+              ? ElevatedButton.styleFrom(
+                  padding: EdgeInsets.zero,
+                  foregroundColor: questionState == 0
+                      ? Colors.black.withValues(alpha: 0.5)
+                      : Colors.white,
+                  backgroundColor: buttonColor.withValues(alpha: 0.2),
+                  shadowColor: Colors.grey.withValues(alpha: 0.2),
+                  minimumSize: Size(buttonSize, buttonSize),
+                  shape: const RoundedRectangleBorder(
+                    borderRadius: BorderRadius.all(Radius.circular(8)),
+                  ),
+                )
+              : ElevatedButton.styleFrom(
+                  padding: EdgeInsets.zero,
+                  foregroundColor:
+                      questionState == 0 ? Colors.black : Colors.white,
+                  backgroundColor: buttonColor,
+                  minimumSize: Size(buttonSize, buttonSize),
+                  shape: const RoundedRectangleBorder(
+                    borderRadius: BorderRadius.all(Radius.circular(8)),
+                  ),
+                ),
           child: Text('${index + 1}'),
         );
       },
@@ -567,7 +592,7 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
                   } else if (snapshot.hasError) {
                     return _buildErrorMessage(snapshot.error);
                   } else if (!snapshot.hasData || snapshot.data!.key.isEmpty) {
-                    return _buildEmptyMessage('本章节中还没有题目哦~');
+                    return _buildEmptyMessage('在当前筛选条件下\n本章节中还没有题目哦~');
                   } else {
                     return LayoutBuilder(
                       builder: (context, constraints) {

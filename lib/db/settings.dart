@@ -36,6 +36,14 @@ Future<void> initSettings() async {
   if (!prefs.containsKey('needToRebuildQuestionCount')) {
     await prefs.setBool('needToRebuildQuestionCount', true); // 新版本强制重建题目计数
   }
+
+  /// Settings ///
+  if (!prefs.containsKey('accept_update')) {
+    await prefs.setBool('accept_update', true);
+  }
+  if (!prefs.containsKey('sync_question_bank')) {
+    await prefs.setBool('sync_question_bank', false);
+  }
 }
 
 Future<void> clearUserInfo() async {

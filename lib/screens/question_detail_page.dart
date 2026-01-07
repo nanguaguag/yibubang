@@ -836,13 +836,55 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
         } else {
           userQuestion.collection = 0;
         }
-        updateQuestion(userQuestion, question); // 在数据库中 update
+        updateQuestionSimple(userQuestion, question);
         setState(() {
           widget.userQuestions[_currentPage].collection =
               userQuestion.collection;
         });
       },
     );
+  }
+
+  Widget _cutQuestionBtn() {
+    UserQuestion userQuestion = widget.userQuestions[_currentPage];
+    Question question = widget.questions[_currentPage];
+    return IconButton(
+      icon: userQuestion.cutQuestion == ""
+          ? Icon(Icons.block)
+          : Icon(Icons.block_outlined, color: Colors.redAccent),
+      onPressed: () {
+        if (userQuestion.cutQuestion == "cutted") {
+          userQuestion.cutQuestion = "";
+        } else {
+          userQuestion.cutQuestion = "cutted";
+        }
+        updateQuestionSimple(userQuestion, question);
+        setState(() {
+          widget.userQuestions[_currentPage].cutQuestion =
+              userQuestion.cutQuestion;
+        });
+      },
+    );
+    //return ElevatedButton(
+    //  onPressed: _onQuestionCutted,
+    //  style: ElevatedButton.styleFrom(
+    //    shape: CircleBorder(), // 圆形
+    //    backgroundColor: Colors.transparent, // 设置透明背景
+    //    shadowColor: Colors.transparent, // 去掉阴影
+    //    elevation: 3, // 按钮阴影
+    //    padding: EdgeInsets.all(0), // 去掉内边距
+    //  ),
+    //  child: Padding(
+    //    padding: EdgeInsets.all(7),
+    //    child: Text(
+    //      "斩",
+    //      style: TextStyle(
+    //        fontSize: 18,
+    //        fontWeight: FontWeight.bold,
+    //      ),
+    //    ),
+    //  ),
+    //);
   }
 
   Widget _backForwardBtm() {
@@ -915,26 +957,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
           overflow: TextOverflow.ellipsis,
         ),
         actions: <Widget>[
-          //ElevatedButton(
-          //  onPressed: _onQuestionCutted,
-          //  style: ElevatedButton.styleFrom(
-          //    shape: CircleBorder(), // 圆形
-          //    backgroundColor: Colors.transparent, // 设置透明背景
-          //    shadowColor: Colors.transparent, // 去掉阴影
-          //    elevation: 3, // 按钮阴影
-          //    padding: EdgeInsets.all(0), // 去掉内边距
-          //  ),
-          //  child: Padding(
-          //    padding: EdgeInsets.all(7),
-          //    child: Text(
-          //      "斩",
-          //      style: TextStyle(
-          //        fontSize: 18,
-          //        fontWeight: FontWeight.bold,
-          //      ),
-          //    ),
-          //  ),
-          //),
+          _cutQuestionBtn(),
           _copyBtn(),
           _collectionBtn(),
           PopupMenuButton<int>(

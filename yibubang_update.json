@@ -1,7 +1,7 @@
 {
     "latest_app": "2.0.2",
     "latest_app_url": "https://github.com/nanguaguag/yibubang/releases/",
-    "update_info": "【医不帮v2.0.2】：\n\n1. 做完题可以一键复制题干和解析，便于询问AI \n2. 增加“一键回到上次做的题”按钮\n修复Windows上下载题库卡在100%的问题#12",
+    "update_info": "【医不帮v2.0.2】：\n\n1. 做完题可以一键复制题干和解析，便于询问AI \n2. 增加“一键回到上次做的题”按钮\n3. 修复Windows上下载题库卡在100%的问题 (#12)\n4. 修复切换主题无记忆性的bug (#10)",
     "latest_data_url": "https://gitee.com/pumpkin_melon/yibubang/releases/download/database-1.0.3/question_data.sqlite.zip",
     "latest_data_md5": "59cef99484946b17167aa7e34d5b3cf1",
     "data_for_version": {

@@ -5,6 +5,7 @@ import 'package:yibubang/screens/home_page.dart';
 import '../common/request.dart';
 import 'login_successfully.dart';
 import '../db/data_transfer.dart';
+import './settings_page.dart';
 
 ///// 我的页面，展示用户的收藏/评论/笔记
 //class MyPage extends StatelessWidget {
@@ -383,8 +384,18 @@ class _ProfilePageState extends State<ProfilePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        leading: rebuildIconBtn(context),
         actions: [
-          rebuildIconBtn(context),
+          IconButton(
+            icon: const Icon(Icons.settings),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => SettingsPage()),
+              );
+            },
+            tooltip: '设置',
+          ),
         ],
         title: const Text("个人中心"),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
@@ -395,48 +406,42 @@ class _ProfilePageState extends State<ProfilePage> {
           children: [
             ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 400),
-              child: Card(
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                elevation: 4,
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Center(
-                        child: Column(
-                          children: [
-                            avatar.isNotEmpty
-                                ? CircleAvatar(
-                                    backgroundImage: NetworkImage(avatar),
-                                    radius: 50,
-                                  )
-                                : const Icon(Icons.account_circle, size: 0),
-                            const SizedBox(height: 12),
-                            Text(
-                              nickname,
-                              style: const TextStyle(
-                                fontSize: 22,
-                                fontWeight: FontWeight.bold,
-                              ),
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Column(
+                        children: [
+                          avatar.isNotEmpty
+                              ? CircleAvatar(
+                                  backgroundImage: NetworkImage(avatar),
+                                  radius: 50,
+                                )
+                              : const Icon(Icons.account_circle, size: 0),
+                          const SizedBox(height: 12),
+                          Text(
+                            nickname,
+                            style: const TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
-                      const Divider(),
-                      _buildInfoTile(Icons.phone, "手机号", mobile),
-                      _buildInfoTile(Icons.email, "邮箱", email),
-                      _buildInfoTile(Icons.person, "性别", strSex),
-                      _buildInfoTile(
-                        Icons.school,
-                        "专业",
-                        "$nowName $nowMajorName",
-                      ),
-                      _buildInfoTile(Icons.book, "学历", educationName),
-                    ],
-                  ),
+                    ),
+                    const Divider(),
+                    _buildInfoTile(Icons.phone, "手机号", mobile),
+                    _buildInfoTile(Icons.email, "邮箱", email),
+                    _buildInfoTile(Icons.person, "性别", strSex),
+                    _buildInfoTile(
+                      Icons.school,
+                      "专业",
+                      "$nowName $nowMajorName",
+                    ),
+                    _buildInfoTile(Icons.book, "学历", educationName),
+                  ],
                 ),
               ),
             ),
