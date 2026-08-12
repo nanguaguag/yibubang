@@ -79,8 +79,20 @@ class QuestionBankRepository {
 
   final QuestionBankDatabaseManager _databaseManager =
       QuestionBankDatabaseManager();
+  Future<void>? _initializationFuture;
 
-  Future<void> initialize() async {
+  /// 初始化题库目录只允许同时执行一次，避免启动入口和页面重复扫描题库。
+  /// 初始化失败时清空 Future，后续进入题库管理页面仍可以重试。
+  Future<void> initialize() {
+    return _initializationFuture ??= _initializeInternal().catchError(
+      (Object error, StackTrace stackTrace) {
+        _initializationFuture = null;
+        Error.throwWithStackTrace(error, stackTrace);
+      },
+    );
+  }
+
+  Future<void> _initializeInternal() async {
     await _backupLegacyFiles();
     final userDb = await UserDBHelper().database;
     final now = DateTime.now().millisecondsSinceEpoch;

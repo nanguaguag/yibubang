@@ -22,19 +22,47 @@ class IdentityListPage extends StatefulWidget {
 
 class _IdentityListPageState extends State<IdentityListPage> {
   late Future<List<Identity>> _identitiesFuture;
+  final Set<String> _choosableIdentityIds = <String>{};
+  final Set<String> _directoryIdentityIds = <String>{};
   String? _selectedId;
 
   @override
   void initState() {
     super.initState();
-    _loadSelectedId();
     _identitiesFuture = getChildrenIdentities(widget.parentId);
+    _loadIdentityOptions();
+    _loadSelectedId();
+  }
+
+  Future<void> _loadIdentityOptions() async {
+    final identities = await _identitiesFuture;
+    final repository = QuestionBankRepository();
+    final banks = await repository.listBanks();
+    final choosableIds = banks
+        .map((bank) => bank.identityId)
+        .where((identityId) => identityId.isNotEmpty)
+        .toSet();
+    final directoryIds = <String>{};
+    for (final identity in identities) {
+      if (await _hasChildren(identity.id)) {
+        directoryIds.add(identity.id);
+      }
+    }
+    if (!mounted) return;
+    setState(() {
+      _choosableIdentityIds
+        ..clear()
+        ..addAll(choosableIds);
+      _directoryIdentityIds
+        ..clear()
+        ..addAll(directoryIds);
+    });
   }
 
   Future<void> _loadSelectedId() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
-      _selectedId = prefs.getString('identityId') ?? '30401';
+      _selectedId = prefs.getString('identityId');
     });
   }
 
@@ -44,26 +72,28 @@ class _IdentityListPageState extends State<IdentityListPage> {
   }
 
   Future<void> _onSelect(Identity identity) async {
-    final choosable = AppStrings.choosableIdentities.contains(identity.id);
     final hasChildren = await _hasChildren(identity.id);
-    if (choosable) {
-      final prefs = await SharedPreferences.getInstance();
-      QuestionBankSpec? bankSpec;
-      for (final spec in QuestionBankDefaults.all) {
-        if (spec.identityId == identity.id) {
-          bankSpec = spec;
-          break;
-        }
+    final repository = QuestionBankRepository();
+    final banks = await repository.listBanks();
+    final prefs = await SharedPreferences.getInstance();
+    final activeBankId = await repository.activeBankId();
+
+    QuestionBank? bank;
+    for (final candidate in banks) {
+      if (candidate.bankId != 'legacy_combined' &&
+          candidate.identityId == identity.id) {
+        bank = candidate;
+        break;
       }
-      final repository = QuestionBankRepository();
-      final bank =
-          bankSpec == null ? null : await repository.find(bankSpec.bankId);
-      final activeBankId = await repository.activeBankId();
-      if (bank != null && bank.isInstalled && bank.enabled) {
+    }
+
+    if (bank != null) {
+      if (bank.isInstalled && bank.enabled) {
         if (activeBankId != bank.bankId) {
           await repository.selectBank(bank.bankId);
         }
         await prefs.setString('identityId', identity.id);
+        if (!mounted) return;
         setState(() {
           _selectedId = identity.id;
         });
@@ -71,7 +101,6 @@ class _IdentityListPageState extends State<IdentityListPage> {
       }
 
       // 新题库尚未安装时，旧版合并题库只作为一次性的兼容回退。
-      // 如果已经在旧库中，不重复 selectBank，避免每次点击都提示“已切换”。
       final legacy = await repository.find('legacy_combined');
       if (legacy != null && legacy.isInstalled && legacy.enabled) {
         if (activeBankId != legacy.bankId) {
@@ -83,6 +112,7 @@ class _IdentityListPageState extends State<IdentityListPage> {
           }
         }
         await prefs.setString('identityId', identity.id);
+        if (!mounted) return;
         setState(() {
           _selectedId = identity.id;
         });
@@ -96,7 +126,9 @@ class _IdentityListPageState extends State<IdentityListPage> {
       }
       return;
     }
+
     if (hasChildren) {
+      if (!mounted) return;
       Navigator.of(context).push(
         CupertinoPageRoute(
           builder: (_) => IdentityListPage(
@@ -105,14 +137,12 @@ class _IdentityListPageState extends State<IdentityListPage> {
           ),
         ),
       );
-      return;
     }
-    return;
   }
 
   Widget _buildOption(Identity item) {
-    final choosable = AppStrings.choosableIdentities.contains(item.id);
-    final choosabledir = AppStrings.choosableIdentiyDir.contains(item.id);
+    final choosable = _choosableIdentityIds.contains(item.id);
+    final choosabledir = _directoryIdentityIds.contains(item.id);
     final selected = item.id == _selectedId;
     return ElevatedButton(
       onPressed: (choosable || choosabledir) ? () => _onSelect(item) : null,

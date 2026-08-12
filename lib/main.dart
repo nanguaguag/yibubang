@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
@@ -32,13 +33,20 @@ Future main() async {
   ));
 
   await initSettings();
+  runApp(const Yibubang());
+
+  // 题库目录包含 SQLite 完整性校验，不应阻塞 Flutter 首帧。
+  // HomePage 会复用同一个初始化 Future，避免重复扫描。
+  unawaited(_initializeQuestionBank());
+}
+
+Future<void> _initializeQuestionBank() async {
   try {
     await QuestionBankRepository().initialize();
   } catch (error) {
     // 目录迁移失败时仍启动应用，让用户可以通过题库管理或备份恢复继续处理。
     debugPrint('题库目录初始化失败：$error');
   }
-  runApp(const Yibubang());
 }
 
 class Yibubang extends StatelessWidget {

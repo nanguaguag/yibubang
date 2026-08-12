@@ -69,7 +69,8 @@ class _HomePageState extends State<HomePage> {
       currentVersion = info.version;
     });
 
-    // 题库下载、导入和更新统一由“题库管理”页面处理，避免启动时覆盖用户正在使用的题库。
+    // 题库目录初始化可能正在 main() 的后台任务中执行，这里复用同一个 Future，
+    // 不会再次扫描和校验所有题库。
     try {
       await QuestionBankRepository().initialize();
     } catch (error) {
@@ -104,7 +105,7 @@ class _HomePageState extends State<HomePage> {
         'Content-Type': 'application/json; charset=utf-8',
         'Accept-Charset': 'utf-8',
       },
-    );
+    ).timeout(const Duration(seconds: 5));
     if (response.statusCode != 200) {
       throw HttpException('应用更新清单请求失败：HTTP ${response.statusCode}');
     }

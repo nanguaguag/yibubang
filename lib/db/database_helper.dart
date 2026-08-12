@@ -205,8 +205,9 @@ class UserDBHelper {
 
   Future<Database> get database async {
     if (_database != null) return _database!;
+    // 完整性检查是全库扫描，不能放在每次启动首次打开数据库的关键路径。
+    // 需要诊断时仍可显式调用 checkDatabaseIntegrity()。
     _database = await _initDatabase();
-    await checkDatabaseIntegrity(); // 添加完整性检查
     return _database!;
   }
 

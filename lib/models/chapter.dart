@@ -9,6 +9,7 @@ class Chapter {
   int correct;
   int incorrect;
   int total;
+  String? identityId;
 
   Chapter({
     required this.id,
@@ -17,6 +18,7 @@ class Chapter {
     required this.correct,
     required this.incorrect,
     required this.total,
+    this.identityId,
   });
 
   // Convert a Chapter to a map
@@ -28,6 +30,7 @@ class Chapter {
       'correct': correct,
       'incorrect': incorrect,
       'total': total,
+      'identity_id': identityId,
     };
   }
 
@@ -40,6 +43,7 @@ class Chapter {
       correct: map['correct'],
       incorrect: map['incorrect'],
       total: map['total'],
+      identityId: map['identity_id'] as String?,
     );
   }
 }
@@ -53,11 +57,16 @@ Future<List<Chapter>> getChaptersBySubject(Subject subject) async {
   final db = await DatabaseHelper().database;
   final userDb = await UserDBHelper().database;
   final prefs = await SharedPreferences.getInstance();
-  final identityId = prefs.getString('identityId') ?? '30401';
-  final bankId = prefs.getString('activeBankId') ?? 'dental_final';
+  final identityId = subject.identityId ?? prefs.getString('identityId');
+  final bankId = prefs.getString('activeBankId');
+  if (identityId == null ||
+      identityId.isEmpty ||
+      bankId == null ||
+      bankId.isEmpty) {
+    return [];
+  }
 
-  // 1. 用 JOIN 一次性拿到：chapter_id, chapter_name, total
-  final mainRows = await db.rawQuery('''
+  List<Map<String, dynamic>> mainRows = await db.rawQuery('''
     SELECT C.id       AS chapter_id,
            C.name     AS chapter_name,
            IC.total   AS total
@@ -135,6 +144,7 @@ Future<List<Chapter>> getChaptersBySubject(Subject subject) async {
       total: r['total'] as int,
       correct: userRec['correct'] as int,
       incorrect: userRec['incorrect'] as int,
+      identityId: identityId,
     );
   }).toList();
 

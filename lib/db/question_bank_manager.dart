@@ -13,6 +13,8 @@ class QuestionBankDatabaseManager {
   QuestionBankDatabaseManager._internal();
 
   final Map<String, Database> _databases = {};
+  final Map<String, _ValidationCacheEntry> _validationCache = {};
+  final Map<String, Future<BankFileValidation>> _validationFutures = {};
 
   Future<String> get rootPath async =>
       p.join(await getDatabasesPath(), 'QuestionBank');
@@ -52,6 +54,49 @@ class QuestionBankDatabaseManager {
   }
 
   Future<BankFileValidation> validateFile(
+    String filePath, {
+    String? expectedBankId,
+  }) async {
+    final file = File(filePath);
+    final cacheKey = '$filePath|${expectedBankId ?? ''}';
+    if (!await file.exists()) {
+      _validationCache.remove(cacheKey);
+      return const BankFileValidation.invalid('题库文件不存在');
+    }
+
+    final stat = await file.stat();
+    final cached = _validationCache[cacheKey];
+    if (cached != null && cached.matches(stat)) {
+      return cached.result;
+    }
+
+    final running = _validationFutures[cacheKey];
+    if (running != null) return running;
+
+    final future = _validateFileUncached(
+      filePath,
+      expectedBankId: expectedBankId,
+    ).then((result) {
+      _validationCache[cacheKey] = _ValidationCacheEntry(
+        size: stat.size,
+        modifiedMilliseconds: stat.modified.millisecondsSinceEpoch,
+        result: result,
+      );
+      return result;
+    });
+    _validationFutures[cacheKey] = future;
+    try {
+      return await future;
+    } finally {
+      if (identical(_validationFutures[cacheKey], future)) {
+        _validationFutures.remove(cacheKey);
+      }
+    }
+  }
+
+  /// 执行一次完整 SQLite 校验。结果由 validateFile 按文件指纹缓存，
+  /// 从而避免题库目录初始化和首屏打开活动题库重复扫描同一个文件。
+  Future<BankFileValidation> _validateFileUncached(
     String filePath, {
     String? expectedBankId,
   }) async {
@@ -170,6 +215,22 @@ class QuestionBankDatabaseManager {
       if (database != null && database.isOpen) await database.close();
     }
   }
+}
+
+class _ValidationCacheEntry {
+  final int size;
+  final int modifiedMilliseconds;
+  final BankFileValidation result;
+
+  const _ValidationCacheEntry({
+    required this.size,
+    required this.modifiedMilliseconds,
+    required this.result,
+  });
+
+  bool matches(FileStat stat) =>
+      size == stat.size &&
+      modifiedMilliseconds == stat.modified.millisecondsSinceEpoch;
 }
 
 class BankFileValidation {

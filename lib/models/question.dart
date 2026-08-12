@@ -301,12 +301,14 @@ String changeLastAnswer(String userAnswer, String lastAnswer) {
 Future<List<Question>> getQuestionsFromChapter(Chapter chapter) async {
   final dbh = DatabaseHelper();
   final prefs = await SharedPreferences.getInstance();
-  final identityId = prefs.getString('identityId') ?? '30401';
+  final identityId = chapter.identityId ?? prefs.getString('identityId');
+  if (identityId == null || identityId.isEmpty) return [];
 
-  // 用一次 JOIN+ORDER BY 直接拿到所有需要的 Question
+  // IdentityQuestion 的 identity_id 是题库关系表中的精确归属，不能用
+  // Question.identity_id 或父级 Identity 链扩大章节结果集。
   final rows = await dbh.getByRawQuery(
     '''
-    SELECT q.*
+    SELECT DISTINCT q.*
       FROM Question AS q
       JOIN IdentityQuestion AS iq
         ON q.id = iq.question_id
@@ -405,7 +407,10 @@ Future<void> updateQuestion(
   bool prevCorrect = true,
 }) async {
   final prefs = await SharedPreferences.getInstance();
-  final bankId = prefs.getString('activeBankId') ?? 'dental_final';
+  final bankId = prefs.getString('activeBankId');
+  if (bankId == null || bankId.isEmpty) {
+    throw StateError('当前题库尚未初始化');
+  }
   final db = await DatabaseHelper().database;
   final userDb = await UserDBHelper().database;
   final previousRows = await userDb.query(

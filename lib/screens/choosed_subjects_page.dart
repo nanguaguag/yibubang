@@ -357,7 +357,7 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
         future: subjectsWithChapters,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return Container();
+            return const Center(child: CircularProgressIndicator());
           } else if (snapshot.hasError) {
             return _buildErrorMessage(snapshot.error);
           } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
