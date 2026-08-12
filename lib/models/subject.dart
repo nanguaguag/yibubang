@@ -49,12 +49,13 @@ Future<List<Subject>> getSelectedSubjects() async {
   final udb = await UserDBHelper().database; // 用户数据（user_data）
   final prefs = await SharedPreferences.getInstance();
   final identityId = prefs.getString('identityId') ?? '30401';
+  final bankId = prefs.getString('activeBankId') ?? 'dental_final';
 
   // 2. 一次性拿出 user_data 中 selected=1 的记录
   final userRows = await udb.query(
     'IdentitySubject',
-    where: 'identity_id = ? AND selected = 1',
-    whereArgs: [identityId],
+    where: 'bank_id = ? AND identity_id = ? AND selected = 1',
+    whereArgs: [bankId, identityId],
   );
   if (userRows.isEmpty) return [];
 
@@ -107,6 +108,7 @@ Future<List<Subject>> getSubjectsByIdentity() async {
 
   final prefs = await SharedPreferences.getInstance();
   final identityId = prefs.getString('identityId') ?? '30401';
+  final bankId = prefs.getString('activeBankId') ?? 'dental_final';
 
   // 2. 主库中一次 JOIN 拿到 subject_id、name、total
   final mainRows = await db.rawQuery('''
@@ -130,9 +132,10 @@ Future<List<Subject>> getSubjectsByIdentity() async {
   List<Map<String, dynamic>> userRows = await udb.rawQuery('''
     SELECT subject_id, correct, incorrect, selected
     FROM IdentitySubject
-    WHERE identity_id = ?
+    WHERE bank_id = ?
+      AND identity_id = ?
       AND subject_id IN ($placeholders)
-  ''', [identityId, ...subjectIds]);
+  ''', [bankId, identityId, ...subjectIds]);
 
   // 5. 找出缺失的 subject_id 并批量插入（correct/incorrect/selected 初始为 0）
   final existingIds = userRows.map((r) => r['subject_id'] as String).toSet();
@@ -145,6 +148,7 @@ Future<List<Subject>> getSubjectsByIdentity() async {
         final batch = txn.batch();
         for (final id in missingIds) {
           batch.insert('IdentitySubject', {
+            'bank_id': bankId,
             'identity_id': identityId,
             'subject_id': id,
             'correct': 0,
@@ -161,6 +165,7 @@ Future<List<Subject>> getSubjectsByIdentity() async {
     userRows.addAll(
       missingIds.map(
         (id) => {
+          'bank_id': bankId,
           'subject_id': id,
           'correct': 0,
           'incorrect': 0,
@@ -196,10 +201,11 @@ void toggleSubjectSelected(Subject subject) async {
   final udbh = UserDBHelper();
   final prefs = await SharedPreferences.getInstance();
   final identityId = prefs.getString('identityId') ?? '30401';
+  final bankId = prefs.getString('activeBankId') ?? 'dental_final';
   await udbh.update(
     'IdentitySubject',
     {'selected': subject.selected},
-    'identity_id = ? AND subject_id = ?',
-    [identityId, subject.id.toString()],
+    'bank_id = ? AND identity_id = ? AND subject_id = ?',
+    [bankId, identityId, subject.id.toString()],
   );
 }

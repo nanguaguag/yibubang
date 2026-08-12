@@ -1,5 +1,5 @@
-import 'dart:io';
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:archive/archive.dart';
@@ -11,7 +11,7 @@ import '../common/app_strings.dart';
 import '../screens/choosed_subjects_page.dart';
 import '../screens/my_page.dart';
 import '../db/data_transfer.dart';
-import '../widgets/theme_controller.dart';
+import '../repositories/question_bank_repository.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path/path.dart' as path;
@@ -69,20 +69,50 @@ class _HomePageState extends State<HomePage> {
       currentVersion = info.version;
     });
 
-    final needDownload = await _needToDownload();
-
+    // 题库下载、导入和更新统一由“题库管理”页面处理，避免启动时覆盖用户正在使用的题库。
+    try {
+      await QuestionBankRepository().initialize();
+    } catch (error) {
+      debugPrint('题库目录初始化失败：$error');
+    }
     if (!mounted) return;
 
-    // 如果需要下载，则自动触发下载任务
-    if (needDownload) {
-      debugPrint("需要下载，downloading...");
-      _downloadAndExtractZip();
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool('needToRebuildQuestionCount') ?? false) {
+      try {
+        await rebuildQuestionCount(
+          bankId: prefs.getString('activeBankId') ?? 'dental_final',
+        );
+        await prefs.setBool('needToRebuildQuestionCount', false);
+      } catch (error) {
+        debugPrint('题库统计重建暂未完成：$error');
+      }
     }
-    // 检查应用更新（注意此处依赖于 updateData 已经加载）
-    // 如果 updateData 是异步加载来的，你需要确保它在这里之前已经加载完
-    if (updateData.isNotEmpty) {
-      _checkForAppUpdate();
+
+    try {
+      await _loadAppUpdateData();
+      if (mounted) await _checkForAppUpdate();
+    } catch (error) {
+      debugPrint('应用更新清单获取失败：$error');
     }
+  }
+
+  Future<void> _loadAppUpdateData() async {
+    final response = await http.get(
+      Uri.parse('https://files.melonhu.cn/yibubang/yibubang_update.json'),
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Accept-Charset': 'utf-8',
+      },
+    );
+    if (response.statusCode != 200) {
+      throw HttpException('应用更新清单请求失败：HTTP ${response.statusCode}');
+    }
+    final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('应用更新清单格式不正确');
+    }
+    updateData = decoded;
   }
 
   // 两个页面对应底部导航栏
@@ -321,13 +351,11 @@ class _HomePageState extends State<HomePage> {
   }
 
   /// 检查应用更新，如果有新版本则弹窗提示
-  void _checkForAppUpdate() async {
-    if (await _needToDownload()) {
-      // 下载过程中不检查更新
-      return;
-    }
+  Future<void> _checkForAppUpdate() async {
+    if (updateData.isEmpty) return;
     String latestVersion = updateData["latest_app"] ?? currentVersion;
     SharedPreferences prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
 
     if (prefs.getBool('needToRebuildQuestionCount') ?? false) {
       if (await rebuildQuestionCount()) {

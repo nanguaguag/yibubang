@@ -5,6 +5,11 @@
     "latest_data_url": "https://gitee.com/pumpkin_melon/yibubang/releases/download/database-1.0.3/question_data.sqlite.zip",
     "latest_data_md5": "59cef99484946b17167aa7e34d5b3cf1",
     "data_for_version": {
+        "2.0.3": {
+            "url": "https://gitee.com/pumpkin_melon/yibubang/releases/download/database-2.0.0/question_data.sqlite.zip",
+            "description": "数据库结构已重构，支持切换题库",
+            "md5": "a146c7c9dd316326efa985a1803d2076"
+        },
         "2.0.2": {
             "url": "https://gitee.com/pumpkin_melon/yibubang/releases/download/database-2.0.0/question_data.sqlite.zip",
             "description": "数据库结构已重构，支持切换题库",
@@ -30,5 +35,44 @@
             "description": "",
             "md5": "59cef99484946b17167aa7e34d5b3cf1"
         }
+    },
+    "question_banks": {
+        "manifest_version": 1,
+        "schema_version": 1,
+        "banks": [
+            {
+                "bank_id": "dental_final",
+                "name": "口腔期末",
+                "version": "3.0.0",
+                "schema_version": 1,
+                "identity_id": "30401",
+                "url": "https://gitee.com/pumpkin_melon/yibubang/releases/download/database-3.0.0/dental_final.sqlite.zip",
+                "size": 32563857,
+                "sha256": "cb9870e6e77e1875a0f73530ec7e9c897c4ee0a435e13d39b6543719ff33f76f",
+                "sqlite_sha256": "574aaa4cb8e443f25661581594272a92e6b997199afd19f5faf90ffe247ce536"
+            },
+            {
+                "bank_id": "clinical_final",
+                "name": "临床期末",
+                "version": "3.0.0",
+                "schema_version": 1,
+                "identity_id": "20101",
+                "url": "https://gitee.com/pumpkin_melon/yibubang/releases/download/database-3.0.0/clinical_final.sqlite.zip",
+                "size": 25939926,
+                "sha256": "3db37a844ec0f8ac3688a7fcf7967de1a8adf8f787a3e4801dd1276893383061",
+                "sqlite_sha256": "893100264187b49a57a802cba3933b02b121f566378f43c5f5625df380ff5eb2"
+            },
+            {
+                "bank_id": "nursing_final",
+                "name": "护理期末",
+                "version": "3.0.0",
+                "schema_version": 1,
+                "identity_id": "11070",
+                "url": "https://gitee.com/pumpkin_melon/yibubang/releases/download/database-3.0.0/nursing_final.sqlite.zip",
+                "size": 24184056,
+                "sha256": "d23ac8b8b49083fb912749d21633bccc7f79bb60213ac6e4982d189c9bf7fa33",
+                "sqlite_sha256": "e0b0b5ab40f7d6f9718c1962282c36b479161112ec0bb77fe330acfedd0384f8"
+            }
+        ]
     }
 }

@@ -54,3 +54,5 @@ app.*.map.json
 pubspec.lock
 .metadata
 .cxx/
+
+docs/

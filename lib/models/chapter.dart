@@ -54,6 +54,7 @@ Future<List<Chapter>> getChaptersBySubject(Subject subject) async {
   final userDb = await UserDBHelper().database;
   final prefs = await SharedPreferences.getInstance();
   final identityId = prefs.getString('identityId') ?? '30401';
+  final bankId = prefs.getString('activeBankId') ?? 'dental_final';
 
   // 1. 用 JOIN 一次性拿到：chapter_id, chapter_name, total
   final mainRows = await db.rawQuery('''
@@ -79,9 +80,11 @@ Future<List<Chapter>> getChaptersBySubject(Subject subject) async {
   List<Map<String, dynamic>> userRows = await userDb.rawQuery('''
     SELECT chapter_id, correct, incorrect
     FROM IdentityChapter
-    WHERE identity_id = ?
+    WHERE bank_id = ?
+      AND identity_id = ?
+      AND subject_id = ?
       AND chapter_id IN ($placeholders)
-  ''', [identityId, ...chapterIds]);
+  ''', [bankId, identityId, subject.id, ...chapterIds]);
 
   // 3. 如果有缺失的，就在一个事务里批量插入
   final existingIds = userRows.map((r) => r['chapter_id'] as String).toSet();
@@ -94,7 +97,9 @@ Future<List<Chapter>> getChaptersBySubject(Subject subject) async {
         final batch = txn.batch();
         for (final id in missingIds) {
           batch.insert('IdentityChapter', {
+            'bank_id': bankId,
             'identity_id': identityId,
+            'subject_id': subject.id,
             'chapter_id': id,
             'correct': 0,
             'incorrect': 0,
@@ -109,6 +114,8 @@ Future<List<Chapter>> getChaptersBySubject(Subject subject) async {
     userRows.addAll(
       missingIds.map(
         (id) => {
+          'bank_id': bankId,
+          'subject_id': subject.id,
           'chapter_id': id,
           'correct': 0,
           'incorrect': 0,

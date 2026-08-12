@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'screens/home_page.dart';
 import 'common/app_strings.dart';
 import 'db/settings.dart';
+import 'repositories/question_bank_repository.dart';
 import 'package:get/get.dart';
 import 'package:flutter/foundation.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -31,6 +32,12 @@ Future main() async {
   ));
 
   await initSettings();
+  try {
+    await QuestionBankRepository().initialize();
+  } catch (error) {
+    // 目录迁移失败时仍启动应用，让用户可以通过题库管理或备份恢复继续处理。
+    debugPrint('题库目录初始化失败：$error');
+  }
   runApp(const Yibubang());
 }
 

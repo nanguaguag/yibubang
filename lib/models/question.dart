@@ -404,8 +404,20 @@ Future<void> updateQuestion(
   Question q, {
   bool prevCorrect = true,
 }) async {
+  final prefs = await SharedPreferences.getInstance();
+  final bankId = prefs.getString('activeBankId') ?? 'dental_final';
   final db = await DatabaseHelper().database;
   final userDb = await UserDBHelper().database;
+  final previousRows = await userDb.query(
+    'Question',
+    columns: ['status'],
+    where: 'id = ?',
+    whereArgs: [uq.id],
+    limit: 1,
+  );
+  final previousStatus = previousRows.isEmpty
+      ? (uq.status == 0 ? (prevCorrect ? 1 : 2) : 0)
+      : (previousRows.first['status'] as int? ?? 0);
 
   // 1. 查出所有相关 identity/subject/chapter
   final iqRows = await db.query(
@@ -417,49 +429,36 @@ Future<void> updateQuestion(
 
   // 2. 对每一行做 UPSERT
   final batch = userDb.batch();
+  final updatedSubjects = <String>{};
   for (final row in iqRows) {
     final String identityId = row['identity_id'] as String;
     final String subjectId = row['subject_id'] as String;
     final String chapterId = row['chapter_id'] as String;
-    final int deltaCorrect;
-    final int deltaIncorrect;
+    final deltaCorrect =
+        (uq.status == 1 ? 1 : 0) - (previousStatus == 1 ? 1 : 0);
+    final deltaIncorrect =
+        (uq.status == 2 ? 1 : 0) - (previousStatus == 2 ? 1 : 0);
 
-    if (uq.status == 1) {
-      // 新增：做对一次
-      deltaCorrect = 1;
-      deltaIncorrect = 0;
-    } else if (uq.status == 2) {
-      // 新增：做错一次
-      deltaCorrect = 0;
-      deltaIncorrect = 1;
-    } else if (uq.status == 0) {
-      // 撤回：根据 prevCorrect 决定撤回哪一类
-      deltaCorrect = prevCorrect ? -1 : 0;
-      deltaIncorrect = prevCorrect ? 0 : -1;
-    } else {
-      // 其他：不处理
-      deltaCorrect = 0;
-      deltaIncorrect = 0;
-    }
-
-    //// 2.1 IdentitySubject 的 UPSERT
-    if (uq.status == 1 || uq.status == 2) {
+    final shouldUpdateSubject = updatedSubjects.add('$identityId|$subjectId');
+    if (shouldUpdateSubject && (deltaCorrect != 0 || deltaIncorrect != 0)) {
       // 2.1 新增作答：UPSERT（用 delta 变量更清晰）
       batch.rawInsert('''
-        INSERT INTO IdentitySubject(identity_id, subject_id, correct, incorrect, selected)
-        VALUES(?, ?, ?, ?, COALESCE((SELECT selected FROM IdentitySubject WHERE identity_id=? AND subject_id=?), 0))
-        ON CONFLICT(identity_id, subject_id) DO UPDATE SET
+        INSERT INTO IdentitySubject(bank_id, identity_id, subject_id, correct, incorrect, selected)
+        VALUES(?, ?, ?, ?, ?, COALESCE((SELECT selected FROM IdentitySubject WHERE bank_id=? AND identity_id=? AND subject_id=?), 0))
+        ON CONFLICT(bank_id, identity_id, subject_id) DO UPDATE SET
           correct   = correct + excluded.correct,
           incorrect = incorrect + excluded.incorrect;
       ''', [
+        bankId,
         identityId,
         subjectId,
         deltaCorrect,
         deltaIncorrect,
+        bankId,
         identityId,
         subjectId,
       ]);
-    } else if (uq.status == 0) {
+    } else if (shouldUpdateSubject && uq.status == 0) {
       // 2.2 撤回作答：只 UPDATE（避免“撤回但记录不存在”导致插入奇怪数据）
       // 并且把结果截断到 >=0，防止撤回过头出现负数
       batch.rawUpdate('''
@@ -467,27 +466,29 @@ Future<void> updateQuestion(
         SET
           correct   = CASE WHEN correct + ? < 0 THEN 0 ELSE correct + ? END,
           incorrect = CASE WHEN incorrect + ? < 0 THEN 0 ELSE incorrect + ? END
-        WHERE identity_id = ? AND subject_id = ?;
+        WHERE bank_id = ? AND identity_id = ? AND subject_id = ?;
       ''', [
         deltaCorrect,
         deltaCorrect,
         deltaIncorrect,
         deltaIncorrect,
+        bankId,
         identityId,
         subjectId,
       ]);
     }
 
     // 2.2 IdentityChapter 的 UPSERT
-    if (uq.status == 1 || uq.status == 2) {
+    if (deltaCorrect != 0 || deltaIncorrect != 0) {
       // 新增作答：UPSERT（插入或累加）
       batch.rawInsert('''
-        INSERT INTO IdentityChapter(identity_id, subject_id, chapter_id, correct, incorrect)
-        VALUES(?, ?, ?, ?, ?)
-        ON CONFLICT(identity_id, chapter_id) DO UPDATE SET
+        INSERT INTO IdentityChapter(bank_id, identity_id, subject_id, chapter_id, correct, incorrect)
+        VALUES(?, ?, ?, ?, ?, ?)
+        ON CONFLICT(bank_id, identity_id, subject_id, chapter_id) DO UPDATE SET
           correct   = correct + excluded.correct,
           incorrect = incorrect + excluded.incorrect;
       ''', [
+        bankId,
         identityId,
         subjectId,
         chapterId,
@@ -501,13 +502,15 @@ Future<void> updateQuestion(
         SET
           correct   = CASE WHEN correct + ? < 0 THEN 0 ELSE correct + ? END,
           incorrect = CASE WHEN incorrect + ? < 0 THEN 0 ELSE incorrect + ? END
-        WHERE identity_id = ? AND chapter_id = ?;
+        WHERE bank_id = ? AND identity_id = ? AND subject_id = ? AND chapter_id = ?;
       ''', [
         deltaCorrect,
         deltaCorrect,
         deltaIncorrect,
         deltaIncorrect,
+        bankId,
         identityId,
+        subjectId,
         chapterId,
       ]);
     }
@@ -544,8 +547,14 @@ Future<void> updateQuestion(
         "is_right": "$isCorrect",
         "app_id": "${q.nativeAppId}",
         "duration": "10",
-        "subject_id": "20101"
+        "subject_id": "${q.chapterParentId}"
       }''',
+      'bank_id': bankId,
+      'question_id': q.id,
+      'identity_id': q.identityId,
+      'subject_id': q.chapterParentId,
+      'chapter_id': q.chapterId,
+      'is_right': '$isCorrect',
       'timestamp': DateTime.now().millisecondsSinceEpoch,
     },
   );

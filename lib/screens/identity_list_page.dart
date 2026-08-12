@@ -3,6 +3,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
 import '../models/identity.dart';
 import '../common/app_strings.dart';
+import '../models/question_bank.dart';
+import '../repositories/question_bank_repository.dart';
 
 class IdentityListPage extends StatefulWidget {
   final String parentId;
@@ -46,10 +48,52 @@ class _IdentityListPageState extends State<IdentityListPage> {
     final hasChildren = await _hasChildren(identity.id);
     if (choosable) {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('identityId', identity.id);
-      setState(() {
-        _selectedId = identity.id;
-      });
+      QuestionBankSpec? bankSpec;
+      for (final spec in QuestionBankDefaults.all) {
+        if (spec.identityId == identity.id) {
+          bankSpec = spec;
+          break;
+        }
+      }
+      final repository = QuestionBankRepository();
+      final bank =
+          bankSpec == null ? null : await repository.find(bankSpec.bankId);
+      final activeBankId = await repository.activeBankId();
+      if (bank != null && bank.isInstalled && bank.enabled) {
+        if (activeBankId != bank.bankId) {
+          await repository.selectBank(bank.bankId);
+        }
+        await prefs.setString('identityId', identity.id);
+        setState(() {
+          _selectedId = identity.id;
+        });
+        return;
+      }
+
+      // 新题库尚未安装时，旧版合并题库只作为一次性的兼容回退。
+      // 如果已经在旧库中，不重复 selectBank，避免每次点击都提示“已切换”。
+      final legacy = await repository.find('legacy_combined');
+      if (legacy != null && legacy.isInstalled && legacy.enabled) {
+        if (activeBankId != legacy.bankId) {
+          await repository.selectBank(legacy.bankId);
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('当前使用旧版合并题库（兼容回退）')),
+            );
+          }
+        }
+        await prefs.setString('identityId', identity.id);
+        setState(() {
+          _selectedId = identity.id;
+        });
+        return;
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${identity.name}尚未安装或已禁用，请在题库管理中处理')),
+        );
+      }
       return;
     }
     if (hasChildren) {

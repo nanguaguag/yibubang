@@ -16,6 +16,9 @@ class AppStrings {
     '1107',
   ];
   static const Map<String, IconData> identityIconMap = {
+    '20101': Symbols.health_metrics,
+    '30401': Symbols.dentistry_rounded,
+    '11070': Symbols.bloodtype_rounded,
     '2': Symbols.health_metrics,
     '3': Symbols.dentistry_rounded,
     '4': Symbols.health_and_safety_rounded,

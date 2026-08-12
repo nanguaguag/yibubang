@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'question_bank_page.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -67,6 +68,18 @@ class _SettingsPageState extends State<SettingsPage> {
             onChanged: (v) {
               setState(() => syncQuestionBank = v);
               _setBool(keySyncQuestionBank, v);
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.storage_outlined),
+            title: const Text('题库管理'),
+            subtitle: const Text('启用、禁用、导入和更新独立题库'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const QuestionBankPage()),
+              );
             },
           ),
           const Divider(),

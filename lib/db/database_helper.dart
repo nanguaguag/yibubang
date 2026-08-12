@@ -3,6 +3,8 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart';
 import 'dart:io';
 import 'dart:async';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'question_bank_manager.dart';
 
 String generateSimpleId() {
   final timestamp = DateTime.now().millisecondsSinceEpoch;
@@ -44,17 +46,61 @@ class DatabaseHelper {
   }
 
   // Initialize the database
-  _initDB() async {
-    String path = join(await getDatabasesPath(), 'question_data.sqlite');
-    if (!await File(path).exists()) {
-      throw Exception("数据库文件($path)不存在。请下载！");
+  Future<Database> _initDB() async {
+    final prefs = await SharedPreferences.getInstance();
+    final bankId = prefs.getString('activeBankId') ?? 'dental_final';
+    final bankManager = QuestionBankDatabaseManager();
+    final bankPath = await bankManager.pathFor(bankId);
+    if (await File(bankPath).exists()) {
+      try {
+        return await bankManager.openBank(bankId);
+      } catch (error) {
+        debugPrint('当前题库校验失败，将尝试旧题库回退：$error');
+      }
     }
 
-    return await openDatabase(
-      path,
-      readOnly: true,
-      singleInstance: false, // 读连接可以多实例
-    );
+    // 老版本题库保留为只读回退库，但必须尊重题库管理中的启用状态。
+    // 用户明确禁用后不再静默回退，避免页面显示的新题库与实际连接不一致。
+    final legacyPath = join(await getDatabasesPath(), 'question_data.sqlite');
+    if (await File(legacyPath).exists() && await _legacyFallbackEnabled()) {
+      await prefs.setString('activeBankId', 'legacy_combined');
+      return openDatabase(legacyPath, readOnly: true, singleInstance: false);
+    }
+    throw Exception("题库文件不存在或已禁用。请在题库管理中启用、导入或下载题库！");
+  }
+
+  Future<bool> _legacyFallbackEnabled() async {
+    try {
+      final rows = await (await UserDBHelper().database).query(
+        'QuestionBank',
+        columns: ['enabled'],
+        where: 'bank_id = ?',
+        whereArgs: ['legacy_combined'],
+        limit: 1,
+      );
+      // 目录初始化失败时没有记录，仍允许老用户安全回退；一旦用户在
+      // 管理页面明确关闭，记录值为 0，必须禁止回退。
+      return rows.isEmpty || (rows.first['enabled'] as num?) == 1;
+    } catch (error) {
+      debugPrint('读取旧版题库启用状态失败，保留兼容回退：$error');
+      return true;
+    }
+  }
+
+  Future<void> close() async {
+    final database = _database;
+    _database = null;
+    if (database != null && database.isOpen) await database.close();
+  }
+
+  Future<void> switchBank(String bankId) async {
+    final oldDatabase = _database;
+    _database = null;
+    if (oldDatabase != null && oldDatabase.isOpen) {
+      await oldDatabase.close();
+    }
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('activeBankId', bankId);
   }
 
   /// 检查数据库完整性
@@ -132,8 +178,21 @@ class DatabaseHelper {
   }
 
   Future<String> getDatabasePath() async {
-    final databasesPath = await getDatabasesPath();
-    return join(databasesPath, 'question_data.sqlite'); // 你的真实文件名
+    final prefs = await SharedPreferences.getInstance();
+    final bankId = prefs.getString('activeBankId') ?? 'dental_final';
+    final bankPath = await QuestionBankDatabaseManager().pathFor(bankId);
+    if (await File(bankPath).exists()) {
+      final validation = await QuestionBankDatabaseManager().validateFile(
+        bankPath,
+        expectedBankId: bankId,
+      );
+      if (validation.isValid) return bankPath;
+    }
+    final legacyPath = join(await getDatabasesPath(), 'question_data.sqlite');
+    if (await File(legacyPath).exists() && await _legacyFallbackEnabled()) {
+      return legacyPath;
+    }
+    return bankPath;
   }
 }
 
@@ -147,14 +206,156 @@ class UserDBHelper {
   Future<Database> get database async {
     if (_database != null) return _database!;
     _database = await _initDatabase();
-    dropAllTriggers(_database!); // 删除所有触发器
     await checkDatabaseIntegrity(); // 添加完整性检查
     return _database!;
   }
 
   Future<Database> _initDatabase() async {
     String path = join(await getDatabasesPath(), 'user_data.sqlite');
-    return await openDatabase(path, version: 1, onCreate: _onCreate);
+    return await openDatabase(
+      path,
+      version: 4,
+      onCreate: _onCreate,
+      onUpgrade: _onUpgrade,
+    );
+  }
+
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    await db.transaction((txn) async {
+      if (oldVersion < 2) {
+        await _migrateStatisticsTables(txn);
+        await _createQuestionBankTable(txn);
+        await _createMigrationStateTable(txn);
+      }
+      if (oldVersion < 3) {
+        final columns = await _columns(txn, 'Activities');
+        for (final column in const [
+          'bank_id',
+          'question_id',
+          'identity_id',
+          'subject_id',
+          'chapter_id',
+          'is_right',
+        ]) {
+          if (!columns.contains(column)) {
+            await txn.execute('ALTER TABLE Activities ADD COLUMN $column TEXT');
+          }
+        }
+        await txn.execute(
+          'CREATE INDEX IF NOT EXISTS idx_activity_bank ON Activities(bank_id)',
+        );
+      }
+      if (oldVersion < 4) {
+        final columns = await _columns(txn, 'QuestionBank');
+        if (!columns.contains('update_enabled')) {
+          await txn.execute(
+            'ALTER TABLE QuestionBank ADD COLUMN update_enabled INTEGER NOT NULL DEFAULT 1',
+          );
+        }
+      }
+      await _createMigrationStateTable(txn);
+    });
+  }
+
+  Future<List<String>> _columns(DatabaseExecutor db, String table) async {
+    final rows = await db.rawQuery('PRAGMA table_info($table)');
+    return rows.map((row) => row['name'] as String).toList();
+  }
+
+  Future<void> _createQuestionBankTable(DatabaseExecutor db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS QuestionBank (
+        bank_id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        version TEXT NOT NULL DEFAULT '0.0.0',
+        schema_version INTEGER NOT NULL DEFAULT 0,
+        local_path TEXT NOT NULL DEFAULT '',
+        content_hash TEXT NOT NULL DEFAULT '',
+        size INTEGER NOT NULL DEFAULT 0,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        built_in INTEGER NOT NULL DEFAULT 0,
+        update_enabled INTEGER NOT NULL DEFAULT 1,
+        install_state TEXT NOT NULL DEFAULT 'available',
+        remote_url TEXT,
+        identity_id TEXT NOT NULL DEFAULT '',
+        updated_at INTEGER NOT NULL DEFAULT 0
+      )
+    ''');
+  }
+
+  Future<void> _createMigrationStateTable(DatabaseExecutor db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS MigrationState (
+        migration_id TEXT PRIMARY KEY,
+        from_version INTEGER NOT NULL,
+        to_version INTEGER NOT NULL,
+        state TEXT NOT NULL,
+        started_at INTEGER NOT NULL,
+        finished_at INTEGER NOT NULL DEFAULT 0,
+        error TEXT NOT NULL DEFAULT ''
+      )
+    ''');
+  }
+
+  Future<void> _migrateStatisticsTables(DatabaseExecutor db) async {
+    final subjectColumns = await _columns(db, 'IdentitySubject');
+    if (!subjectColumns.contains('bank_id')) {
+      await db.execute(
+          'ALTER TABLE IdentitySubject RENAME TO IdentitySubject_legacy');
+      await db.execute('''
+        CREATE TABLE IdentitySubject (
+          bank_id TEXT NOT NULL,
+          identity_id TEXT NOT NULL,
+          subject_id TEXT NOT NULL,
+          correct INTEGER DEFAULT 0 NOT NULL,
+          incorrect INTEGER DEFAULT 0 NOT NULL,
+          selected INTEGER DEFAULT 0 NOT NULL,
+          PRIMARY KEY (bank_id, identity_id, subject_id)
+        )
+      ''');
+      await db.execute('''
+        INSERT OR IGNORE INTO IdentitySubject
+          (bank_id, identity_id, subject_id, correct, incorrect, selected)
+        SELECT CASE identity_id
+          WHEN '30401' THEN 'dental_final'
+          WHEN '20101' THEN 'clinical_final'
+          WHEN '11070' THEN 'nursing_final'
+          ELSE 'legacy_combined' END,
+          identity_id, subject_id, correct, incorrect, selected
+        FROM IdentitySubject_legacy
+      ''');
+      await db.execute('DROP TABLE IdentitySubject_legacy');
+    }
+
+    final chapterColumns = await _columns(db, 'IdentityChapter');
+    if (!chapterColumns.contains('bank_id')) {
+      await db.execute(
+          'ALTER TABLE IdentityChapter RENAME TO IdentityChapter_legacy');
+      await db.execute('''
+        CREATE TABLE IdentityChapter (
+          bank_id TEXT NOT NULL,
+          identity_id TEXT NOT NULL,
+          subject_id TEXT NOT NULL,
+          chapter_id TEXT NOT NULL,
+          correct INTEGER DEFAULT 0 NOT NULL,
+          incorrect INTEGER DEFAULT 0 NOT NULL,
+          PRIMARY KEY (bank_id, identity_id, subject_id, chapter_id)
+        )
+      ''');
+      await db.execute('''
+        INSERT OR IGNORE INTO IdentityChapter
+          (bank_id, identity_id, subject_id, chapter_id, correct, incorrect)
+        SELECT CASE identity_id
+          WHEN '30401' THEN 'dental_final'
+          WHEN '20101' THEN 'clinical_final'
+          WHEN '11070' THEN 'nursing_final'
+          ELSE 'legacy_combined' END,
+          identity_id, subject_id, chapter_id, correct, incorrect
+        FROM IdentityChapter_legacy
+      ''');
+      await db.execute('DROP TABLE IdentityChapter_legacy');
+    }
   }
 
   /// 检查数据库完整性
@@ -183,12 +384,13 @@ class UserDBHelper {
     debugPrint("初始化用户数据库...");
     await db.execute('''
     CREATE TABLE IF NOT EXISTS IdentitySubject (
+        bank_id TEXT NOT NULL,
         identity_id TEXT,
         subject_id TEXT,
-        correct INTAGER DEFAULT 0 NOT NULL,
-        incorrect INTAGER DEFAULT 0 NOT NULL,
+        correct INTEGER DEFAULT 0 NOT NULL,
+        incorrect INTEGER DEFAULT 0 NOT NULL,
         selected INTEGER DEFAULT 0 NOT NULL,
-        PRIMARY KEY (identity_id, subject_id)
+        PRIMARY KEY (bank_id, identity_id, subject_id)
     )
     ''');
 
@@ -197,12 +399,13 @@ class UserDBHelper {
     // 正确设计应是：PRIMARY KEY (identity_id, subject_id, chapter_id)
     await db.execute('''
     CREATE TABLE IF NOT EXISTS IdentityChapter (
+        bank_id TEXT NOT NULL,
         identity_id TEXT,
         subject_id TEXT,
         chapter_id TEXT,
-        correct INTAGER DEFAULT 0 NOT NULL,
-        incorrect INTAGER DEFAULT 0 NOT NULL,
-        PRIMARY KEY (identity_id, chapter_id)
+        correct INTEGER DEFAULT 0 NOT NULL,
+        incorrect INTEGER DEFAULT 0 NOT NULL,
+        PRIMARY KEY (bank_id, identity_id, subject_id, chapter_id)
     )
     ''');
 
@@ -243,9 +446,18 @@ class UserDBHelper {
         id TEXT PRIMARY KEY,
         title TEXT NOT NULL,
         description TEXT NOT NULL,
-        timestamp INTEGER NOT NULL
+        timestamp INTEGER NOT NULL,
+        bank_id TEXT,
+        question_id TEXT,
+        identity_id TEXT,
+        subject_id TEXT,
+        chapter_id TEXT,
+        is_right TEXT
       )
     ''');
+
+    await _createQuestionBankTable(db);
+    await _createMigrationStateTable(db);
 
     // 给 Question 表按 chapter_id 建表
     await db.execute('''

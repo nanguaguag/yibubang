@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:yibubang/screens/question_grid_page.dart';
 import '../common/app_strings.dart';
 import 'subjects_list_page.dart';
-import 'identity_list_page.dart';
+import 'question_bank_page.dart';
 import '../models/subject.dart';
 import '../models/chapter.dart';
 import '../widgets/theme_controller.dart';
@@ -71,6 +71,8 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
   Future<void> _saveLastProgress(
       String lastSubjectId, String lastChapterId) async {
     final prefs = await SharedPreferences.getInstance();
+    final activeBankId = prefs.getString('activeBankId') ?? 'dental_final';
+    await prefs.setString('lastProgressBankId', activeBankId);
     if (prefs.containsKey('lastSubjectId')) {
       await prefs.setString('lastSubjectId', lastSubjectId);
     }
@@ -86,6 +88,12 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
 
   Future<void> _resumeLastQuestion() async {
     final prefs = await SharedPreferences.getInstance();
+    final activeBankId = prefs.getString('activeBankId') ?? 'dental_final';
+    final progressBankId = prefs.getString('lastProgressBankId');
+    if (progressBankId != null && progressBankId != activeBankId) {
+      debugPrint('上次做题记录属于其他题库，跳过自动恢复');
+      return;
+    }
 
     final String? subjectId = prefs.getString('lastSubjectId');
     final String? chapterId = prefs.getString('lastChapterId');
@@ -136,8 +144,42 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
   }
 
   /// 显示错误信息
-  Widget _buildErrorMessage(Object? error) =>
-      Center(child: Text('加载失败: $error'));
+  Widget _buildErrorMessage(Object? error) => Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.menu_book_outlined, size: 56),
+              const SizedBox(height: 16),
+              const Text('当前还没有可用题库，请先导入或下载题库'),
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: () async {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const QuestionBankPage(),
+                    ),
+                  );
+                  _refreshData();
+                },
+                icon: const Icon(Icons.storage_outlined),
+                label: const Text('打开题库管理'),
+              ),
+              if (error != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: Text(
+                    '$error',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
+            ],
+          ),
+        ),
+      );
 
   /// 显示无数据提示
   Widget _buildEmptyMessage(String msg) => Center(child: Text(msg));
@@ -280,19 +322,18 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
       appBar: AppBar(
         title: const Text(AppStrings.selectedSubjectsTitle),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        leading: IconButton(
-          icon: Icon(Icons.apps),
-          onPressed: () async {
-            await Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => (IdentityListPage()),
-              ),
-            );
-            _refreshData();
-          },
-        ),
         actions: [
+          IconButton(
+            tooltip: '题库管理',
+            icon: const Icon(Icons.storage_outlined),
+            onPressed: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const QuestionBankPage()),
+              );
+              _refreshData();
+            },
+          ),
           Obx(() {
             return IconButton(
               icon: AnimatedSwitcher(

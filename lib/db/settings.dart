@@ -18,8 +18,23 @@ Future<void> initSettings() async {
   if (!prefs.containsKey('mode')) {
     await prefs.setInt('mode', 0); // 模式: 练习模式
   }
+  final existingIdentityId = prefs.getString('identityId') ?? '30401';
+  if (!prefs.containsKey('activeBankId')) {
+    final legacyBank = switch (existingIdentityId) {
+      '20101' => 'clinical_final',
+      '11070' => 'nursing_final',
+      _ => 'dental_final',
+    };
+    await prefs.setString('activeBankId', legacyBank); // 默认题库
+  }
   if (!prefs.containsKey('identityId')) {
-    await prefs.setString('identityId', '30401'); // 默认identity: 口腔题库
+    await prefs.setString('identityId', existingIdentityId); // 默认identity: 口腔题库
+  }
+  if (!prefs.containsKey('lastProgressBankId')) {
+    await prefs.setString(
+      'lastProgressBankId',
+      prefs.getString('activeBankId') ?? 'dental_final',
+    );
   }
   if (!prefs.containsKey('lastSubjectId')) {
     await prefs.setString('lastSubjectId', ''); // 上次做到的的课程ID
