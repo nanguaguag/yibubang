@@ -31,7 +31,7 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  int _selectedIndex = 0; // 默认主页为题库页
+  int _selectedIndex = 0; // 默认主页为“我的课程”
   bool isDownloading = false;
   double downloadProgress = 0.00; // 下载进度
   String statusText = '点击按钮下载题库';

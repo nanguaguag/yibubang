@@ -379,6 +379,16 @@ class QuestionBankRepository {
     final isOfficialContent =
         configuredRemote?['sqlite_sha256']?.toString() == hash;
     final resolvedUpdateEnabled = updateEnabled ?? isOfficialContent;
+    // 下载更新使用远程发布版本；导入的官方同内容文件也沿用远程发布版本，
+    // 避免 BankMeta 里的内容版本（1.0.0）把发布版本（3.0.0）回退。
+    final String resolvedVersion;
+    if (versionOverride != null) {
+      resolvedVersion = versionOverride;
+    } else if (isOfficialContent) {
+      resolvedVersion = configuredRemote?['version']?.toString() ?? '1.0.0';
+    } else {
+      resolvedVersion = metadata['version'] as String? ?? '1.0.0';
+    }
     final staging = File(stagingPath);
     await staging.writeAsBytes(bytes, flush: true);
     final stagedValidation =
@@ -407,7 +417,7 @@ class QuestionBankRepository {
             spec?.name ??
             bankId,
         description: existing?.description ?? spec?.description ?? '',
-        version: versionOverride ?? metadata['version'] as String? ?? '1.0.0',
+        version: resolvedVersion,
         schemaVersion: (metadata['schema_version'] as num?)?.toInt() ?? 1,
         localPath: targetPath,
         contentHash: hash,

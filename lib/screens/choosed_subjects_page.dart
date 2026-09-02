@@ -4,6 +4,7 @@ import 'package:yibubang/screens/question_grid_page.dart';
 import '../common/app_strings.dart';
 import 'subjects_list_page.dart';
 import 'question_bank_page.dart';
+import 'search_page.dart';
 import '../models/subject.dart';
 import '../models/chapter.dart';
 import '../widgets/theme_controller.dart';
@@ -320,18 +321,28 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        leading: IconButton(
+          tooltip: '题库管理',
+          icon: const Icon(Icons.storage_outlined),
+          onPressed: () async {
+            await Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const QuestionBankPage()),
+            );
+            _refreshData();
+          },
+        ),
         title: const Text(AppStrings.selectedSubjectsTitle),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
           IconButton(
-            tooltip: '题库管理',
-            icon: const Icon(Icons.storage_outlined),
+            tooltip: '搜索题目',
+            icon: const Icon(Icons.search),
             onPressed: () async {
               await Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => const QuestionBankPage()),
+                MaterialPageRoute(builder: (_) => const QuestionSearchPage()),
               );
-              _refreshData();
             },
           ),
           Obx(() {
