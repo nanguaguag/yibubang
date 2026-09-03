@@ -82,7 +82,8 @@ Widget rebuildIconBtn(BuildContext context) {
             content: const Text(
               "由于开发者之前对数据库的了解非常稀烂，"
               "2.0.0版本的刷题数出现了各种各样的问题（详见issue#9）"
-              "如果出现章节正确数和错误数不正确，请点击下方的确认按钮，统计完后请重启本应用。",
+              "如果出现章节正确数和错误数不正确，请点击下方的确认按钮，统计完后请重启本应用。"
+              "确认按钮也会同步修复统计页缺失的历史刷题记录（作答时间将平均分摊到一年内）。",
             ),
             actions: [
               TextButton(
@@ -93,11 +94,20 @@ Widget rebuildIconBtn(BuildContext context) {
               ),
               TextButton(
                 onPressed: () async {
-                  await rebuildQuestionCount();
+                  try {
+                    debugPrint('[重新统计] 开始 rebuildQuestionCount');
+                    await rebuildQuestionCount();
+                    debugPrint('[重新统计] rebuildQuestionCount 完成');
+                    await repairActivities();
+                    debugPrint('[重新统计] repairActivities 完成');
+                  } catch (error, stack) {
+                    debugPrint('[重新统计] 异常: $error');
+                    debugPrint('$stack');
+                  }
                   Navigator.of(context).pop(); // 或者只是关闭对话框
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
-                      content: Text('做题数量统计已更新'),
+                      content: Text('做题数量与统计已更新'),
                       duration: Duration(seconds: 1),
                     ),
                   );

@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
@@ -186,4 +187,95 @@ Future<bool> rebuildQuestionCount({String? bankId}) async {
     }
   }
   return true;
+}
+
+/// 修复刷题统计误差。
+///
+/// 早期版本只在「对/错计数表」里更新，没有往 `Activities` 写入作答流水，
+/// 导致已经做过的题在“统计”页缺失。这里把 `Question` 表中 status 为正确/做错
+/// 的题目补记进 `Activities`，其中正确率、作答数会随已有计数保持一致，
+/// 作答时间则平均分布到最近一年内（历史上没有精确作答时间，只能近似估计）。
+///
+/// 通过「已记录题目 id 去重」保证幂等：重复执行不会造成重复记录；之后
+/// 新做的题由答题流程正常写入流水，也不受本次修复影响。
+Future<void> repairActivities({String? bankId}) async {
+  final prefs = await SharedPreferences.getInstance();
+  final targetBankId = bankId ?? prefs.getString('activeBankId');
+  debugPrint('[repairActivities] targetBankId=$targetBankId '
+      'bankId参数=$bankId');
+  if (targetBankId == null || targetBankId.isEmpty) {
+    debugPrint('[repairActivities] bankId 为空，跳过修复');
+    return;
+  }
+
+  final userDb = await UserDBHelper().database;
+
+  // 1. 已记录到 Activities 的题目 id（真实答题流水 + 历史补记账都用它去重）
+  final recordedRows = await userDb.rawQuery(
+    'SELECT DISTINCT question_id FROM Activities '
+    'WHERE question_id IS NOT NULL AND is_right IN (?, ?)',
+    ['0', '1'],
+  );
+  final recordedIds = recordedRows
+      .map((r) => r['question_id']?.toString())
+      .whereType<String>()
+      .toSet();
+  debugPrint('[repairActivities] Activities已记录题目数=${recordedIds.length}');
+
+  // 2. 已正确/做错的题目
+  final done = await userDb.rawQuery(
+    'SELECT id, status, chapter_parent_id, chapter_id '
+    'FROM Question WHERE status IN (?, ?) ORDER BY id ASC',
+    [1, 2],
+  );
+  debugPrint('[repairActivities] Question中已作答(status1/2)题目数=${done.length}');
+  if (done.isEmpty) {
+    // 便于排查历史数据是否真的把 status 写进 Question 表
+    final statusAll = await userDb.rawQuery(
+      'SELECT status, COUNT(*) c FROM Question GROUP BY status',
+    );
+    debugPrint('[repairActivities] Question.status 分布=$statusAll');
+    return;
+  }
+
+  final now = DateTime.now();
+  final todayMid = DateTime(now.year, now.month, now.day, 10);
+  final total = done.length;
+
+  final batch = userDb.batch();
+  var added = 0;
+  var index = 0;
+  for (final row in done) {
+    final qid = row['id'].toString();
+    if (recordedIds.contains(qid)) {
+      continue;
+    }
+    final status = row['status'] as int;
+    final isRight = status == 1 ? '1' : '0';
+    // 作答时间平均分布到一年内（i=0 最近，i=last 约一年前）
+    final daysBack = total == 1 ? 182 : ((index / (total - 1)) * 365).round();
+    final ts =
+        todayMid.subtract(Duration(days: daysBack)).millisecondsSinceEpoch;
+
+    batch.insert('Activities', {
+      'id': generateSimpleId(),
+      'title': 'Backfill',
+      'description': '',
+      'timestamp': ts,
+      'bank_id': targetBankId,
+      'question_id': qid,
+      'identity_id': prefs.getString('identityId'),
+      'subject_id': row['chapter_parent_id'],
+      'chapter_id': row['chapter_id'],
+      'is_right': isRight,
+      'duration': 0,
+    });
+    added++;
+    index++;
+  }
+  debugPrint('[repairActivities] 本次新增补记=$added （跳过已记录=${total - added}）');
+  if (added > 0) {
+    await batch.commit(noResult: true);
+    debugPrint('[repairActivities] 已写入 Activities 成功');
+  }
 }

@@ -6,6 +6,7 @@ import 'question_detail_page.dart';
 import '../common/app_strings.dart';
 import '../models/chapter.dart';
 import '../models/question.dart';
+import '../models/answer_statistics.dart';
 
 // Question Status: 题目状态
 // - 0: 未做
@@ -40,6 +41,9 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
   int category = 0;
   int mode = 0;
 
+  // 本章节统计
+  late Future<PeriodStats> _chapterStats;
+
   // 可选项
   final List<String> cutTypes = AppStrings.cutTypes;
   final List<String> questionTypes = AppStrings.questionTypes;
@@ -52,8 +56,29 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
     // 初始化 Future 在 initState 中，这样可以访问 widget
     allQuestions = getQuestionsFromChapter(widget.chapter);
     allUserQuestions = getUserQuestions(allQuestions);
+    _chapterStats = _loadChapterStats();
     _loadSettings();
     _jump2Question();
+  }
+
+  Future<PeriodStats> _loadChapterStats() async {
+    try {
+      final bankId = await activeBankId();
+      return await getChapterPeriodStats(
+        subjectId: widget.chapter.subjectId,
+        chapterId: widget.chapter.id,
+        bankId: bankId,
+        startMs: 0,
+        endMs: DateTime.now().millisecondsSinceEpoch,
+      );
+    } catch (error) {
+      debugPrint('本章节统计加载失败：$error');
+      return const PeriodStats(
+        totalDuration: Duration.zero,
+        answeredCount: 0,
+        correctCount: 0,
+      );
+    }
   }
 
   @override
@@ -69,6 +94,7 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
     setState(() {
       allQuestions = questions;
       allUserQuestions = userQuestions;
+      _chapterStats = _loadChapterStats();
     });
 
     await questions;
@@ -291,69 +317,140 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
     return Center(child: Text(msg));
   }
 
-  /// 构建筛选部分
+  /// 构建筛选部分（Material 3 ChoiceChip）
   Widget _buildFilterSection(
     String title,
     List<String> items,
     String selectedValue,
     Function(String) onSelected,
   ) {
+    final scheme = Theme.of(context).colorScheme;
     return Padding(
-      padding: EdgeInsets.all(8),
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(children: [
-            Padding(
-              padding: EdgeInsets.all(5),
-              child: Text(
-                title,
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                ),
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 6),
+            child: Text(
+              title,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: scheme.onSurfaceVariant,
               ),
             ),
-            SizedBox(width: 6),
-            ...items.map((item) {
+          ),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: items.map((item) {
               final isSelected = selectedValue == item;
-              return Padding(
-                padding: EdgeInsets.fromLTRB(2, 0, 2, 0),
-                child: ElevatedButton(
-                  onPressed: () => onSelected(item),
-                  style: isSelected
-                      ? ElevatedButton.styleFrom(
-                          padding: EdgeInsets.all(10),
-                          foregroundColor: Colors.white,
-                          backgroundColor: Colors.deepPurple,
-                          shape: const RoundedRectangleBorder(
-                            borderRadius: BorderRadius.all(
-                              Radius.circular(13),
-                            ),
-                          ),
-                        )
-                      : ElevatedButton.styleFrom(
-                          padding: EdgeInsets.all(10),
-                          backgroundColor: Colors.transparent,
-                          shadowColor: Colors.transparent, // Remove shadow
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(13),
-                          ),
-                        ),
-                  child: Text(
-                    item,
-                    style: TextStyle(
-                      fontWeight:
-                          isSelected ? FontWeight.bold : FontWeight.normal,
-                      fontSize: 13,
-                    ),
-                  ),
+              return ChoiceChip(
+                label: Text(item),
+                selected: isSelected,
+                onSelected: (_) => onSelected(item),
+                showCheckmark: false,
+                selectedColor: scheme.primary,
+                backgroundColor: scheme.surfaceContainerHighest,
+                labelStyle: TextStyle(
+                  fontSize: 13,
+                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w400,
+                  color: isSelected ? scheme.onPrimary : scheme.onSurface,
+                ),
+                side: BorderSide(
+                  color: isSelected ? scheme.primary : scheme.outlineVariant,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
                 ),
               );
-            }),
-          ]),
-        ),
+            }).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 本章节统计卡片
+  Widget _buildChapterStatsCard() {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: scheme.primary.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: scheme.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.bar_chart_rounded, size: 18, color: scheme.primary),
+              const SizedBox(width: 6),
+              Text(
+                '本章节统计',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: scheme.onSurface,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          FutureBuilder<PeriodStats>(
+            future: _chapterStats,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState != ConnectionState.done) {
+                return const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(6),
+                    child: SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  ),
+                );
+              }
+              final stats = snapshot.data ??
+                  const PeriodStats(
+                    totalDuration: Duration.zero,
+                    answeredCount: 0,
+                    correctCount: 0,
+                  );
+              return Row(
+                children: [
+                  _StatItem(
+                    icon: Icons.timer_outlined,
+                    value: _fmtDuration(stats.totalDuration.inMilliseconds),
+                    label: '总用时',
+                    scheme: scheme,
+                  ),
+                  _StatItem(
+                    icon: Icons.rate_review_outlined,
+                    value: '${stats.answeredCount}',
+                    label: '作答数',
+                    scheme: scheme,
+                  ),
+                  _StatItem(
+                    icon: Icons.check_circle_outline,
+                    value: '${(stats.accuracy * 100).round()}%',
+                    label: '正确率',
+                    scheme: scheme,
+                  ),
+                ],
+              );
+            },
+          ),
+        ],
       ),
     );
   }
@@ -490,87 +587,114 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
         ),
       ),
       endDrawer: FractionallySizedBox(
-        widthFactor: 0.7, // 宽度占父容器的70%
+        widthFactor: 0.72, // 宽度占父容器的72%
         child: Drawer(
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.zero, // 设为0，去掉圆角
           ),
           child: SafeArea(
             child: ListView(
-              padding: EdgeInsets.symmetric(vertical: 5),
+              padding: EdgeInsets.zero,
               children: <Widget>[
-                // 关闭按钮放置在侧边栏的顶部
-                Row(children: [
-                  Container(
-                    margin: EdgeInsets.symmetric(horizontal: 10),
-                    width: 4, // 控制竖条的宽度
-                    height: 25, // 控制竖条的高度
-                    color: Colors.deepOrange, // 竖条颜色
-                  ),
-                  Text(
-                    '筛选',
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  Spacer(),
-                  Align(
-                    alignment: Alignment.topRight,
-                    child: Padding(
-                      padding: EdgeInsets.only(right: 5),
-                      child: IconButton(
-                        icon: Icon(Icons.close),
+                // 头部
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 4, 8),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.tune,
+                        size: 22,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                      const SizedBox(width: 8),
+                      const Text(
+                        '内容与筛选',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        icon: const Icon(Icons.close),
                         onPressed: () {
                           Navigator.pop(context); // 关闭侧边栏
                         },
                       ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
+                  child: _buildChapterStatsCard(),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                  child: Text(
+                    '筛选',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: Theme.of(context).colorScheme.primary,
                     ),
                   ),
-                ]),
-                _buildFilterSection(
-                  '斩题',
-                  cutTypes,
-                  cutTypes[cutType],
-                  (value) {
-                    saveSettings();
-                    setState(() {
-                      cutType = cutTypes.indexOf(value);
-                    });
-                  },
                 ),
-                _buildFilterSection(
-                  '题型',
-                  questionTypes,
-                  questionTypes[questionType],
-                  (value) {
-                    saveSettings();
-                    setState(() {
-                      questionType = questionTypes.indexOf(value);
-                    });
-                  },
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: _buildFilterSection(
+                    '斩题',
+                    cutTypes,
+                    cutTypes[cutType],
+                    (value) {
+                      saveSettings();
+                      setState(() {
+                        cutType = cutTypes.indexOf(value);
+                      });
+                    },
+                  ),
                 ),
-                _buildFilterSection(
-                  '分类',
-                  categories,
-                  categories[category],
-                  (value) {
-                    saveSettings();
-                    setState(() {
-                      category = categories.indexOf(value);
-                    });
-                  },
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: _buildFilterSection(
+                    '题型',
+                    questionTypes,
+                    questionTypes[questionType],
+                    (value) {
+                      saveSettings();
+                      setState(() {
+                        questionType = questionTypes.indexOf(value);
+                      });
+                    },
+                  ),
                 ),
-                _buildFilterSection(
-                  '模式',
-                  modesList,
-                  modesList[mode],
-                  (value) {
-                    saveSettings();
-                    setState(() {
-                      mode = modesList.indexOf(value);
-                    });
-                  },
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: _buildFilterSection(
+                    '分类',
+                    categories,
+                    categories[category],
+                    (value) {
+                      saveSettings();
+                      setState(() {
+                        category = categories.indexOf(value);
+                      });
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: _buildFilterSection(
+                    '模式',
+                    modesList,
+                    modesList[mode],
+                    (value) {
+                      saveSettings();
+                      setState(() {
+                        mode = modesList.indexOf(value);
+                      });
+                    },
+                  ),
                 ),
               ],
             ),
@@ -622,4 +746,55 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
       ),
     );
   }
+}
+
+/// 章节统计卡片内的单个指标项。
+class _StatItem extends StatelessWidget {
+  final IconData icon;
+  final String value;
+  final String label;
+  final ColorScheme scheme;
+
+  const _StatItem({
+    required this.icon,
+    required this.value,
+    required this.label,
+    required this.scheme,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Column(
+        children: [
+          Icon(icon, size: 16, color: scheme.primary),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              color: scheme.onSurface,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String _fmtDuration(int ms) {
+  final min = (ms / 60000).round();
+  if (min < 60) return '$min分';
+  final h = min ~/ 60;
+  final mm = min % 60;
+  return mm == 0 ? '$h小时' : '$h小时$mm分';
 }

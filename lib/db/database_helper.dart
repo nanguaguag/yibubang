@@ -215,7 +215,7 @@ class UserDBHelper {
     String path = join(await getDatabasesPath(), 'user_data.sqlite');
     return await openDatabase(
       path,
-      version: 4,
+      version: 5,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -253,6 +253,19 @@ class UserDBHelper {
             'ALTER TABLE QuestionBank ADD COLUMN update_enabled INTEGER NOT NULL DEFAULT 1',
           );
         }
+      }
+      if (oldVersion < 5) {
+        final activityColumns = await _columns(txn, 'Activities');
+        if (!activityColumns.contains('duration')) {
+          await txn.execute(
+            'ALTER TABLE Activities ADD COLUMN duration INTEGER NOT NULL DEFAULT 0',
+          );
+        }
+        // 为刷题统计提供快速按时间+题库聚合的索引。
+        await txn.execute(
+          'CREATE INDEX IF NOT EXISTS idx_activity_time_bank '
+          'ON Activities(bank_id, timestamp)',
+        );
       }
       await _createMigrationStateTable(txn);
     });
@@ -453,7 +466,8 @@ class UserDBHelper {
         identity_id TEXT,
         subject_id TEXT,
         chapter_id TEXT,
-        is_right TEXT
+        is_right TEXT,
+        duration INTEGER NOT NULL DEFAULT 0
       )
     ''');
 
@@ -476,6 +490,12 @@ class UserDBHelper {
     await db.execute('''
       CREATE INDEX IF NOT EXISTS idx_question_status
         ON Question(status);
+    ''');
+
+    // 为刷题统计提供快速按时间+题库聚合的索引。
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_activity_time_bank
+        ON Activities(bank_id, timestamp);
     ''');
 
     debugPrint("用户数据库初始化完成～");

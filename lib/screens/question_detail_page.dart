@@ -44,6 +44,8 @@ class QuestionDetailPage extends StatefulWidget {
 class _QuestionDetailPageState extends State<QuestionDetailPage> {
   int mode = 0; // 初始化刷题模式
   int _currentPage = 0; // 当前页面
+  // 记录当前题目页的打开时间，用于计算单题作答时长（毫秒）
+  late int _pageOpenedAt;
   // 创建 PageController
   PageController _pageController = PageController();
 
@@ -54,6 +56,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     super.initState();
     _currentPage = widget.questionIndex;
     _pageController = PageController(initialPage: _currentPage);
+    _pageOpenedAt = DateTime.now().millisecondsSinceEpoch;
   }
 
   // 请求接口数据
@@ -996,6 +999,8 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
                 setState(() {
                   _currentPage = page; // 更新当前页索引
                 });
+                // 翻页后重设计时，保证每题时长是从浏览当前题开始计算
+                _pageOpenedAt = DateTime.now().millisecondsSinceEpoch;
                 _saveLastQIndex(); // 更新上次做到的题目
               },
               itemCount: widget.questions.length,
@@ -1052,6 +1057,9 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
   }
 
   void submitAnswer(Question question, UserQuestion userQuestion, int index) {
+    // 计算当前题目作答时长（毫秒），避免出现负数
+    final int elapsedMs = (DateTime.now().millisecondsSinceEpoch - _pageOpenedAt)
+        .clamp(0, 1 << 62);
     final String userAnswer = getLastAnswer(userQuestion.userAnswer);
     if (question.type == '1' && userAnswer.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1069,7 +1077,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
       );
     } else if (mode == 2) {
       userQuestion.status = 4; // 测试模式 - 已作答
-      updateQuestion(userQuestion, question);
+      updateQuestion(userQuestion, question, durationMs: elapsedMs);
       setState(() {
         widget.userQuestions[index].status = userQuestion.status;
       });
@@ -1080,7 +1088,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
       } else {
         userQuestion.status = 2; // 回答错误
       }
-      updateQuestion(userQuestion, question);
+      updateQuestion(userQuestion, question, durationMs: elapsedMs);
       setState(() {
         widget.userQuestions[index].status = userQuestion.status;
       });

@@ -10,6 +10,7 @@ import '../db/database_helper.dart';
 import '../common/app_strings.dart';
 import '../screens/choosed_subjects_page.dart';
 import '../screens/my_page.dart';
+import '../screens/statistics_page.dart';
 import '../db/data_transfer.dart';
 import '../repositories/question_bank_repository.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -116,9 +117,10 @@ class _HomePageState extends State<HomePage> {
     updateData = decoded;
   }
 
-  // 两个页面对应底部导航栏
+  // 三个页面对应底部导航栏
   final List<Widget> _screens = [
     ChoosedSubjectsPage(),
+    StatisticsPage(),
     AuthCheckPage(),
   ];
 
@@ -431,6 +433,10 @@ class _HomePageState extends State<HomePage> {
             BottomNavigationBarItem(
               icon: Icon(Icons.book),
               label: AppStrings.selectedSubjectsTitle,
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.insights),
+              label: AppStrings.statisticsTitle,
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.person),

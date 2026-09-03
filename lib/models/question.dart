@@ -405,6 +405,7 @@ Future<void> updateQuestion(
   UserQuestion uq,
   Question q, {
   bool prevCorrect = true,
+  int durationMs = 0,
 }) async {
   final prefs = await SharedPreferences.getInstance();
   final bankId = prefs.getString('activeBankId');
@@ -535,6 +536,10 @@ Future<void> updateQuestion(
 
   // 3. UserDB Activity 表中插入记录
   final int isCorrect = 2 - uq.status; // 1 -> 1, 2 -> 0
+  // 只有在真正作答（status 1/2）时才把时长计入统计；撤题/测试模式记为 0。
+  final int recordedDuration =
+      (uq.status == 1 || uq.status == 2) ? durationMs : 0;
+  final int recordedDurationSec = (recordedDuration / 1000).round();
   batch.insert(
     'Activities',
     {
@@ -551,7 +556,7 @@ Future<void> updateQuestion(
         "question_id": ${q.id},
         "is_right": "$isCorrect",
         "app_id": "${q.nativeAppId}",
-        "duration": "10",
+        "duration": "$recordedDurationSec",
         "subject_id": "${q.chapterParentId}"
       }''',
       'bank_id': bankId,
@@ -560,6 +565,7 @@ Future<void> updateQuestion(
       'subject_id': q.chapterParentId,
       'chapter_id': q.chapterId,
       'is_right': '$isCorrect',
+      'duration': recordedDuration,
       'timestamp': DateTime.now().millisecondsSinceEpoch,
     },
   );
