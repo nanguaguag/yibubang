@@ -12,6 +12,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:sqflite_common_ffi_web/sqflite_ffi_web.dart';
 
 Future main() async {
+  final swStartup = Stopwatch()..start();
   // Use sqflite on MacOS/iOS/Android.
   WidgetsFlutterBinding.ensureInitialized();
   if (kIsWeb) {
@@ -33,7 +34,9 @@ Future main() async {
   ));
 
   await initSettings();
+  debugPrint('[startup] initSettings 完成(${swStartup.elapsedMilliseconds}ms)');
   runApp(const Yibubang());
+  debugPrint('[startup] runApp 完成(${swStartup.elapsedMilliseconds}ms)');
 
   // 题库目录包含 SQLite 完整性校验，不应阻塞 Flutter 首帧。
   // HomePage 会复用同一个初始化 Future，避免重复扫描。
@@ -41,8 +44,10 @@ Future main() async {
 }
 
 Future<void> _initializeQuestionBank() async {
+  final sw = Stopwatch()..start();
   try {
     await QuestionBankRepository().initialize();
+    debugPrint('[startup] 题库目录初始化完成(${sw.elapsedMilliseconds}ms)');
   } catch (error) {
     // 目录迁移失败时仍启动应用，让用户可以通过题库管理或备份恢复继续处理。
     debugPrint('题库目录初始化失败：$error');

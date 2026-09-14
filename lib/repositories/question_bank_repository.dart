@@ -96,7 +96,9 @@ class QuestionBankRepository {
     await _backupLegacyFiles();
     final userDb = await UserDBHelper().database;
     final now = DateTime.now().millisecondsSinceEpoch;
+    final swTotal = Stopwatch()..start();
     for (final spec in QuestionBankDefaults.all) {
+      final swBank = Stopwatch()..start();
       final path = await _databaseManager.pathFor(spec.bankId);
       final backupPath = '$path.bak';
       var fileExists = await File(path).exists();
@@ -107,6 +109,8 @@ class QuestionBankRepository {
       var validation = fileExists
           ? await validatePath(path, expectedBankId: spec.bankId)
           : null;
+      debugPrint(
+          '[bank-scan] 题库 ${spec.bankId} 校验阶段耗时 ${swBank.elapsedMilliseconds}ms');
       if (fileExists &&
           validation != null &&
           !validation.isValid &&
@@ -199,6 +203,7 @@ class QuestionBankRepository {
       },
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
+    debugPrint('[bank-scan] 题库目录初始化总耗时 ${swTotal.elapsedMilliseconds}ms');
   }
 
   Future<void> _backupLegacyFiles() async {

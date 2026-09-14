@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../db/database_helper.dart';
 import 'identity.dart';
@@ -82,12 +83,14 @@ class SubjectTreeNode {
 /// 题库库中的 IdentitySubject 是课程归属关系，用户库中的 IdentitySubject
 /// 只保存选择状态，两个表通过 bank_id、identity_id、subject_id 合并。
 Future<List<SubjectTreeNode>> getSubjectTreeByIdentity() async {
+  final sw = Stopwatch()..start();
   final db = await DatabaseHelper().database;
   final udb = await UserDBHelper().database;
   final prefs = await SharedPreferences.getInstance();
   final identityId = prefs.getString('identityId');
   final bankId = prefs.getString('activeBankId');
   if (bankId == null || bankId.isEmpty) return [];
+  debugPrint('[startup] 打开题库/用户库(${sw.elapsedMilliseconds}ms)');
 
   final identityRows = await db.query(
     'Identity',
@@ -260,6 +263,8 @@ Future<List<SubjectTreeNode>> getSubjectTreeByIdentity() async {
   // 保留每个根节点本身的课程关系。正式题库的关系可能集中挂在根
   // identity 上，即使其子 identity 没有对应的 IdentitySubject 行，也不能
   // 因为“隐藏根节点”而丢失课程；所有后代仍按 Identity 树递归展示。
+  debugPrint(
+      '[startup] getSubjectTreeByIdentity 总耗时 ${sw.elapsedMilliseconds}ms');
   return rootNodes;
 }
 

@@ -55,13 +55,9 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _initAsync() async {
+    final swInit = Stopwatch()..start();
     // 获取应用信息
     final info = await PackageInfo.fromPlatform();
-
-    debugPrint("App 名称: ${info.appName}");
-    debugPrint("包名: ${info.packageName}");
-    debugPrint("版本号: ${info.version}");
-    debugPrint("构建号: ${info.buildNumber}");
 
     // 如果这个 async 结束时页面已经销毁，直接 return
     if (!mounted) return;
@@ -77,6 +73,7 @@ class _HomePageState extends State<HomePage> {
     } catch (error) {
       debugPrint('题库目录初始化失败：$error');
     }
+    debugPrint('[startup] HomePage 题库目录初始化(${swInit.elapsedMilliseconds}ms)');
     if (!mounted) return;
 
     final prefs = await SharedPreferences.getInstance();
