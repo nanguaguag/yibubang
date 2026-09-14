@@ -8,14 +8,20 @@ on:
 
 jobs:
   windows:
-    runs-on: windows-latest
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
+
+      # 显式注入 Visual Studio 2022 的 C++ 工具链环境，
+      # 避免 flutter build windows 找不到 MSVC 而回退到 VS2019 生成器失败。
+      - name: Set up Visual Studio environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
 
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.27.3'
-          cache: true
 
       - name: Install dependencies
         run: flutter pub get
