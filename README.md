@@ -5,10 +5,10 @@
   <div align="center">
     <a href="https://github.com/nanguaguag/yibubang"><img src="https://img.shields.io/badge/platform-flutter-blue.svg" alt="github"></a>
     <a href="https://github.com/nanguaguag/yibubang/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="license"></a>
-    <a href="https://github.com/nanguaguag/yibubang/actions"><img src="https://github.com/nanguaguag/yibubang/actions/workflows/build-macos.yml/badge.svg" alt="build"></a>
-    <a href="https://github.com/nanguaguag/yibubang/actions"><img src="https://github.com/nanguaguag/yibubang/actions/workflows/build-windows.yml/badge.svg" alt="build"></a>
-    <a href="https://github.com/nanguaguag/yibubang/actions"><img src="https://github.com/nanguaguag/yibubang/actions/workflows/build-android.yml/badge.svg" alt="build"></a>
-    <a href="https://github.com/nanguaguag/yibubang/actions"><img src="https://github.com/nanguaguag/yibubang/actions/workflows/build-Linux.yml/badge.svg" alt="build"></a>
+    <a href="https://github.com/nanguaguag/yibubang/actions"><img src="https://github.com/nanguaguag/yibubang/actions/workflows/android.yml/badge.svg" alt="android"></a>
+    <a href="https://github.com/nanguaguag/yibubang/actions"><img src="https://github.com/nanguaguag/yibubang/actions/workflows/macos.yml/badge.svg" alt="macos"></a>
+    <a href="https://github.com/nanguaguag/yibubang/actions"><img src="https://github.com/nanguaguag/yibubang/actions/workflows/windows.yml/badge.svg" alt="windows"></a>
+    <a href="https://github.com/nanguaguag/yibubang/actions"><img src="https://github.com/nanguaguag/yibubang/actions/workflows/linux.yml/badge.svg" alt="linux"></a>
   </div>
   <div align="center">
     <a href="#Features">Features</a> •
@@ -57,8 +57,8 @@
 
 - [ ] 默认题库改成7zip + 内置
 - [ ] 全题库范围内搜题
-- [ ] 做题日历 + 做题数量统计
-- [ ] 登录医考帮后，同步做题记录
+- [x] 做题日历 + 做题数量/时长统计（刷题格子墙）
+- [x] 登录医考帮后，同步做题记录
 - [ ] 导入自定义题库
 - [x] 查看评论区回复
 - [x] 直接进入下一章/定位到上次做的题目
