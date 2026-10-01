@@ -130,6 +130,8 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
       return;
     }
 
+    if (!mounted) return;
+
     // 直接跳转到题目页
     await Navigator.push(
       context,

@@ -104,6 +104,7 @@ Widget rebuildIconBtn(BuildContext context) {
                     debugPrint('[重新统计] 异常: $error');
                     debugPrint('$stack');
                   }
+                  if (!context.mounted) return;
                   Navigator.of(context).pop(); // 或者只是关闭对话框
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
@@ -164,6 +165,7 @@ class _LoginPageState extends State<LoginPage> {
 
           await prefs.setBool('loggedin', true);
 
+          if (!mounted) return;
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
@@ -171,6 +173,7 @@ class _LoginPageState extends State<LoginPage> {
             ),
           );
         } else {
+          if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(resp['message'] ?? '登录失败'),
@@ -179,6 +182,7 @@ class _LoginPageState extends State<LoginPage> {
           );
         }
       } catch (e) {
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('登录异常: $e'),
@@ -186,9 +190,11 @@ class _LoginPageState extends State<LoginPage> {
           ),
         );
       } finally {
-        setState(() {
-          _loading = false;
-        });
+        if (mounted) {
+          setState(() {
+            _loading = false;
+          });
+        }
       }
     }
   }

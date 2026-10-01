@@ -362,6 +362,7 @@ class _HomePageState extends State<HomePage> {
         // 重算成功
         prefs.setBool('needToRebuildQuestionCount', false);
       }
+      if (!mounted) return;
       //Navigator.of(context, rootNavigator: true).pop();
       showRestartDialog(context);
     }

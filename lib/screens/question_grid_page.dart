@@ -171,6 +171,7 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
       //});
       List<Question> questions = await allQuestions;
       List<UserQuestion> userQuestions = await allUserQuestions;
+      if (!mounted) return;
       await Navigator.push(
         context,
         CupertinoPageRoute(
@@ -198,6 +199,7 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
   void clearUserAnswers() async {
     final List<Question> questions = await allQuestions;
     final List<UserQuestion> userQuestions = await allUserQuestions;
+    if (!mounted) return;
     showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -252,6 +254,7 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
         break;
       }
     }
+    if (!mounted) return;
     if (!doneAll) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
