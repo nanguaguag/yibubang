@@ -6,7 +6,7 @@ import 'screens/home_page.dart';
 import 'common/app_strings.dart';
 import 'db/settings.dart';
 import 'repositories/question_bank_repository.dart';
-import 'package:get/get.dart';
+import 'widgets/theme_controller.dart';
 import 'package:flutter/foundation.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:sqflite_common_ffi_web/sqflite_ffi_web.dart';
@@ -60,23 +60,28 @@ class Yibubang extends StatelessWidget {
   // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
-    return GetMaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: AppStrings.appTitle,
-      theme: ThemeData(
-        useMaterial3: true,
-        primarySwatch: Colors.blue,
-        brightness: Brightness.light,
-        visualDensity: VisualDensity.adaptivePlatformDensity,
-      ),
-      darkTheme: ThemeData(
-        useMaterial3: true,
-        primarySwatch: Colors.blue,
-        brightness: Brightness.dark,
-        visualDensity: VisualDensity.adaptivePlatformDensity,
-      ),
-      themeMode: ThemeMode.system,
-      home: const HomePage(),
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: ThemeController.instance,
+      builder: (context, themeMode, _) {
+        return MaterialApp(
+          debugShowCheckedModeBanner: false,
+          title: AppStrings.appTitle,
+          theme: ThemeData(
+            useMaterial3: true,
+            primarySwatch: Colors.blue,
+            brightness: Brightness.light,
+            visualDensity: VisualDensity.adaptivePlatformDensity,
+          ),
+          darkTheme: ThemeData(
+            useMaterial3: true,
+            primarySwatch: Colors.blue,
+            brightness: Brightness.dark,
+            visualDensity: VisualDensity.adaptivePlatformDensity,
+          ),
+          themeMode: themeMode,
+          home: const HomePage(),
+        );
+      },
     );
   }
 }

@@ -8,7 +8,6 @@ import 'search_page.dart';
 import '../models/subject.dart';
 import '../models/chapter.dart';
 import '../widgets/theme_controller.dart';
-import 'package:get/get.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class SubjectWithChapters {
@@ -32,6 +31,13 @@ Future<List<SubjectWithChapters>> getSubjectsWithChapters() async {
   return subjectWithChapters;
 }
 
+T? _firstWhereOrNull<T>(Iterable<T> iterable, bool Function(T) test) {
+  for (final e in iterable) {
+    if (test(e)) return e;
+  }
+  return null;
+}
+
 class ChoosedSubjectsPage extends StatefulWidget {
   const ChoosedSubjectsPage({super.key});
 
@@ -43,7 +49,7 @@ class ChoosedSubjectsPage extends StatefulWidget {
 class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
   String? _lastSubjectId;
   late Future<List<SubjectWithChapters>> subjectsWithChapters;
-  final ThemeController themeController = Get.put(ThemeController());
+  final ThemeController themeController = ThemeController.instance;
 
   @override
   void initState() {
@@ -112,7 +118,8 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
 
     final data = await getSubjectsWithChapters();
 
-    final subjectWithChapters = data.firstWhereOrNull(
+    final subjectWithChapters = _firstWhereOrNull(
+      data,
       (e) => e.subject.id == subjectId,
     );
 
@@ -121,7 +128,8 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
       return;
     }
 
-    final chapter = subjectWithChapters.chapters.firstWhereOrNull(
+    final chapter = _firstWhereOrNull(
+      subjectWithChapters.chapters,
       (c) => c.id == chapterId,
     );
 
@@ -347,23 +355,26 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
               );
             },
           ),
-          Obx(() {
-            return IconButton(
-              icon: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 300),
-                transitionBuilder: (child, anim) => ScaleTransition(
-                  scale: anim,
-                  child: child,
+          ValueListenableBuilder<ThemeMode>(
+            valueListenable: themeController,
+            builder: (context, mode, _) {
+              return IconButton(
+                icon: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 300),
+                  transitionBuilder: (child, anim) => ScaleTransition(
+                    scale: anim,
+                    child: child,
+                  ),
+                  child: Icon(
+                    themeController.getIcon(),
+                    key: ValueKey(mode),
+                  ),
                 ),
-                child: Icon(
-                  themeController.getIcon(),
-                  key: ValueKey(themeController.themeMode.value),
-                ),
-              ),
-              // 切换主题模式
-              onPressed: themeController.toggleTheme,
-            );
-          })
+                // 切换主题模式
+                onPressed: themeController.toggleTheme,
+              );
+            },
+          )
         ],
       ),
       body: FutureBuilder<List<SubjectWithChapters>>(

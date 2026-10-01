@@ -1,40 +1,26 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:get/get.dart';
 
-class ThemeController extends GetxController {
-  // 定义三种主题模式：Light, Dark, System
-  var themeMode = ThemeMode.system.obs;
+class ThemeController extends ValueNotifier<ThemeMode> {
+  ThemeController._() : super(ThemeMode.system);
+
+  static final ThemeController instance = ThemeController._();
 
   // 切换主题模式
   void toggleTheme() async {
-    if (themeMode.value == ThemeMode.light) {
-      themeMode.value = ThemeMode.dark;
-    } else if (themeMode.value == ThemeMode.dark) {
-      themeMode.value = ThemeMode.system;
+    if (value == ThemeMode.light) {
+      value = ThemeMode.dark;
+    } else if (value == ThemeMode.dark) {
+      value = ThemeMode.system;
     } else {
-      themeMode.value = ThemeMode.light;
+      value = ThemeMode.light;
     }
 
-    // 使用 GetX 改变应用的主题模式
-    Get.changeThemeMode(themeMode.value);
-    debugPrint('Theme changed to: ${themeMode.value}');
+    debugPrint('Theme changed to: $value');
 
     // 保存当前主题模式到 SharedPreferences
     SharedPreferences prefs = await SharedPreferences.getInstance();
-    String themeString;
-    switch (themeMode.value) {
-      case ThemeMode.light:
-        themeString = 'light';
-        break;
-      case ThemeMode.dark:
-        themeString = 'dark';
-        break;
-      case ThemeMode.system:
-        themeString = 'system';
-        break;
-    }
-    await prefs.setString('themeMode', themeString);
+    await prefs.setString('themeMode', _themeModeToString(value));
   }
 
   void recoverTheme() async {
@@ -43,29 +29,41 @@ class ThemeController extends GetxController {
     debugPrint('Recovered theme from prefs: $savedTheme');
 
     if (savedTheme != null) {
-      switch (savedTheme) {
-        case 'light':
-          themeMode.value = ThemeMode.light;
-          break;
-        case 'dark':
-          themeMode.value = ThemeMode.dark;
-          break;
-        case 'system':
-          themeMode.value = ThemeMode.system;
-          break;
-      }
-      Get.changeThemeMode(themeMode.value);
+      value = _themeModeFromString(savedTheme);
     }
   }
 
   IconData getIcon() {
     // 根据当前主题模式返回不同的图标
-    if (themeMode.value == ThemeMode.light) {
+    if (value == ThemeMode.light) {
       return Icons.wb_sunny; // 浅色模式图标
-    } else if (themeMode.value == ThemeMode.dark) {
+    } else if (value == ThemeMode.dark) {
       return Icons.nights_stay; // 暗黑模式图标
     } else {
       return Icons.brightness_auto; // 自动模式图标
+    }
+  }
+
+  static String _themeModeToString(ThemeMode mode) {
+    switch (mode) {
+      case ThemeMode.light:
+        return 'light';
+      case ThemeMode.dark:
+        return 'dark';
+      case ThemeMode.system:
+        return 'system';
+    }
+  }
+
+  static ThemeMode _themeModeFromString(String s) {
+    switch (s) {
+      case 'light':
+        return ThemeMode.light;
+      case 'dark':
+        return ThemeMode.dark;
+      case 'system':
+      default:
+        return ThemeMode.system;
     }
   }
 }
