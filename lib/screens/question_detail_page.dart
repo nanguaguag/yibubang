@@ -515,7 +515,9 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
   ) {
     int rightCount = int.parse(stat.rightCount);
     int wrongCount = int.parse(stat.wrongCount);
-    double errorRate = wrongCount / (rightCount + wrongCount);
+    final int totalCount = rightCount + wrongCount;
+    // 无人作答时 totalCount 为 0，直接除会得到 NaN，进而 ceil() 抛异常。
+    double errorRate = totalCount == 0 ? 0.0 : wrongCount / totalCount;
     int n = (errorRate * 10).ceil(); // 难度
     int fullStars = n ~/ 2; // 整星的数量
     bool hasHalfStar = n % 2 == 1; // 是否有半颗星
