@@ -28,6 +28,7 @@ class QuestionDetailPage extends StatefulWidget {
   final List<Question> questions;
   final List<UserQuestion> userQuestions;
   final int questionIndex;
+  final String? bankId;
 
   const QuestionDetailPage({
     super.key,
@@ -35,6 +36,7 @@ class QuestionDetailPage extends StatefulWidget {
     required this.questions,
     required this.userQuestions,
     required this.questionIndex,
+    this.bankId,
   });
 
   @override
@@ -1077,7 +1079,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
       );
     } else if (mode == 2) {
       userQuestion.status = 4; // 测试模式 - 已作答
-      updateQuestion(userQuestion, question, durationMs: elapsedMs);
+      updateQuestion(userQuestion, question, durationMs: elapsedMs, bankId: widget.bankId);
       setState(() {
         widget.userQuestions[index].status = userQuestion.status;
       });
@@ -1088,7 +1090,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
       } else {
         userQuestion.status = 2; // 回答错误
       }
-      updateQuestion(userQuestion, question, durationMs: elapsedMs);
+      updateQuestion(userQuestion, question, durationMs: elapsedMs, bankId: widget.bankId);
       setState(() {
         widget.userQuestions[index].status = userQuestion.status;
       });

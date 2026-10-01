@@ -1,5 +1,6 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import '../db/database_helper.dart';
+import '../db/question_bank_manager.dart';
 import 'chapter.dart';
 
 class UserQuestion {
@@ -406,13 +407,16 @@ Future<void> updateQuestion(
   Question q, {
   bool prevCorrect = true,
   int durationMs = 0,
+  String? bankId,
 }) async {
   final prefs = await SharedPreferences.getInstance();
-  final bankId = prefs.getString('activeBankId');
-  if (bankId == null || bankId.isEmpty) {
+  final resolvedBankId = bankId ?? prefs.getString('activeBankId');
+  if (resolvedBankId == null || resolvedBankId.isEmpty) {
     throw StateError('当前题库尚未初始化');
   }
-  final db = await DatabaseHelper().database;
+  // 按题目所属题库打开，而不是依赖当前激活题库，
+  // 避免跨库搜索后作答时查错 IdentityQuestion 造成统计丢失。
+  final db = await QuestionBankDatabaseManager().openBank(resolvedBankId);
   final userDb = await UserDBHelper().database;
   final previousRows = await userDb.query(
     'Question',
@@ -455,12 +459,12 @@ Future<void> updateQuestion(
           correct   = correct + excluded.correct,
           incorrect = incorrect + excluded.incorrect;
       ''', [
-        bankId,
+        resolvedBankId,
         identityId,
         subjectId,
         deltaCorrect,
         deltaIncorrect,
-        bankId,
+        resolvedBankId,
         identityId,
         subjectId,
       ]);
@@ -478,7 +482,7 @@ Future<void> updateQuestion(
         deltaCorrect,
         deltaIncorrect,
         deltaIncorrect,
-        bankId,
+        resolvedBankId,
         identityId,
         subjectId,
       ]);
@@ -494,7 +498,7 @@ Future<void> updateQuestion(
           correct   = correct + excluded.correct,
           incorrect = incorrect + excluded.incorrect;
       ''', [
-        bankId,
+        resolvedBankId,
         identityId,
         subjectId,
         chapterId,
@@ -514,7 +518,7 @@ Future<void> updateQuestion(
         deltaCorrect,
         deltaIncorrect,
         deltaIncorrect,
-        bankId,
+        resolvedBankId,
         identityId,
         subjectId,
         chapterId,
@@ -559,7 +563,7 @@ Future<void> updateQuestion(
         "duration": "$recordedDurationSec",
         "subject_id": "${q.chapterParentId}"
       }''',
-      'bank_id': bankId,
+      'bank_id': resolvedBankId,
       'question_id': q.id,
       'identity_id': q.identityId,
       'subject_id': q.chapterParentId,
