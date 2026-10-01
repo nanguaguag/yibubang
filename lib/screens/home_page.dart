@@ -2,11 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:archive/archive.dart';
-import 'package:sqflite/sqflite.dart';
-import 'package:crypto/crypto.dart';
 import 'package:url_launcher/url_launcher.dart';
-import '../db/database_helper.dart';
 import '../common/app_strings.dart';
 import '../screens/choosed_subjects_page.dart';
 import '../screens/my_page.dart';
@@ -15,14 +11,6 @@ import '../db/data_transfer.dart';
 import '../repositories/question_bank_repository.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:package_info_plus/package_info_plus.dart';
-import 'package:path/path.dart' as path;
-
-Future<bool> checkTransferScuess() async {
-  UserDBHelper userdb = UserDBHelper();
-  return !((await userdb.isTableEmpty('Question')) ||
-      (await userdb.isTableEmpty('Chapter')) ||
-      (await userdb.isTableEmpty('Subject')));
-}
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -33,23 +21,16 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   int _selectedIndex = 0; // 默认主页为“我的课程”
-  bool isDownloading = false;
-  double downloadProgress = 0.00; // 下载进度
-  String statusText = '点击按钮下载题库';
   Map<String, dynamic> updateData = {}; // 更新信息
 
   // 当前应用版本号
   late String currentVersion;
-  // 缓存判断是否需要下载的 Future
-  late bool needToDownload;
-  //late Future<bool> _needToDownloadFuture;
 
   @override
   void initState() {
     super.initState();
     // 先给个默认值，避免 late 未初始化被读到
     currentVersion = "0.0.0";
-    needToDownload = false;
     // 异步初始化放到单独方法里
     _initAsync();
   }
@@ -127,169 +108,6 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  /// 计算文件的 MD5 值
-  Future<String> _calculateMd5(File file) async {
-    List<int> fileBytes = await file.readAsBytes();
-    return md5.convert(fileBytes).toString();
-  }
-
-  /// 判断是否需要下载题库，同时加载更新信息
-  Future<bool> _needToDownload() async {
-    if (updateData.isEmpty) {
-      final Uri updateUrl = Uri.parse(
-        'https://files.melonhu.cn/yibubang/yibubang_update.json',
-      );
-      final updateResponse = await http.get(
-        updateUrl,
-        headers: {
-          'Content-Type': 'application/json; charset=utf-8',
-          'Accept-Charset': 'utf-8',
-        },
-      );
-      if (updateResponse.statusCode != 200) {
-        debugPrint('请求失败，状态码: ${updateResponse.statusCode}');
-        return true;
-      }
-      // 初始化更新信息
-      updateData = jsonDecode(utf8.decode(
-        updateResponse.bodyBytes,
-      ));
-    }
-
-    // Step 1: 获取存储目录并创建下载文件
-    String appDocDir = await getDatabasesPath();
-    String filePath = '$appDocDir/question_data.sqlite.zip';
-    File file = File(filePath);
-
-    final dataForVersion = updateData['data_for_version'];
-
-    // 如果远程JSON文件包含当前版本的数据库信息，则进行MD5校验
-    if (dataForVersion is Map && dataForVersion.containsKey(currentVersion)) {
-      final dataMd5 = dataForVersion[currentVersion]["md5"];
-      debugPrint("目标数据库md5: $dataMd5");
-      if (await file.exists()) {
-        String fileMd5 = await _calculateMd5(file);
-        debugPrint("本地数据库md5: $fileMd5");
-        if (fileMd5 == dataMd5) {
-          return false;
-        }
-        return true;
-      }
-      return true;
-    } else {
-      // 否则跳过下载
-      debugPrint("当前版本无对应题库，跳过下载");
-      return false;
-    }
-  }
-
-  /// 下载并解压 ZIP 文件
-  Future<void> _downloadAndExtractZip() async {
-    // 再次判断是否需要下载
-    if (!await _needToDownload()) return;
-
-    setState(() {
-      needToDownload = true;
-      isDownloading = true;
-      statusText = '正在下载题库...请将APP保持在前台';
-      downloadProgress = 0.00;
-    });
-
-    try {
-      // Step 1: 获取存储目录并创建下载文件
-      debugPrint("Step1");
-
-      // 获取数据库目录
-      final String appDocDir = await getDatabasesPath();
-      // 关键：Windows 下必须手动创建目录
-      final dbDir = Directory(appDocDir);
-      if (!await dbDir.exists()) {
-        await dbDir.create(recursive: true);
-      }
-      // 使用 path.join，避免 Windows 路径问题
-      final String filePath = path.join(appDocDir, 'question_data.sqlite.zip');
-      final File file = File(filePath);
-      debugPrint(filePath);
-
-      // Step 2: 下载 ZIP 文件
-      debugPrint("Step2");
-      final dataUrl = updateData['data_for_version'][currentVersion]["url"] ??
-          updateData['latest_data_url'];
-      debugPrint(dataUrl);
-
-      var request = http.Request('GET', Uri.parse(dataUrl));
-      var response = await request.send();
-      debugPrint("response: ${response.statusCode.toString()}");
-
-      int totalBytes = response.contentLength ?? 0;
-      int receivedBytes = 0;
-      var sink = file.openWrite();
-
-      // 使用 forEach 遍历 stream 中的每个 chunk
-      await for (final chunk in response.stream) {
-        sink.add(chunk);
-        receivedBytes += chunk.length;
-        if (totalBytes != 0) {
-          setState(() {
-            downloadProgress = receivedBytes / totalBytes;
-          });
-        }
-      }
-
-      await sink.close(); // close 本身已包含 flush
-
-      debugPrint("Step3");
-      // Step 3: 解压 ZIP 文件
-      List<int> bytes = await file.readAsBytes();
-      Archive archive = ZipDecoder().decodeBytes(bytes);
-      for (var fileInArchive in archive) {
-        // 排除无效目录（如 __MACOSX）
-        if (fileInArchive.isFile &&
-            !fileInArchive.name.startsWith('__MACOSX')) {
-          String fileName = fileInArchive.name;
-          debugPrint("Extracting: $fileName");
-          File extractedFile = File('$appDocDir/$fileName');
-          await extractedFile.writeAsBytes(fileInArchive.content as List<int>);
-        }
-      }
-
-      debugPrint("Step4");
-      setState(() {
-        isDownloading = false;
-        debugPrint("题库下载并解压完成");
-        statusText = '题库下载并解压完成';
-        // 下载完成后更新 Future 状态，进入主页
-        needToDownload = false;
-      });
-    } catch (error) {
-      setState(() {
-        isDownloading = false;
-        debugPrint("题库下载失败：$error");
-        statusText = '题库下载失败：$error';
-      });
-    }
-  }
-
-  /// 构建进度指示控件或重新下载按钮
-  Widget _buildProgress() {
-    if (isDownloading) {
-      return Column(
-        children: [
-          CircularProgressIndicator(value: downloadProgress),
-          SizedBox(height: 20),
-          Text(
-            '${(downloadProgress * 100).toStringAsFixed(2)}%',
-          ),
-        ],
-      );
-    } else {
-      return ElevatedButton(
-        onPressed: _downloadAndExtractZip,
-        child: Text('重新下载'),
-      );
-    }
-  }
-
   /// 比较版本号函数，返回 1 表示 v1 大于 v2，0 表示相等，-1 表示 v1 小于 v2
   int _compareVersions(String v1, String v2) {
     List<int> v1Parts = v1.split('.').map(int.parse).toList();
@@ -305,28 +123,6 @@ class _HomePageState extends State<HomePage> {
     return 0;
   }
 
-  /// 显示加载框（禁止用户交互）
-  void showLoadingDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      barrierDismissible: false, // 禁止点击背景关闭
-      builder: (BuildContext context) {
-        return const AlertDialog(
-          content: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              CircularProgressIndicator(),
-              SizedBox(width: 20),
-              Expanded(child: Text("正在迁移数据，请稍候...")),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  /// 显示“请重启”提示框
   void showRestartDialog(BuildContext context) {
     showDialog(
       context: context,
@@ -403,46 +199,26 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    // 如果需要下载，则显示下载页面
-    if (needToDownload) {
-      return Scaffold(
-        appBar: AppBar(
-          title: Text('需要下载题库'),
-        ),
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(statusText),
-              SizedBox(height: 20),
-              _buildProgress(),
-            ],
+    return Scaffold(
+      body: _screens[_selectedIndex],
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _selectedIndex,
+        onTap: _onItemTapped,
+        items: const <BottomNavigationBarItem>[
+          BottomNavigationBarItem(
+            icon: Icon(Icons.book),
+            label: AppStrings.selectedSubjectsTitle,
           ),
-        ),
-      );
-    } else {
-      // 下载成功或不需要下载，则进入主页
-      return Scaffold(
-        body: _screens[_selectedIndex],
-        bottomNavigationBar: BottomNavigationBar(
-          currentIndex: _selectedIndex,
-          onTap: _onItemTapped,
-          items: const <BottomNavigationBarItem>[
-            BottomNavigationBarItem(
-              icon: Icon(Icons.book),
-              label: AppStrings.selectedSubjectsTitle,
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.insights),
-              label: AppStrings.statisticsTitle,
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.person),
-              label: AppStrings.myPageTitle,
-            ),
-          ],
-        ),
-      );
-    }
+          BottomNavigationBarItem(
+            icon: Icon(Icons.insights),
+            label: AppStrings.statisticsTitle,
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.person),
+            label: AppStrings.myPageTitle,
+          ),
+        ],
+      ),
+    );
   }
 }
