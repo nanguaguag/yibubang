@@ -172,6 +172,10 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
       List<Question> questions = await allQuestions;
       List<UserQuestion> userQuestions = await allUserQuestions;
       if (!mounted) return;
+      if (questions.isEmpty) return;
+      // lastQIndex 是上次的页码。题库更新后题量可能变化，或该记录可能来自
+      // 其它章节，这里做边界保护，避免 PageController(initialPage: 越界) 崩溃。
+      final int targetIndex = lastQIndex.clamp(0, questions.length - 1).toInt();
       await Navigator.push(
         context,
         CupertinoPageRoute(
@@ -179,7 +183,7 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
             chapter: widget.chapter,
             questions: questions,
             userQuestions: userQuestions,
-            questionIndex: lastQIndex,
+            questionIndex: targetIndex,
           ),
         ),
       );
