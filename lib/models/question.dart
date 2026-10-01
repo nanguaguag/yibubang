@@ -370,14 +370,12 @@ Future<List<UserQuestion>> getUserQuestions(
 
   // 4. 如果有缺失，就在一个事务里批量插入
   if (toInsert.isNotEmpty) {
-    await Future.microtask(() async {
-      await udb.transaction((txn) async {
-        final batch = txn.batch();
-        for (final uq in toInsert) {
-          batch.insert('Question', uq.toMap());
-        }
-        await batch.commit(noResult: true);
-      });
+    await udb.transaction((txn) async {
+      final batch = txn.batch();
+      for (final uq in toInsert) {
+        batch.insert('Question', uq.toMap());
+      }
+      await batch.commit(noResult: true);
     });
   }
 

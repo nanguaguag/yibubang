@@ -101,21 +101,19 @@ Future<List<Chapter>> getChaptersBySubject(Subject subject) async {
       chapterIds.where((id) => !existingIds.contains(id)).toList();
 
   if (missingIds.isNotEmpty) {
-    await Future.microtask(() async {
-      await userDb.transaction((txn) async {
-        final batch = txn.batch();
-        for (final id in missingIds) {
-          batch.insert('IdentityChapter', {
-            'bank_id': bankId,
-            'identity_id': identityId,
-            'subject_id': subject.id,
-            'chapter_id': id,
-            'correct': 0,
-            'incorrect': 0,
-          });
-        }
-        await batch.commit(noResult: true);
-      });
+    await userDb.transaction((txn) async {
+      final batch = txn.batch();
+      for (final id in missingIds) {
+        batch.insert('IdentityChapter', {
+          'bank_id': bankId,
+          'identity_id': identityId,
+          'subject_id': subject.id,
+          'chapter_id': id,
+          'correct': 0,
+          'incorrect': 0,
+        });
+      }
+      await batch.commit(noResult: true);
     });
 
     // 本地也补上 0/0 的记录，方便后面合并
