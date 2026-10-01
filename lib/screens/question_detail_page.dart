@@ -10,9 +10,9 @@ import '../common/app_strings.dart';
 import '../widgets/image_view.dart';
 import '../models/chapter.dart';
 import '../models/question.dart';
-import '../models/questionStat.dart';
+import '../models/question_stat.dart';
 import '../common/request.dart';
-import 'commet_page.dart';
+import 'comment_page.dart';
 
 class MyCustomScrollBehavior extends MaterialScrollBehavior {
   @override

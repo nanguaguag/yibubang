@@ -45,8 +45,8 @@ Future<void> initSettings() async {
   if (!prefs.containsKey('lastQIndex')) {
     await prefs.setInt('lastQIndex', -1); // 上次做到的的题目ID
   }
-  if (!prefs.containsKey('questionUploud')) {
-    await prefs.setBool('questionUploud', true); // 打开后启用做题上传功能
+  if (!prefs.containsKey('questionUpload')) {
+    await prefs.setBool('questionUpload', true); // 打开后启用做题上传功能
   }
   if (!prefs.containsKey('needToRebuildQuestionCount')) {
     await prefs.setBool('needToRebuildQuestionCount', true); // 新版本强制重建题目计数

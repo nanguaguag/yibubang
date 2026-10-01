@@ -5,7 +5,7 @@ import '../models/comment.dart';
 import '../common/request.dart';
 import '../db/settings.dart';
 
-import 'commet_page.dart';
+import 'comment_page.dart';
 
 class CommentReplyPage extends StatefulWidget {
   final Comment comment;
