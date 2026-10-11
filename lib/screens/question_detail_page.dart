@@ -56,6 +56,8 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
   Timer? _testTicker;
   // 返回页面时落盘的累计基准（毫秒），再次进入测验从该值继续，避免归零
   int _testBaseMs = 0;
+  // 刷题字号缩放比例（来自设置页「刷题字号」）
+  double _fontScale = 1.0;
 
   @override
   void initState() {
@@ -158,6 +160,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     setState(() {
       mode = prefs.getInt('mode') ?? 0;
       _testBaseMs = prefs.getInt('testElapsedMs') ?? 0;
+      _fontScale = prefs.getDouble('fontScale') ?? 1.0;
     });
     if (mode == 2) {
       _startTestTimer();
@@ -1026,7 +1029,11 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return MediaQuery(
+      data: MediaQuery.of(context).copyWith(
+        textScaler: TextScaler.linear(_fontScale),
+      ),
+      child: Scaffold(
       appBar: AppBar(
         title: Text(
           widget.chapter.name,
@@ -1091,6 +1098,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
           ),
           if (mode == 2) _buildSubmitBar(),
         ],
+      ),
       ),
     );
   }

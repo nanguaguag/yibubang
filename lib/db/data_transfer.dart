@@ -191,3 +191,23 @@ Future<void> repairActivities({String? bankId}) async {
     debugPrint('[repairActivities] 已写入 Activities 成功');
   }
 }
+
+/// 清空全部做题记录：题目作答状态、作答流水、课程/章节对错计数全部归零，
+/// 并重置「上次做题进度」。用于设置页的「数据清理」危险操作。
+Future<void> clearAllRecords() async {
+  final prefs = await SharedPreferences.getInstance();
+  final userDb = await UserDBHelper().database;
+  await userDb.transaction((txn) async {
+    await txn.delete('Question');
+    await txn.delete('Activities');
+    await txn.rawUpdate(
+      'UPDATE IdentitySubject SET correct = 0, incorrect = 0, selected = 0',
+    );
+    await txn.rawUpdate(
+      'UPDATE IdentityChapter SET correct = 0, incorrect = 0',
+    );
+  });
+  await prefs.remove('lastSubjectId');
+  await prefs.remove('lastChapterId');
+  await prefs.remove('lastQIndex');
+}

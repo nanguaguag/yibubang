@@ -1,5 +1,6 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/question_bank.dart';
 import '../repositories/question_bank_repository.dart';
@@ -30,6 +31,15 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
         entry.key: Map<String, dynamic>.from(entry.value),
     };
     _reload();
+    _maybeAutoSync();
+  }
+
+  // 「同步题库」开关开启时，进入题库管理页自动拉取远程清单。
+  Future<void> _maybeAutoSync() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!(prefs.getBool('sync_question_bank') ?? false)) return;
+    if (!mounted) return;
+    await _refreshManifest();
   }
 
   void _reload() {

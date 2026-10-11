@@ -57,6 +57,20 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
     _loadLastProgress();
     themeController.recoverTheme(); // 恢复主题
     subjectsWithChapters = getSubjectsWithChapters();
+    _maybeAutoResume();
+  }
+
+  bool _autoResumeTriggered = false;
+
+  // 「启动自动继续上次进度」开关开启时，进入首页后自动跳到上次题目。
+  Future<void> _maybeAutoResume() async {
+    if (_autoResumeTriggered) return;
+    final prefs = await SharedPreferences.getInstance();
+    if (!(prefs.getBool('autoResume') ?? false)) return;
+    _autoResumeTriggered = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _resumeLastQuestion();
+    });
   }
 
   void _refreshData() {

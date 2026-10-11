@@ -23,6 +23,15 @@ class ThemeController extends ValueNotifier<ThemeMode> {
     await prefs.setString('themeMode', _themeModeToString(value));
   }
 
+  // 直接设置主题模式（设置页三选一使用）
+  Future<void> setTheme(ThemeMode mode) async {
+    if (value == mode) return;
+    value = mode;
+    debugPrint('Theme changed to: $value');
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.setString('themeMode', _themeModeToString(value));
+  }
+
   void recoverTheme() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     String? savedTheme = prefs.getString('themeMode');

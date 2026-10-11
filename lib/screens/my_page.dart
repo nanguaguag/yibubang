@@ -1,27 +1,8 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
 import 'package:yibubang/db/settings.dart';
-import 'package:yibubang/screens/home_page.dart';
 import '../common/request.dart';
-import 'login_successfully.dart';
-import '../db/data_transfer.dart';
 import './settings_page.dart';
-
-///// 我的页面，展示用户的收藏/评论/笔记
-//class MyPage extends StatelessWidget {
-//  const MyPage({super.key});
-
-//  @override
-//  Widget build(BuildContext context) {
-//    return Scaffold(
-//      appBar: AppBar(
-//        title: const Text(AppStrings.myPageTitle),
-//        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-//      ),
-//      body: AuthCheckPage(),
-//    );
-//  }
-//}
 
 /// **1. 入口页面：检查是否已登录**
 class AuthCheckPage extends StatefulWidget {
@@ -32,92 +13,59 @@ class AuthCheckPage extends StatefulWidget {
 }
 
 class _AuthCheckPageState extends State<AuthCheckPage> {
-  Future<bool> _checkLoginStatus() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    return prefs.getBool('loggedin') ?? false;
+  bool _loggedIn = false;
+  bool _checked = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshLoginStatus();
   }
 
-  /// 显示错误信息
-  Widget _buildErrorMessage(Object? error) {
-    return Center(child: Text('加载失败: $error'));
+  /// 读取本地登录状态，登录/退出后通过回调刷新整个页面
+  Future<void> _refreshLoginStatus() async {
+    final prefs = await SharedPreferences.getInstance();
+    final logged = prefs.getBool('loggedin') ?? false;
+    if (!mounted) return;
+    setState(() {
+      _loggedIn = logged;
+      _checked = true;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<bool>(
-      future: _checkLoginStatus(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return Center(child: CircularProgressIndicator());
-        } else if (snapshot.hasError) {
-          return _buildErrorMessage(snapshot.error);
-        } else if (snapshot.data!) {
-          return ProfilePage();
-        } else {
-          return LoginPage();
-        }
-      },
+    if (!_checked) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_loggedIn) {
+      return ProfilePage(onLoggedOut: _refreshLoginStatus);
+    }
+    return LoginPage(
+      onLoggedIn: () => setState(() => _loggedIn = true),
     );
   }
 }
 
 /// **2. 登录页面**
 class LoginPage extends StatefulWidget {
-  const LoginPage({super.key});
+  final VoidCallback? onLoggedIn;
+
+  const LoginPage({super.key, this.onLoggedIn});
 
   @override
   State<LoginPage> createState() => _LoginPageState();
 }
 
-Widget rebuildIconBtn(BuildContext context) {
+/// 设置按钮，登录前/后共用
+Widget rebuildSettingsBtn(BuildContext context) {
   return IconButton(
-    icon: Icon(Icons.build),
-    onPressed: () async {
-      showDialog(
-        context: context,
-        barrierDismissible: false, // 禁止点空白关闭
-        builder: (BuildContext context) {
-          return AlertDialog(
-            title: const Text("重新统计"),
-            content: const Text(
-              "由于开发者之前对数据库的了解非常稀烂，"
-              "2.0.0版本的刷题数出现了各种各样的问题（详见issue#9）"
-              "如果出现章节正确数和错误数不正确，请点击下方的确认按钮，统计完后请重启本应用。"
-              "确认按钮也会同步修复统计页缺失的历史刷题记录（作答时间将平均分摊到一年内）。",
-            ),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  Navigator.of(context).pop();
-                },
-                child: Text("取消"),
-              ),
-              TextButton(
-                onPressed: () async {
-                  try {
-                    debugPrint('[重新统计] 开始 rebuildQuestionCount');
-                    await rebuildQuestionCount();
-                    debugPrint('[重新统计] rebuildQuestionCount 完成');
-                    await repairActivities();
-                    debugPrint('[重新统计] repairActivities 完成');
-                  } catch (error, stack) {
-                    debugPrint('[重新统计] 异常: $error');
-                    debugPrint('$stack');
-                  }
-                  if (!context.mounted) return;
-                  Navigator.of(context).pop(); // 或者只是关闭对话框
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('做题数量与统计已更新'),
-                      duration: Duration(seconds: 1),
-                    ),
-                  );
-                },
-                child: const Text("确认"),
-              ),
-            ],
-          );
-        },
+    icon: const Icon(Icons.settings),
+    tooltip: '设置',
+    onPressed: () {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const SettingsPage()),
       );
     },
   );
@@ -166,18 +114,14 @@ class _LoginPageState extends State<LoginPage> {
           await prefs.setBool('loggedin', true);
 
           if (!mounted) return;
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (context) => LoginSuccessfullyPage(),
-            ),
-          );
+          // 登录成功后直接刷新为个人信息页，不再跳转到独立的“登录成功”页面
+          widget.onLoggedIn?.call();
         } else {
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(resp['message'] ?? '登录失败'),
-              duration: Duration(seconds: 1),
+              duration: const Duration(seconds: 1),
             ),
           );
         }
@@ -186,7 +130,7 @@ class _LoginPageState extends State<LoginPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('登录异常: $e'),
-            duration: Duration(seconds: 1),
+            duration: const Duration(seconds: 1),
           ),
         );
       } finally {
@@ -214,7 +158,7 @@ class _LoginPageState extends State<LoginPage> {
     return Scaffold(
       appBar: AppBar(
         actions: <Widget>[
-          rebuildIconBtn(context),
+          rebuildSettingsBtn(context),
         ],
         title: const Text("登录医考帮"),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
@@ -317,7 +261,9 @@ class _LoginPageState extends State<LoginPage> {
 
 /// **3. 个人中心页面**
 class ProfilePage extends StatefulWidget {
-  const ProfilePage({super.key});
+  final VoidCallback? onLoggedOut;
+
+  const ProfilePage({super.key, this.onLoggedOut});
 
   @override
   State<ProfilePage> createState() => _ProfilePageState();
@@ -329,11 +275,9 @@ class _ProfilePageState extends State<ProfilePage> {
   String avatar = "";
   String nickname = "";
   String strSex = "";
-  String userType = "";
   String nowName = "";
   String nowMajorName = "";
   String educationName = "";
-  String entranceTime = "";
 
   @override
   void initState() {
@@ -349,11 +293,9 @@ class _ProfilePageState extends State<ProfilePage> {
       avatar = prefs.getString('avatar') ?? "";
       nickname = prefs.getString('nickname') ?? "";
       strSex = prefs.getString('str_sex') ?? "";
-      userType = prefs.getString('user_type') ?? "";
       nowName = prefs.getString('now_name') ?? "";
       nowMajorName = prefs.getString('now_major_name') ?? "";
       educationName = prefs.getString('education_name') ?? "";
-      entranceTime = prefs.getString('entrance_time') ?? "";
       if (mobile == "") {
         mobile = "未填写";
       }
@@ -370,9 +312,6 @@ class _ProfilePageState extends State<ProfilePage> {
       if (strSex == "") {
         strSex = "未知";
       }
-      if (userType == "") {
-        userType = "student";
-      }
       if (nowName == "") {
         nowName = "未知";
       }
@@ -382,115 +321,178 @@ class _ProfilePageState extends State<ProfilePage> {
       if (educationName == "") {
         educationName = "未知";
       }
-      if (entranceTime == "") {
-        entranceTime = "未知";
-      }
     });
   }
 
   Future<void> logout() async {
-    clearUserInfo(); // 清除登录数据
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (context) => const HomePage()),
-    );
+    await clearUserInfo(); // 清除登录数据
+    widget.onLoggedOut?.call();
   }
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Scaffold(
       appBar: AppBar(
-        leading: rebuildIconBtn(context),
+        leading: Navigator.canPop(context) ? const BackButton() : null,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.settings),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => SettingsPage()),
-              );
-            },
-            tooltip: '设置',
-          ),
+          rebuildSettingsBtn(context),
         ],
         title: const Text("个人中心"),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        backgroundColor: colorScheme.inversePrimary,
       ),
-      body: Center(
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+        children: [
+          _buildHeaderCard(context),
+          const SizedBox(height: 16),
+          _buildInfoCard(context),
+          const SizedBox(height: 24),
+          _buildLogoutButton(context),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAvatar(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final hasValidUrl =
+        avatar.startsWith('http://') || avatar.startsWith('https://');
+
+    if (!hasValidUrl) {
+      // 头像未加载完或地址无效时，显示昵称首字作为占位
+      return CircleAvatar(
+        radius: 48,
+        backgroundColor: colorScheme.primary,
+        child: Text(
+          nickname.isNotEmpty ? nickname.characters.first : '?',
+          style: TextStyle(fontSize: 40, color: colorScheme.onPrimary),
+        ),
+      );
+    }
+
+    return CircleAvatar(
+      radius: 48,
+      backgroundColor: colorScheme.primaryContainer,
+      // Image.network 支持加载失败兜底，避免 NetworkImage 异常直接上抛
+      child: ClipOval(
+        child: Image.network(
+          avatar,
+          width: 96,
+          height: 96,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) => Icon(
+            Icons.person,
+            size: 56,
+            color: colorScheme.onPrimaryContainer,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeaderCard(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final subtitle = [nowName, nowMajorName]
+        .where((e) => e.isNotEmpty)
+        .join(' · ');
+
+    return Card(
+      elevation: 0,
+      margin: EdgeInsets.zero,
+      color: colorScheme.primaryContainer,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 16),
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 400),
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Center(
-                      child: Column(
-                        children: [
-                          avatar.isNotEmpty
-                              ? CircleAvatar(
-                                  backgroundImage: NetworkImage(avatar),
-                                  radius: 50,
-                                )
-                              : const Icon(Icons.account_circle, size: 0),
-                          const SizedBox(height: 12),
-                          Text(
-                            nickname,
-                            style: const TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const Divider(),
-                    _buildInfoTile(Icons.phone, "手机号", mobile),
-                    _buildInfoTile(Icons.email, "邮箱", email),
-                    _buildInfoTile(Icons.person, "性别", strSex),
-                    _buildInfoTile(
-                      Icons.school,
-                      "专业",
-                      "$nowName $nowMajorName",
-                    ),
-                    _buildInfoTile(Icons.book, "学历", educationName),
-                  ],
-                ),
+            _buildAvatar(context),
+            const SizedBox(height: 16),
+            Text(
+              nickname,
+              style: textTheme.titleLarge?.copyWith(
+                color: colorScheme.onPrimaryContainer,
+                fontWeight: FontWeight.bold,
               ),
             ),
-            const SizedBox(height: 24),
-            ElevatedButton(
-              onPressed: logout,
-              child: const Text('退出登录'),
-            ),
+            if (subtitle.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text(
+                subtitle,
+                style: textTheme.bodyMedium?.copyWith(
+                  color: colorScheme.onPrimaryContainer,
+                ),
+              ),
+            ],
           ],
         ),
       ),
     );
   }
 
-  Widget _buildInfoTile(IconData icon, String title, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6.0),
-      child: Row(
+  Widget _buildInfoCard(BuildContext context) {
+    return Card(
+      elevation: 0,
+      margin: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Column(
         children: [
-          Icon(icon, color: Colors.deepPurple),
-          const SizedBox(width: 12),
-          Text(
-            "$title: ",
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(fontSize: 16),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
+          _buildInfoTile(Icons.phone, '手机号', mobile),
+          const Divider(height: 1, indent: 56),
+          _buildInfoTile(Icons.email_outlined, '邮箱', email),
+          const Divider(height: 1, indent: 56),
+          _buildInfoTile(Icons.person_outline, '性别', strSex),
+          const Divider(height: 1, indent: 56),
+          _buildInfoTile(Icons.school_outlined, '学校', nowName),
+          const Divider(height: 1, indent: 56),
+          _buildInfoTile(Icons.workspace_premium_outlined, '专业', nowMajorName),
+          const Divider(height: 1, indent: 56),
+          _buildInfoTile(Icons.menu_book_outlined, '学历', educationName),
         ],
+      ),
+    );
+  }
+
+  Widget _buildInfoTile(IconData icon, String label, String value) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
+    return ListTile(
+      leading: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: colorScheme.secondaryContainer,
+          shape: BoxShape.circle,
+        ),
+        child: Icon(icon, size: 20, color: colorScheme.onSecondaryContainer),
+      ),
+      title: Text(
+        label,
+        style: textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
+      ),
+      subtitle: Text(
+        value,
+        style: textTheme.bodyLarge,
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+    );
+  }
+
+  Widget _buildLogoutButton(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return FilledButton.tonalIcon(
+      onPressed: logout,
+      icon: const Icon(Icons.logout),
+      label: const Text('退出登录'),
+      style: FilledButton.styleFrom(
+        foregroundColor: colorScheme.error,
+        backgroundColor: colorScheme.errorContainer,
+        minimumSize: const Size.fromHeight(52),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
     );
   }

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'screens/home_page.dart';
+import 'common/app_shapes.dart';
 import 'common/app_strings.dart';
 import 'db/settings.dart';
 import 'repositories/question_bank_repository.dart';
@@ -54,6 +55,59 @@ Future<void> _initializeQuestionBank() async {
   }
 }
 
+/// 参照 cgfkr 设计系统构建主题：MD3 种子色 + 统一的形状令牌。
+ThemeData _buildTheme(Brightness brightness) {
+  final colorScheme = ColorScheme.fromSeed(
+    seedColor: Colors.blue,
+    brightness: brightness,
+  );
+  return ThemeData(
+    useMaterial3: true,
+    colorScheme: colorScheme,
+    visualDensity: VisualDensity.adaptivePlatformDensity,
+    appBarTheme: const AppBarTheme(
+      toolbarHeight: 48,
+      centerTitle: false,
+      scrolledUnderElevation: 0,
+    ),
+    cardTheme: const CardThemeData(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.all(Radius.circular(AppShapes.largeIncreased)),
+      ),
+    ),
+    dialogTheme: const DialogThemeData(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.all(Radius.circular(AppShapes.extraLarge)),
+      ),
+    ),
+    bottomSheetTheme: const BottomSheetThemeData(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(AppShapes.extraLarge),
+        ),
+      ),
+    ),
+    chipTheme: const ChipThemeData(shape: StadiumBorder()),
+    filledButtonTheme: const FilledButtonThemeData(
+      style: ButtonStyle(shape: WidgetStatePropertyAll(StadiumBorder())),
+    ),
+    elevatedButtonTheme: const ElevatedButtonThemeData(
+      style: ButtonStyle(shape: WidgetStatePropertyAll(StadiumBorder())),
+    ),
+    outlinedButtonTheme: const OutlinedButtonThemeData(
+      style: ButtonStyle(shape: WidgetStatePropertyAll(StadiumBorder())),
+    ),
+    textButtonTheme: const TextButtonThemeData(
+      style: ButtonStyle(shape: WidgetStatePropertyAll(StadiumBorder())),
+    ),
+    listTileTheme: ListTileThemeData(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppShapes.large),
+      ),
+    ),
+  );
+}
+
 class Yibubang extends StatelessWidget {
   const Yibubang({super.key});
 
@@ -66,18 +120,8 @@ class Yibubang extends StatelessWidget {
         return MaterialApp(
           debugShowCheckedModeBanner: false,
           title: AppStrings.appTitle,
-          theme: ThemeData(
-            useMaterial3: true,
-            primarySwatch: Colors.blue,
-            brightness: Brightness.light,
-            visualDensity: VisualDensity.adaptivePlatformDensity,
-          ),
-          darkTheme: ThemeData(
-            useMaterial3: true,
-            primarySwatch: Colors.blue,
-            brightness: Brightness.dark,
-            visualDensity: VisualDensity.adaptivePlatformDensity,
-          ),
+          theme: _buildTheme(Brightness.light),
+          darkTheme: _buildTheme(Brightness.dark),
           themeMode: themeMode,
           home: const HomePage(),
         );

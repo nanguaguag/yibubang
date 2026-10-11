@@ -221,6 +221,19 @@ class UserDBHelper {
     );
   }
 
+  /// 关闭并释放当前用户库连接（置空缓存）。
+  ///
+  /// 用于「做题记录导入（替换）」：替换 `user_data.sqlite` 文件前必须关闭
+  /// 连接，让 WAL/journal 落盘，避免覆盖时文件被占用或数据不完整。
+  /// 关闭后下次访问 `database` 会自动重新打开。
+  Future<void> close() async {
+    final db = _database;
+    _database = null;
+    if (db != null && db.isOpen) {
+      await db.close();
+    }
+  }
+
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     await db.transaction((txn) async {
       if (oldVersion < 2) {

@@ -21,7 +21,7 @@ enum _Period { today, week, month }
 class _StatisticsPageState extends State<StatisticsPage> {
   _Period _chartPeriod = _Period.today;
 
-  late final Future<_AllStats> _future;
+  late Future<_AllStats> _future;
 
   @override
   void initState() {

@@ -151,6 +151,8 @@ class _HomePageState extends State<HomePage> {
     if (updateData.isEmpty) return;
     String latestVersion = updateData["latest_app"] ?? currentVersion;
     SharedPreferences prefs = await SharedPreferences.getInstance();
+    // 用户关闭「接受应用更新」时跳过更新弹窗
+    if (!(prefs.getBool('accept_update') ?? true)) return;
     if (!mounted) return;
 
     if (prefs.getBool('needToRebuildQuestionCount') ?? false) {

@@ -59,6 +59,12 @@ Future<void> initSettings() async {
   if (!prefs.containsKey('sync_question_bank')) {
     await prefs.setBool('sync_question_bank', false);
   }
+  if (!prefs.containsKey('fontScale')) {
+    await prefs.setDouble('fontScale', 1.0); // 刷题字号缩放比例
+  }
+  if (!prefs.containsKey('autoResume')) {
+    await prefs.setBool('autoResume', false); // 启动自动继续上次进度
+  }
 }
 
 Future<void> clearUserInfo() async {
