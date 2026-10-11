@@ -299,6 +299,34 @@ String changeLastAnswer(String userAnswer, String lastAnswer) {
   return answers.join(';');
 }
 
+/// 将字符串按字符排序，用于多选题答案比较，忽略选项顺序。
+String sortString(String str) {
+  final List<String> chars = str.split('')..sort();
+  return chars.join();
+}
+
+/// 测试模式交卷判分：把遗留的「待提交」(status==4) 题目按答案批改为正确/错误并落库。
+/// 返回本次判分的题数与答对题数。
+Future<MapEntry<int, int>> gradePendingQuestions(
+  List<Question> questions,
+  List<UserQuestion> userQuestions, {
+  String? bankId,
+}) async {
+  int graded = 0;
+  int correct = 0;
+  for (int i = 0; i < questions.length && i < userQuestions.length; i++) {
+    final UserQuestion uq = userQuestions[i];
+    if (uq.status != 4) continue;
+    final Question q = questions[i];
+    final String ans = getLastAnswer(uq.userAnswer);
+    uq.status = sortString(ans) == sortString(q.answer ?? '') ? 1 : 2;
+    if (uq.status == 1) correct++;
+    graded++;
+    await updateQuestion(uq, q, durationMs: 0, bankId: bankId);
+  }
+  return MapEntry(graded, correct);
+}
+
 Future<List<Question>> getQuestionsFromChapter(Chapter chapter) async {
   final dbh = DatabaseHelper();
   final prefs = await SharedPreferences.getInstance();

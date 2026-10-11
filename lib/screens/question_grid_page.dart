@@ -200,6 +200,52 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
     await prefs.setInt('mode', mode);
   }
 
+  /// 切换模式：离开测试模式时，自动判分本章节遗留的「待提交」灰格，避免残留
+  Future<void> _onModeChanged(int newMode) async {
+    if (newMode == mode) return;
+    final bool leavingTest = mode == 2 && newMode != 2;
+    if (leavingTest) {
+      final bool? confirmed = await _confirmLeaveTest();
+      if (confirmed != true || !mounted) return;
+    }
+    setState(() {
+      mode = newMode;
+    });
+    await saveSettings();
+    if (!leavingTest) return;
+    // 放弃测试：清零累计用时并判分遗留待提交题
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('testElapsedMs', 0);
+    final List<Question> questions = await allQuestions;
+    final List<UserQuestion> userQuestions = await allUserQuestions;
+    await gradePendingQuestions(questions, userQuestions);
+    if (!mounted) return;
+    _refreshPage();
+  }
+
+  /// 切换离开测试模式前的确认弹窗
+  Future<bool?> _confirmLeaveTest() {
+    return showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('退出测试模式'),
+          content: const Text('退出测试将自动判分已作答内容，确定继续吗？'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('取消'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('继续'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   void clearUserAnswers() async {
     final List<Question> questions = await allQuestions;
     final List<UserQuestion> userQuestions = await allUserQuestions;
@@ -696,10 +742,7 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
                     modesList,
                     modesList[mode],
                     (value) {
-                      saveSettings();
-                      setState(() {
-                        mode = modesList.indexOf(value);
-                      });
+                      _onModeChanged(modesList.indexOf(value));
                     },
                   ),
                 ),

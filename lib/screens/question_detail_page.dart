@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 import 'dart:convert';
 import 'package:flutter/cupertino.dart';
@@ -50,6 +51,11 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
   late int _pageOpenedAt;
   // 创建 PageController
   PageController _pageController = PageController();
+  // 测试模式正计时：Stopwatch 记录当前段用时，Timer 每秒刷新界面
+  final Stopwatch _testStopwatch = Stopwatch();
+  Timer? _testTicker;
+  // 返回页面时落盘的累计基准（毫秒），再次进入测验从该值继续，避免归零
+  int _testBaseMs = 0;
 
   @override
   void initState() {
@@ -59,6 +65,56 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     _currentPage = widget.questionIndex;
     _pageController = PageController(initialPage: _currentPage);
     _pageOpenedAt = DateTime.now().millisecondsSinceEpoch;
+  }
+
+  @override
+  void dispose() {
+    if (mode == 2) {
+      // 未交卷就离开页面：暂停计时并把累计时长落盘，下次进入继续
+      _testStopwatch.stop();
+      _testTicker?.cancel();
+      _saveTestElapsed(_testElapsed.inMilliseconds);
+    } else {
+      _testTicker?.cancel();
+    }
+    super.dispose();
+  }
+
+  // 累计总用时 = 落盘基准 + 当前段
+  Duration get _testElapsed =>
+      Duration(milliseconds: _testBaseMs) + _testStopwatch.elapsed;
+
+  // 启动测试模式正计时（当前段从 0 开始，累计基准已恢复）
+  void _startTestTimer() {
+    _testStopwatch..reset()..start();
+    _testTicker?.cancel();
+    _testTicker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      setState(() {});
+    });
+  }
+
+  // 停止测试模式正计时
+  void _stopTestTimer() {
+    _testTicker?.cancel();
+    _testTicker = null;
+    _testStopwatch.stop();
+  }
+
+  // 累计用时落盘
+  Future<void> _saveTestElapsed(int ms) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('testElapsedMs', ms);
+  }
+
+  // 将累计用时格式化为 mm:ss 或 hh:mm:ss
+  String _formatElapsed() {
+    final Duration d = _testElapsed;
+    final int h = d.inHours;
+    final int m = d.inMinutes.remainder(60);
+    final int s = d.inSeconds.remainder(60);
+    String two(int n) => n.toString().padLeft(2, '0');
+    return h > 0 ? '${two(h)}:${two(m)}:${two(s)}' : '${two(m)}:${two(s)}';
   }
 
   // 请求接口数据
@@ -97,10 +153,15 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
 
   // 获取数据
   Future<void> _loadSettings() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
     setState(() {
       mode = prefs.getInt('mode') ?? 0;
+      _testBaseMs = prefs.getInt('testElapsedMs') ?? 0;
     });
+    if (mode == 2) {
+      _startTestTimer();
+    }
   }
 
   Future<void> _saveSettings() async {
@@ -113,8 +174,8 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     UserQuestion userQuestion,
     int index,
   ) {
-    // 如果是快刷/测试模式且为单选题，不显示提交按钮
-    if ((mode == 1 || mode == 2) && question.type == '1') {
+    // 测试模式下不显示「提交」按钮（交卷统一在底部）；快刷模式单选自动提交也不显示
+    if (mode == 2 || (mode == 1 && question.type == '1')) {
       return const SizedBox.shrink();
     }
 
@@ -196,7 +257,15 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
                         ),
                       );
                     }
+                    // 测试模式多选无「提交」按钮：边选边标记待提交，交卷时统一判分
+                    if (mode == 2) {
+                      userQuestion.status = 4;
+                      widget.userQuestions[index].status = 4;
+                    }
                   });
+                  if (mode == 2) {
+                    updateQuestionSimple(userQuestion, question);
+                  }
                 },
               );
             default:
@@ -969,12 +1038,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
           _collectionBtn(),
           PopupMenuButton<int>(
             icon: Icon(Icons.more_vert),
-            onSelected: (value) {
-              setState(() {
-                mode = value;
-              });
-              _saveSettings();
-            },
+            onSelected: (value) => _onModeChanged(value),
             itemBuilder: (context) {
               return List.generate(AppStrings.modesList.length, (index) {
                 return PopupMenuItem<int>(
@@ -993,31 +1057,85 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
         ],
         centerTitle: true,
       ),
-      body: ScrollConfiguration(
-        behavior: MyCustomScrollBehavior(),
-        child: Stack(
-          children: [
-            PageView.builder(
-              controller: _pageController,
-              onPageChanged: (int page) {
-                setState(() {
-                  _currentPage = page; // 更新当前页索引
-                });
-                // 翻页后重设计时，保证每题时长是从浏览当前题开始计算
-                _pageOpenedAt = DateTime.now().millisecondsSinceEpoch;
-                _saveLastQIndex(); // 更新上次做到的题目
-              },
-              itemCount: widget.questions.length,
-              itemBuilder: (context, index) {
-                return _buildQuestion(
-                  widget.questions[index],
-                  widget.userQuestions[index],
-                  index,
-                );
-              },
+      body: Column(
+        children: [
+          if (mode == 2) _buildTestInfoBar(),
+          Expanded(
+            child: ScrollConfiguration(
+              behavior: MyCustomScrollBehavior(),
+              child: Stack(
+                children: [
+                  PageView.builder(
+                    controller: _pageController,
+                    onPageChanged: (int page) {
+                      setState(() {
+                        _currentPage = page; // 更新当前页索引
+                      });
+                      // 翻页后重设计时，保证每题时长是从浏览当前题开始计算
+                      _pageOpenedAt = DateTime.now().millisecondsSinceEpoch;
+                      _saveLastQIndex(); // 更新上次做到的题目
+                    },
+                    itemCount: widget.questions.length,
+                    itemBuilder: (context, index) {
+                      return _buildQuestion(
+                        widget.questions[index],
+                        widget.userQuestions[index],
+                        index,
+                      );
+                    },
+                  ),
+                  _buildButtom(),
+                ],
+              ),
             ),
-            _buildButtom(),
-          ],
+          ),
+          if (mode == 2) _buildSubmitBar(),
+        ],
+      ),
+    );
+  }
+
+  // 测试模式顶部信息栏：显示已用时与已作答进度
+  Widget _buildTestInfoBar() {
+    final int answered =
+        widget.userQuestions.where((uq) => uq.status == 4).length;
+    final int total = widget.questions.length;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            '已用时 ${_formatElapsed()}',
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+          ),
+          Text(
+            '已作答 $answered/$total',
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 测试模式底部交卷按钮
+  Widget _buildSubmitBar() {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Center(
+          child: ElevatedButton(
+            onPressed: _submitTest,
+            style: ElevatedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(28),
+              ),
+            ),
+            child: const Text('交卷', style: TextStyle(fontSize: 18)),
+          ),
         ),
       ),
     );
@@ -1080,8 +1198,9 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
         ),
       );
     } else if (mode == 2) {
-      userQuestion.status = 4; // 测试模式 - 已作答
-      updateQuestion(userQuestion, question, durationMs: elapsedMs, bankId: widget.bankId);
+      userQuestion.status = 4; // 测试模式 - 待提交
+      // 测试模式下仅标记「待提交」，不判分、不写统计与流水，交卷时统一判分
+      updateQuestionSimple(userQuestion, question);
       setState(() {
         widget.userQuestions[index].status = userQuestion.status;
       });
@@ -1101,5 +1220,161 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
         _nextPage();
       }
     }
+  }
+
+  // 切换刷题模式：处理测试模式的正计时启停，并判分离开测试模式时的待提交题
+  Future<void> _onModeChanged(int newMode) async {
+    if (newMode == mode) {
+      setState(() {});
+      return;
+    }
+    final bool enteringTest = newMode == 2;
+    final bool leavingTest = mode == 2;
+    if (leavingTest) {
+      final bool? confirmed = await _confirmLeaveTest();
+      if (confirmed != true || !mounted) {
+        return; // 用户取消，保持测试模式
+      }
+      _stopTestTimer();
+      _testBaseMs = 0; // 放弃本次测试，累计归零
+      await _saveTestElapsed(0);
+      // 用户边缘情况：测试模式做了题但没交卷就切走，自动判分，灰格变绿/红
+      await gradePendingQuestions(
+        widget.questions,
+        widget.userQuestions,
+        bankId: widget.bankId,
+      );
+      if (!mounted) return;
+    }
+    setState(() {
+      mode = newMode;
+    });
+    await _saveSettings();
+    if (enteringTest) {
+      _startTestTimer();
+    }
+  }
+
+  // 切换离开测试模式前的确认弹窗
+  Future<bool?> _confirmLeaveTest() {
+    return showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('退出测试模式'),
+          content: const Text('退出测试将自动交卷并判分已作答内容，确定继续吗？'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('取消'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('继续'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // 交卷：确认后停止计时、判分、弹窗显示成绩并回到练习模式
+  Future<void> _submitTest() async {
+    if (mode != 2) return;
+    final bool? confirmed = await _confirmSubmit();
+    if (confirmed != true || !mounted) return;
+    _stopTestTimer();
+    final String used = _formatElapsed(); // 先记录本次用时
+    final MapEntry<int, int> result = await gradePendingQuestions(
+      widget.questions,
+      widget.userQuestions,
+      bankId: widget.bankId,
+    );
+    if (!mounted) return;
+    setState(() {
+      mode = 0; // 交卷后回到练习模式，方便查看已判分的解析
+      _testBaseMs = 0;
+    });
+    await _saveSettings();
+    await _saveTestElapsed(0); // 本次测试结束，累计清零
+    if (!mounted) return;
+    final int answered = result.key;
+    final int correct = result.value;
+    final int unanswered = widget.questions.length - answered;
+    _showResultDialog(answered, correct, unanswered, used);
+  }
+
+  // 交卷前的确认弹窗
+  Future<bool?> _confirmSubmit() {
+    return showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('交卷确认'),
+          content: const Text('确定要交卷吗？交卷后将公布成绩。'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('取消'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('交卷'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // 测试结果弹窗
+  void _showResultDialog(int answered, int correct, int unanswered, String used) {
+    final double accuracy = answered == 0 ? 0.0 : correct / answered * 100;
+    showDialog<void>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('测试结果'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _resultLine('已作答', '$answered 题'),
+              _resultLine('答对', '$correct 题'),
+              _resultLine('答错', '${answered - correct} 题'),
+              _resultLine('正确率', '${accuracy.toStringAsFixed(1)}%'),
+              _resultLine('未作答', '$unanswered 题'),
+              _resultLine('用时', used),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('确定'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _resultLine(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 76,
+            child: Text(
+              label,
+              style: const TextStyle(color: Colors.grey),
+            ),
+          ),
+          Text(
+            value,
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+        ],
+      ),
+    );
   }
 }

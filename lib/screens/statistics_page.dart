@@ -478,10 +478,34 @@ class _MetricCard extends StatelessWidget {
 // ---------------------------------------------------------------------
 // 刷题格子墙（GitHub 风格）
 // ---------------------------------------------------------------------
-class _ContributionWall extends StatelessWidget {
+class _ContributionWall extends StatefulWidget {
   final Map<DateTime, int> days;
 
   const _ContributionWall({required this.days});
+
+  @override
+  State<_ContributionWall> createState() => _ContributionWallState();
+}
+
+class _ContributionWallState extends State<_ContributionWall> {
+  final ScrollController _controller = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    // 默认滚动到最右侧，让用户直接看到“今天”的格子。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_controller.hasClients) {
+        _controller.jumpTo(_controller.position.maxScrollExtent);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -505,8 +529,9 @@ class _ContributionWall extends StatelessWidget {
       weeks.add(week);
     }
 
-    final maxCount =
-        days.isEmpty ? 0 : days.values.reduce((a, b) => a > b ? a : b);
+    final maxCount = widget.days.isEmpty
+        ? 0
+        : widget.days.values.reduce((a, b) => a > b ? a : b);
 
     const cell = 14.0;
     const gap = 3.0;
@@ -519,6 +544,7 @@ class _ContributionWall extends StatelessWidget {
         border: Border.all(color: theme.colorScheme.outlineVariant),
       ),
       child: SingleChildScrollView(
+        controller: _controller,
         scrollDirection: Axis.horizontal,
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -533,7 +559,7 @@ class _ContributionWall extends StatelessWidget {
                       Padding(
                         padding: EdgeInsets.only(bottom: d == 6 ? 0 : gap),
                         child: _HeatCell(
-                          count: days[weeks[w][d]] ?? 0,
+                          count: widget.days[weeks[w][d]] ?? 0,
                           maxCount: maxCount,
                           size: cell,
                         ),
