@@ -18,108 +18,54 @@ Future<bool> checkLoginStatus() async {
   return prefs.getBool('loggedin') ?? false;
 }
 
-Widget generateComment(CommentData commentData, Question question) {
-  Widget hotComments = Column(
-    children: [
-      SizedBox(height: 20),
-      Row(
-        children: [
-          Container(
-            width: 4, // 控制竖条的宽度
-            height: 20, // 控制竖条的高度
-            color: Colors.deepOrange, // 竖条颜色
-          ),
-          SizedBox(width: 8.0),
-          Text(
-            '最热评论 (${commentData.hot.length})',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ],
-      ),
-      Divider(),
-      CommentList(
-        comments: commentData.hot,
-        question: question,
-      ),
-    ],
-  );
-
-  Widget timelineComments = Column(
-    children: [
-      SizedBox(height: 20),
-      Row(
-        children: [
-          Container(
-            width: 4, // 控制竖条的宽度
-            height: 20, // 控制竖条的高度
-            color: Colors.deepOrange, // 竖条颜色
-          ),
-          SizedBox(width: 8.0),
-          Text(
-            '最新评论 (${commentData.timeLine.length})',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ],
-      ),
-      Divider(),
-      CommentList(
-        comments: commentData.timeLine,
-        question: question,
-      ),
-    ],
-  );
-
-  return Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      if (commentData.hot.isNotEmpty) hotComments,
-      if (commentData.timeLine.isNotEmpty) timelineComments,
-    ],
-  );
-}
-
-Widget commentList(Future<CommentData>? commentDataFuture, Question question) {
-  return FutureBuilder<CommentData>(
-    future: commentDataFuture,
-    builder: (context, snapshot) {
-      if (snapshot.connectionState == ConnectionState.waiting) {
-        // 请求等待中，显示加载圆圈
-        return Center(child: CircularProgressIndicator());
-      } else if (snapshot.hasError) {
-        return Center(child: Text('加载失败: ${snapshot.error}'));
-      } else if (snapshot.hasData) {
-        final commentData = snapshot.data!;
-        return generateComment(commentData, question);
-      } else {
-        return Container();
-      }
-    },
-  );
-}
-
 class CommentPage extends StatefulWidget {
   final Question question;
+  // 外层滚动的控制器，用于实现「滚动到底自动加载下一页」
+  final ScrollController? scrollController;
 
-  const CommentPage({required this.question});
+  const CommentPage({
+    required this.question,
+    this.scrollController,
+  });
 
   @override
   _CommentPageState createState() => _CommentPageState();
 }
 
-class _CommentPageState extends State<CommentPage>
-    with SingleTickerProviderStateMixin {
-  // 缓存登录状态与评论数据，避免每次 rebuild 重新发起请求、评论闪现后重新加载
-  late Future<bool> _loginFuture;
-  Future<CommentData>? _commentsFuture;
+class _CommentPageState extends State<CommentPage> {
+  int _tab = 1; // 0=最新, 1=最热
+  bool? _loggedIn; // null=检查登录状态中
+  final List<Comment> _latest = [];
+  final List<Comment> _hot = [];
+  int _page = 0; // 已加载页数
+  bool _latestHasMore = true;
+  bool _hotHasMore = true;
+  bool _loading = false;
 
-  // 请求接口数据
-  Future<CommentData> _fetchComments({int page = 1}) async {
+  @override
+  void initState() {
+    super.initState();
+    widget.scrollController?.addListener(_onScroll);
+    _checkLogin();
+  }
+
+  @override
+  void dispose() {
+    widget.scrollController?.removeListener(_onScroll);
+    super.dispose();
+  }
+
+  Future<void> _checkLogin() async {
+    final loggedIn = await checkLoginStatus();
+    if (!mounted) return;
+    setState(() => _loggedIn = loggedIn);
+    if (loggedIn) {
+      await _loadMore();
+    }
+  }
+
+  // 请求接口数据，page 为分页页码
+  Future<CommentData> _fetchComments({required int page}) async {
     final response = await basicReq('/Comment/Main/list', {
       'obj_id': widget.question.id,
       'module_type': '1',
@@ -139,79 +85,139 @@ class _CommentPageState extends State<CommentPage>
     return CommentData.fromJson(response['data']);
   }
 
-  @override
-  void initState() {
-    super.initState();
-    _loginFuture = checkLoginStatus();
+  List<Comment> _currentList() => _tab == 0 ? _latest : _hot;
+  bool _currentHasMore() => _tab == 0 ? _latestHasMore : _hotHasMore;
+
+  void _onScroll() {
+    final controller = widget.scrollController;
+    if (controller == null || !controller.hasClients) return;
+    if (controller.position.pixels >=
+        controller.position.maxScrollExtent - 200) {
+      _loadMore();
+    }
   }
 
-  /// 显示错误信息
-  Widget _buildErrorMessage(Object? error) {
-    return Center(child: Text('加载失败: $error'));
+  Future<void> _loadMore() async {
+    if (_loading || !_currentHasMore()) return;
+    setState(() => _loading = true);
+    try {
+      final int nextPage = _page + 1;
+      final CommentData data = await _fetchComments(page: nextPage);
+      if (!mounted) return;
+      setState(() {
+        _latest.addAll(data.timeLine);
+        _hot.addAll(data.hot);
+        _page = nextPage;
+        if (data.timeLine.isEmpty) _latestHasMore = false;
+        if (data.hot.isEmpty) _hotHasMore = false;
+        _loading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+    }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<bool>(
-      future: _loginFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return Center(child: CircularProgressIndicator());
-        } else if (snapshot.hasError) {
-          return _buildErrorMessage(snapshot.error);
-        } else if (snapshot.data!) {
-          _commentsFuture ??= _fetchComments();
-          return commentList(_commentsFuture!, widget.question);
-        } else {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              SizedBox(height: 5),
-              Text("您还没登录，无法查看评论哦～"),
-              SizedBox(height: 5),
-              TextButton(
-                child: Text("点击登录"),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    CupertinoPageRoute(
-                      builder: (context) => AuthCheckPage(),
-                    ),
-                  );
-                },
-              ),
-              SizedBox(height: 5),
-            ],
-          );
-        }
-      },
+  void _switchTab(int tab) {
+    if (_tab == tab) return;
+    setState(() => _tab = tab);
+    if (_currentList().isEmpty && _currentHasMore()) {
+      _loadMore();
+    }
+  }
+
+  Widget _buildTabBar() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.end,
+      children: [
+        _buildTabBtn('最新', 0),
+        const SizedBox(width: 8),
+        _buildTabBtn('最热', 1),
+      ],
     );
   }
-}
 
-// 评论列表组件
-class CommentList extends StatelessWidget {
-  final List<Comment> comments;
-  final Question question;
+  Widget _buildTabBtn(String label, int tab) {
+    final bool selected = _tab == tab;
+    final Color primary = Theme.of(context).colorScheme.primary;
+    return InkWell(
+      onTap: () => _switchTab(tab),
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected ? primary : Colors.transparent,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: selected ? primary : Colors.grey,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? Theme.of(context).colorScheme.onPrimary : Colors.grey,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+  }
 
-  CommentList({
-    required this.comments,
-    required this.question,
-  });
+  Widget _buildGuest() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        const SizedBox(height: 5),
+        const Text("您还没登录，无法查看评论哦～"),
+        const SizedBox(height: 5),
+        TextButton(
+          child: const Text("点击登录"),
+          onPressed: () {
+            Navigator.push(
+              context,
+              CupertinoPageRoute(
+                builder: (context) => AuthCheckPage(),
+              ),
+            );
+          },
+        ),
+        const SizedBox(height: 5),
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    return ListView.builder(
-      shrinkWrap: true, // 根据内容大小自动扩展高度
-      physics: NeverScrollableScrollPhysics(),
-      itemCount: comments.length,
-      itemBuilder: (context, index) {
-        final comment = comments[index];
-        return CommentItem(
-          comment: comment,
-          question: question,
-        );
-      },
+    if (_loggedIn == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_loggedIn == false) {
+      return _buildGuest();
+    }
+    final List<Comment> comments = _currentList();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildTabBar(),
+        if (comments.isEmpty && !_loading)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 24),
+            child: Center(child: Text('暂无评论')),
+          ),
+        ...comments.map(
+          (c) => CommentItem(comment: c, question: widget.question),
+        ),
+        if (_loading)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 16),
+            child: Center(child: CircularProgressIndicator()),
+          ),
+        if (!_currentHasMore() && comments.isNotEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 16),
+            child: Center(child: Text('没有更多评论了')),
+          ),
+      ],
     );
   }
 }

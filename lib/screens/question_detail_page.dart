@@ -56,6 +56,8 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
   Timer? _testTicker;
   // 返回页面时落盘的累计基准（毫秒），再次进入测验从该值继续，避免归零
   int _testBaseMs = 0;
+  // 每个题目页独立的滚动控制器，供评论区无限滚动监听
+  final Map<int, ScrollController> _scrollControllers = {};
   // 刷题字号缩放比例（来自设置页「刷题字号」）
   double _fontScale = 1.0;
 
@@ -79,8 +81,15 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     } else {
       _testTicker?.cancel();
     }
+    for (final ScrollController c in _scrollControllers.values) {
+      c.dispose();
+    }
     super.dispose();
   }
+
+  // 获取指定题目页的滚动控制器（懒创建）
+  ScrollController _controllerFor(int index) =>
+      _scrollControllers.putIfAbsent(index, ScrollController.new);
 
   // 累计总用时 = 落盘基准 + 当前段
   Duration get _testElapsed =>
@@ -766,6 +775,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
         Padding(
           padding: const EdgeInsets.all(16.0),
           child: ListView(
+            controller: _controllerFor(index),
             shrinkWrap: true, // 让外层 ListView 适应内容
             physics: ClampingScrollPhysics(), // 正常滚动
             children: [
@@ -823,7 +833,10 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
                   question.explain ?? '',
                   question,
                 ),
-              CommentPage(question: question),
+              CommentPage(
+                question: question,
+                scrollController: _controllerFor(index),
+              ),
             ],
           ),
         ),
