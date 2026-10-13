@@ -114,6 +114,10 @@ class CommentPage extends StatefulWidget {
 
 class _CommentPageState extends State<CommentPage>
     with SingleTickerProviderStateMixin {
+  // 缓存登录状态与评论数据，避免每次 rebuild 重新发起请求、评论闪现后重新加载
+  late Future<bool> _loginFuture;
+  Future<CommentData>? _commentsFuture;
+
   // 请求接口数据
   Future<CommentData> _fetchComments({int page = 1}) async {
     final response = await basicReq('/Comment/Main/list', {
@@ -138,6 +142,7 @@ class _CommentPageState extends State<CommentPage>
   @override
   void initState() {
     super.initState();
+    _loginFuture = checkLoginStatus();
   }
 
   /// 显示错误信息
@@ -148,14 +153,15 @@ class _CommentPageState extends State<CommentPage>
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<bool>(
-      future: checkLoginStatus(),
+      future: _loginFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return Center(child: CircularProgressIndicator());
         } else if (snapshot.hasError) {
           return _buildErrorMessage(snapshot.error);
         } else if (snapshot.data!) {
-          return commentList(_fetchComments(), widget.question);
+          _commentsFuture ??= _fetchComments();
+          return commentList(_commentsFuture!, widget.question);
         } else {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.center,
