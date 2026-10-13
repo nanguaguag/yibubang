@@ -162,7 +162,7 @@ class _SubjectsListPageState extends State<SubjectsListPage>
     return ListTile(
       title: _buildHighlightedText(subject, _searchController.text.trim()),
       tileColor: subject.selected == 1
-          ? Colors.blue.shade100.withValues(alpha: 0.2)
+          ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.2)
           : null,
       onTap: () => _toggleSubject(subject),
       trailing: subject.selected == 1

@@ -116,10 +116,8 @@ class _StatisticsPageState extends State<StatisticsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: scheme.inversePrimary,
         title: const Text('做题统计'),
       ),
       body: FutureBuilder<_AllStats>(

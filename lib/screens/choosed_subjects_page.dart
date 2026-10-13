@@ -357,7 +357,6 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
           },
         ),
         title: const Text(AppStrings.selectedSubjectsTitle),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
           IconButton(
             tooltip: '搜索题目',

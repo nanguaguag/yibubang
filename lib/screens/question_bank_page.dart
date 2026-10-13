@@ -164,9 +164,9 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
       await _repository.selectBank(bank.bankId);
       if (!mounted) return;
       setState(() => _activeBankId = bank.bankId);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已切换到${bank.name}')),
-      );
+      //ScaffoldMessenger.of(context).showSnackBar(
+      //  SnackBar(content: Text('已切换到${bank.name}')),
+      //);
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -336,15 +336,15 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
             child: ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                Text(
-                  '管理独立题库',
-                  style: Theme.of(context).textTheme.headlineSmall,
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  '题目状态在题库之间共享，课程和章节统计按当前题库分别计算。默认题库不可删除，只能启用或禁用。',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
+                //Text(
+                //  '管理独立题库',
+                //  style: Theme.of(context).textTheme.headlineSmall,
+                //),
+                //const SizedBox(height: 6),
+                //Text(
+                //  '题目状态在题库之间共享，课程和章节统计按当前题库分别计算。默认题库不可删除，只能启用或禁用。',
+                //  style: Theme.of(context).textTheme.bodyMedium,
+                //),
                 const SizedBox(height: 18),
                 ...banks.map(_bankCard),
                 if (_busy)

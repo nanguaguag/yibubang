@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:yibubang/db/settings.dart';
 import '../common/request.dart';
 import './settings_page.dart';
+import '../widgets/common/info_card.dart';
+import '../widgets/common/styled_tile.dart';
 
 /// **1. 入口页面：检查是否已登录**
 class AuthCheckPage extends StatefulWidget {
@@ -161,7 +163,6 @@ class _LoginPageState extends State<LoginPage> {
           rebuildSettingsBtn(context),
         ],
         title: const Text("登录医考帮"),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
       body: Center(
         child: SingleChildScrollView(
@@ -331,8 +332,6 @@ class _ProfilePageState extends State<ProfilePage> {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-
     return Scaffold(
       appBar: AppBar(
         leading: Navigator.canPop(context) ? const BackButton() : null,
@@ -340,7 +339,6 @@ class _ProfilePageState extends State<ProfilePage> {
           rebuildSettingsBtn(context),
         ],
         title: const Text("个人中心"),
-        backgroundColor: colorScheme.inversePrimary,
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
@@ -433,25 +431,15 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Widget _buildInfoCard(BuildContext context) {
-    return Card(
-      elevation: 0,
-      margin: EdgeInsets.zero,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      child: Column(
-        children: [
-          _buildInfoTile(Icons.phone, '手机号', mobile),
-          const Divider(height: 1, indent: 56),
-          _buildInfoTile(Icons.email_outlined, '邮箱', email),
-          const Divider(height: 1, indent: 56),
-          _buildInfoTile(Icons.person_outline, '性别', strSex),
-          const Divider(height: 1, indent: 56),
-          _buildInfoTile(Icons.school_outlined, '学校', nowName),
-          const Divider(height: 1, indent: 56),
-          _buildInfoTile(Icons.workspace_premium_outlined, '专业', nowMajorName),
-          const Divider(height: 1, indent: 56),
-          _buildInfoTile(Icons.menu_book_outlined, '学历', educationName),
-        ],
-      ),
+    return InfoCard(
+      children: [
+        _buildInfoTile(Icons.phone, '手机号', mobile),
+        _buildInfoTile(Icons.email_outlined, '邮箱', email),
+        _buildInfoTile(Icons.person_outline, '性别', strSex),
+        _buildInfoTile(Icons.school_outlined, '学校', nowName),
+        _buildInfoTile(Icons.workspace_premium_outlined, '专业', nowMajorName),
+        _buildInfoTile(Icons.menu_book_outlined, '学历', educationName),
+      ],
     );
   }
 
@@ -459,25 +447,28 @@ class _ProfilePageState extends State<ProfilePage> {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
-    return ListTile(
-      leading: Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          color: colorScheme.secondaryContainer,
-          shape: BoxShape.circle,
-        ),
-        child: Icon(icon, size: 20, color: colorScheme.onSecondaryContainer),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+      child: Row(
+        children: [
+          TileIcon(icon: icon),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: textTheme.bodySmall
+                      ?.copyWith(color: colorScheme.onSurfaceVariant),
+                ),
+                const SizedBox(height: 2),
+                Text(value, style: textTheme.bodyLarge),
+              ],
+            ),
+          ),
+        ],
       ),
-      title: Text(
-        label,
-        style: textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
-      ),
-      subtitle: Text(
-        value,
-        style: textTheme.bodyLarge,
-      ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
     );
   }
 
@@ -492,7 +483,6 @@ class _ProfilePageState extends State<ProfilePage> {
         foregroundColor: colorScheme.error,
         backgroundColor: colorScheme.errorContainer,
         minimumSize: const Size.fromHeight(52),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
     );
   }

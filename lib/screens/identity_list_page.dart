@@ -147,9 +147,12 @@ class _IdentityListPageState extends State<IdentityListPage> {
     return ElevatedButton(
       onPressed: (choosable || choosabledir) ? () => _onSelect(item) : null,
       style: ElevatedButton.styleFrom(
-        backgroundColor:
-            selected ? Theme.of(context).colorScheme.primary : Colors.white,
-        foregroundColor: selected ? Colors.white : Colors.black87,
+        backgroundColor: selected
+            ? Theme.of(context).colorScheme.primary
+            : Theme.of(context).colorScheme.surface,
+        foregroundColor: selected
+            ? Theme.of(context).colorScheme.onPrimary
+            : Theme.of(context).colorScheme.onSurface,
         elevation: selected ? 4 : 2,
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
         shape: RoundedRectangleBorder(
@@ -165,7 +168,7 @@ class _IdentityListPageState extends State<IdentityListPage> {
                   AppStrings.identityIconMap[item.id] ?? Icons.book_outlined,
                   size: 20,
                   color: selected
-                      ? Colors.white
+                      ? Theme.of(context).colorScheme.onPrimary
                       : Theme.of(context).colorScheme.primary,
                 ),
                 const SizedBox(width: 12),

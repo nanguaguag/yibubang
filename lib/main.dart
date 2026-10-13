@@ -105,6 +105,7 @@ ThemeData _buildTheme(Brightness brightness) {
         borderRadius: BorderRadius.circular(AppShapes.large),
       ),
     ),
+    navigationBarTheme: const NavigationBarThemeData(height: 64),
   );
 }
 
