@@ -654,26 +654,26 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
                   padding: const EdgeInsets.fromLTRB(16, 8, 4, 8),
                   child: Row(
                     children: [
-                      Icon(
-                        Icons.tune,
-                        size: 22,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                      const SizedBox(width: 8),
-                      const Text(
-                        '内容与筛选',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const Spacer(),
-                      IconButton(
-                        icon: const Icon(Icons.close),
-                        onPressed: () {
-                          Navigator.pop(context); // 关闭侧边栏
-                        },
-                      ),
+                      //Icon(
+                      //  Icons.tune,
+                      //  size: 22,
+                      //  color: Theme.of(context).colorScheme.primary,
+                      //),
+                      //const SizedBox(width: 8),
+                      //const Text(
+                      //  '内容与筛选',
+                      //  style: TextStyle(
+                      //    fontSize: 20,
+                      //    fontWeight: FontWeight.w700,
+                      //  ),
+                      //),
+                      //const Spacer(),
+                      //IconButton(
+                      //  icon: const Icon(Icons.close),
+                      //  onPressed: () {
+                      //    Navigator.pop(context); // 关闭侧边栏
+                      //  },
+                      //),
                     ],
                   ),
                 ),

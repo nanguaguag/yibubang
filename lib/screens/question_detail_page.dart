@@ -834,6 +834,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
                   question,
                 ),
               CommentPage(
+                key: ValueKey('comment_$index'),
                 question: question,
                 scrollController: _controllerFor(index),
               ),

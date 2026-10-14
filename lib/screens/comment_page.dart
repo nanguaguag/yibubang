@@ -24,6 +24,7 @@ class CommentPage extends StatefulWidget {
   final ScrollController? scrollController;
 
   const CommentPage({
+    super.key,
     required this.question,
     this.scrollController,
   });
@@ -32,7 +33,8 @@ class CommentPage extends StatefulWidget {
   _CommentPageState createState() => _CommentPageState();
 }
 
-class _CommentPageState extends State<CommentPage> {
+class _CommentPageState extends State<CommentPage>
+    with AutomaticKeepAliveClientMixin {
   int _tab = 1; // 0=最新, 1=最热
   bool? _loggedIn; // null=检查登录状态中
   final List<Comment> _latest = [];
@@ -54,6 +56,10 @@ class _CommentPageState extends State<CommentPage> {
     widget.scrollController?.removeListener(_onScroll);
     super.dispose();
   }
+
+  // 保持评论区状态，避免滚出屏幕被 ListView 回收后评论重新加载
+  @override
+  bool get wantKeepAlive => true;
 
   Future<void> _checkLogin() async {
     final loggedIn = await checkLoginStatus();
@@ -188,6 +194,7 @@ class _CommentPageState extends State<CommentPage> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context); // AutomaticKeepAliveClientMixin 要求调用
     if (_loggedIn == null) {
       return const Center(child: CircularProgressIndicator());
     }

@@ -660,10 +660,13 @@ class _QuestionSearchPageState extends State<QuestionSearchPage> {
           controller: _controller,
           autofocus: true,
           textInputAction: TextInputAction.search,
+          textAlignVertical: TextAlignVertical.center,
           onSubmitted: _search,
           decoration: InputDecoration(
             hintText: '搜索题干、选项、考点、解析',
             border: InputBorder.none,
+            isDense: true,
+            contentPadding: EdgeInsets.zero,
             suffixIcon: IconButton(
               icon: const Icon(Icons.clear),
               onPressed: () {
