@@ -1,12 +1,12 @@
 import 'dart:async';
 import 'dart:ui';
 import 'dart:convert';
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../common/adaptive_route.dart';
 import '../common/app_strings.dart';
 import '../widgets/image_view.dart';
 import '../models/chapter.dart';
@@ -440,7 +440,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
   ) {
     Navigator.push(
       context,
-      CupertinoPageRoute(
+      adaptivePageRoute(
         builder: (context) => FullScreenImageView(
           imageUrls: imageUrls,
           initialIndex: initialIndex,

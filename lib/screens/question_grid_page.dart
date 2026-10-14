@@ -1,4 +1,4 @@
-import 'package:flutter/cupertino.dart';
+import '../common/adaptive_route.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
 import 'question_detail_page.dart';
@@ -178,7 +178,7 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
       final int targetIndex = lastQIndex.clamp(0, questions.length - 1).toInt();
       await Navigator.push(
         context,
-        CupertinoPageRoute(
+        adaptivePageRoute(
           builder: (context) => QuestionDetailPage(
             chapter: widget.chapter,
             questions: questions,
@@ -264,7 +264,7 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
               child: Text("取消"),
             ),
             TextButton(
-              onPressed: () {
+              onPressed: () async {
                 Navigator.of(context).pop(); // 关闭对话框
                 for (int i = 0; i < questions.length; i++) {
                   final uq = userQuestions[i];
@@ -273,10 +273,11 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
                     bool prevCorrect = uq.status == 1; // 储存之前的状态
                     uq.userAnswer += ';'; // 末尾加上 ; 表示清除前面的做题记录
                     uq.status = 0;
-                    updateQuestion(uq, q, prevCorrect: prevCorrect);
+                    await updateQuestion(uq, q, prevCorrect: prevCorrect);
                   }
                 }
-                ScaffoldMessenger.of(context).showSnackBar(
+                if (!mounted) return;
+                ScaffoldMessenger.of(this.context).showSnackBar(
                   const SnackBar(
                     content: Text('已清除作答记录'),
                     duration: Duration(seconds: 1),
@@ -328,7 +329,7 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
               child: Text("取消"),
             ),
             TextButton(
-              onPressed: () {
+              onPressed: () async {
                 Navigator.of(context).pop(); // 关闭对话框
                 for (int i = 0; i < questions.length; i++) {
                   final uq = userQuestions[i];
@@ -336,10 +337,11 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
                   if (uq.status == 2) {
                     uq.userAnswer += ';'; // 末尾加上 ; 表示清除前面的做题记录
                     uq.status = 0;
-                    updateQuestion(uq, q, prevCorrect: false);
+                    await updateQuestion(uq, q, prevCorrect: false);
                   }
                 }
-                ScaffoldMessenger.of(context).showSnackBar(
+                if (!mounted) return;
+                ScaffoldMessenger.of(this.context).showSnackBar(
                   const SnackBar(
                     content: Text('已清除做错题目'),
                     duration: Duration(seconds: 1),
@@ -555,7 +557,7 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
             _savedScrollOffset = _scrollController.offset;
             await Navigator.push(
               context,
-              CupertinoPageRoute(
+              adaptivePageRoute(
                 builder: (context) => QuestionDetailPage(
                   chapter: widget.chapter,
                   questions: questions,
@@ -677,7 +679,7 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
                     ],
                   ),
                 ),
-                const Divider(height: 1),
+                //const Divider(height: 1),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
                   child: _buildChapterStatsCard(),

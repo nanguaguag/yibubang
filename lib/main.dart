@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'screens/home_page.dart';
@@ -27,10 +28,11 @@ Future main() async {
     }
   }
 
-  // 设置系统UI样式，透明小白条背景
+  // 设置系统UI样式，透明小白条背景（沉浸式）
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     systemNavigationBarColor: Colors.transparent, // 设置小白条背景颜色透明
-    systemNavigationBarIconBrightness: Brightness.light, // 图标颜色（亮色）
+    systemNavigationBarIconBrightness: Brightness.dark, // 图标颜色（深色，适配浅色背景）
     systemNavigationBarDividerColor: Colors.transparent, // 分割线颜色透明
   ));
 
@@ -63,6 +65,14 @@ ThemeData _buildTheme(Brightness brightness) {
   );
   return ThemeData(
     useMaterial3: true,
+    // 统一页面转场为 Material 3，去除 iOS 风格滑入
+    pageTransitionsTheme: const PageTransitionsTheme(
+      builders: {
+        TargetPlatform.android: FadeUpwardsPageTransitionsBuilder(),
+        TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+        TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+      },
+    ),
     colorScheme: colorScheme,
     visualDensity: VisualDensity.adaptivePlatformDensity,
     appBarTheme: const AppBarTheme(

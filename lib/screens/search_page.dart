@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../common/adaptive_route.dart';
 import '../models/chapter.dart';
 import '../models/question.dart';
 import '../repositories/question_search_repository.dart';
@@ -231,7 +232,7 @@ class _QuestionSearchPageState extends State<QuestionSearchPage> {
       );
       await Navigator.push(
         context,
-        MaterialPageRoute(
+        adaptivePageRoute(
           builder: (_) => QuestionDetailPage(
             chapter: chapter,
             questions: [question],

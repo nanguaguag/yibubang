@@ -1,4 +1,4 @@
-import 'package:flutter/cupertino.dart';
+import '../common/adaptive_route.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
 import '../models/identity.dart';
@@ -130,7 +130,7 @@ class _IdentityListPageState extends State<IdentityListPage> {
     if (hasChildren) {
       if (!mounted) return;
       Navigator.of(context).push(
-        CupertinoPageRoute(
+        adaptivePageRoute(
           builder: (_) => IdentityListPage(
             parentId: identity.id,
             title: '选择题库 - ${identity.name}',

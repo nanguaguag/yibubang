@@ -1,3 +1,4 @@
+import '../common/adaptive_route.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
 import 'package:yibubang/db/settings.dart';
@@ -67,7 +68,7 @@ Widget rebuildSettingsBtn(BuildContext context) {
     onPressed: () {
       Navigator.push(
         context,
-        MaterialPageRoute(builder: (context) => const SettingsPage()),
+        adaptivePageRoute(builder: (context) => const SettingsPage()),
       );
     },
   );

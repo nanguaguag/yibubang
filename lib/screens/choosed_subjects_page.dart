@@ -1,4 +1,4 @@
-import 'package:flutter/cupertino.dart';
+import '../common/adaptive_route.dart';
 import 'package:flutter/material.dart';
 import 'package:yibubang/screens/question_grid_page.dart';
 import '../common/app_strings.dart';
@@ -157,7 +157,7 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
     // 直接跳转到题目页
     await Navigator.push(
       context,
-      CupertinoPageRoute(
+      adaptivePageRoute(
         builder: (context) => QuestionGridPage(
           chapter: chapter,
           directJump: true,
@@ -181,12 +181,7 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
               const SizedBox(height: 16),
               FilledButton.icon(
                 onPressed: () async {
-                  await Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const QuestionBankPage(),
-                    ),
-                  );
+                  await Navigator.push(context, _openBankManagement());
                   _refreshData();
                 },
                 icon: const Icon(Icons.storage_outlined),
@@ -205,6 +200,30 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
           ),
         ),
       );
+
+  /// 题库管理页：从左侧滑入，更符合抽屉/侧边栏的直觉
+  Route<void> _openBankManagement() {
+    return PageRouteBuilder<void>(
+      pageBuilder: (context, animation, secondaryAnimation) =>
+          const QuestionBankPage(),
+      transitionsBuilder: (context, animation, secondaryAnimation, child) {
+        final curved = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutCubic,
+          reverseCurve: Curves.easeInCubic,
+        );
+        return SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(-1, 0),
+            end: Offset.zero,
+          ).animate(curved),
+          child: child,
+        );
+      },
+      transitionDuration: const Duration(milliseconds: 300),
+      reverseTransitionDuration: const Duration(milliseconds: 250),
+    );
+  }
 
   /// 显示无数据提示
   Widget _buildEmptyMessage(String msg) => Center(child: Text(msg));
@@ -227,7 +246,10 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
             flex: 80,
             child: Text(
               subject.name,
-              style: const TextStyle(fontWeight: FontWeight.bold),
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
             ),
           ),
           Expanded(
@@ -284,7 +306,10 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
             flex: 85,
             child: Text(
               chapter.name,
-              style: const TextStyle(fontSize: 14),
+              style: TextStyle(
+                fontSize: 14,
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
             ),
           ),
           Expanded(
@@ -329,7 +354,7 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
         _saveLastProgress(chapter.subjectId, chapter.id);
         await Navigator.push(
           context,
-          CupertinoPageRoute(
+          adaptivePageRoute(
             builder: (context) => QuestionGridPage(
               chapter: chapter,
               directJump: false,
@@ -343,16 +368,15 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
 
   @override
   Widget build(BuildContext context) {
+    // 显式依赖主题：主题切换时重建整棵子树，确保标题文字颜色即时刷新
+    Theme.of(context);
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(
           tooltip: '题库管理',
           icon: const Icon(Icons.storage_outlined),
           onPressed: () async {
-            await Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const QuestionBankPage()),
-            );
+            await Navigator.push(context, _openBankManagement());
             _refreshData();
           },
         ),
@@ -364,7 +388,7 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
             onPressed: () async {
               await Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => const QuestionSearchPage()),
+                adaptivePageRoute(builder: (_) => const QuestionSearchPage()),
               );
             },
           ),
@@ -431,7 +455,7 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
             onPressed: () async {
               await Navigator.push(
                 context,
-                MaterialPageRoute(
+                adaptivePageRoute(
                   builder: (context) => SubjectsListPage(),
                 ),
               );
