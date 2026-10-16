@@ -215,7 +215,7 @@ class _QuestionSearchPageState extends State<QuestionSearchPage> {
             id: result.questionId,
             chapterId: question.chapterId ?? '',
             chapterParentId: question.chapterParentId ?? '',
-            cutQuestion: '',
+            cutQuestion: '0',
             userAnswer: '',
             status: 0,
             collection: result.collection ? 1 : 0,

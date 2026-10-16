@@ -215,7 +215,7 @@ class UserDBHelper {
     String path = join(await getDatabasesPath(), 'user_data.sqlite');
     return await openDatabase(
       path,
-      version: 5,
+      version: 6,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -278,6 +278,15 @@ class UserDBHelper {
         await txn.execute(
           'CREATE INDEX IF NOT EXISTS idx_activity_time_bank '
           'ON Activities(bank_id, timestamp)',
+        );
+      }
+      if (oldVersion < 6) {
+        // 清洗历史 cut_question 状态，统一为 '1' (已斩) 和 '0' (未斩)
+        await txn.execute(
+          "UPDATE Question SET cut_question = '1' WHERE cut_question = 'cutted'",
+        );
+        await txn.execute(
+          "UPDATE Question SET cut_question = '0' WHERE cut_question = '' OR cut_question IS NULL",
         );
       }
       await _createMigrationStateTable(txn);
@@ -441,7 +450,7 @@ class UserDBHelper {
         id TEXT PRIMARY KEY,
         chapter_id TEXT,
         chapter_parent_id TEXT,
-        cut_question TEXT DEFAULT 0 NOT NULL,
+        cut_question TEXT DEFAULT '0' NOT NULL,
         user_answer TEXT DEFAULT "" NOT NULL,
         status INTEGER DEFAULT 0 NOT NULL,
         collection INTEGER DEFAULT 0 NOT NULL

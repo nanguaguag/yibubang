@@ -942,15 +942,11 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     UserQuestion userQuestion = widget.userQuestions[_currentPage];
     Question question = widget.questions[_currentPage];
     return IconButton(
-      icon: userQuestion.cutQuestion == ""
-          ? Icon(Icons.block)
-          : Icon(Icons.block_outlined, color: Colors.redAccent),
+      icon: !userQuestion.isCut
+          ? const Icon(Icons.block)
+          : const Icon(Icons.block_outlined, color: Colors.redAccent),
       onPressed: () {
-        if (userQuestion.cutQuestion == "cutted") {
-          userQuestion.cutQuestion = "";
-        } else {
-          userQuestion.cutQuestion = "cutted";
-        }
+        userQuestion.isCut = !userQuestion.isCut;
         updateQuestionSimple(userQuestion, question);
         setState(() {
           widget.userQuestions[_currentPage].cutQuestion =

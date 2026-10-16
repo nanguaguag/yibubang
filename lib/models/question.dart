@@ -16,18 +16,21 @@ class UserQuestion {
     required this.id,
     required this.chapterId,
     required this.chapterParentId,
-    required this.cutQuestion,
+    this.cutQuestion = '0',
     required this.userAnswer,
     required this.status,
     required this.collection,
   });
+
+  bool get isCut => cutQuestion == '1' || cutQuestion == 'cutted';
+  set isCut(bool value) => cutQuestion = value ? '1' : '0';
 
   Map<String, dynamic> toMap() {
     return {
       'id': id,
       'chapter_id': chapterId,
       'chapter_parent_id': chapterParentId,
-      'cut_question': cutQuestion,
+      'cut_question': isCut ? '1' : '0',
       'user_answer': userAnswer,
       'status': status,
       'collection': collection,
@@ -35,11 +38,13 @@ class UserQuestion {
   }
 
   factory UserQuestion.fromMap(Map<String, dynamic> map) {
+    final rawCut = map['cut_question']?.toString() ?? '0';
+    final isCut = rawCut == '1' || rawCut == 'cutted';
     return UserQuestion(
       id: map['id'],
       chapterId: map['chapter_id'],
       chapterParentId: map['chapter_parent_id'],
-      cutQuestion: map['cut_question'],
+      cutQuestion: isCut ? '1' : '0',
       userAnswer: map['user_answer'] ?? '',
       status: map['status'] ?? 0,
       collection: map['collection'] ?? 0,
@@ -279,10 +284,13 @@ class Question {
       isNew: map['is_new'],
       outlinesMastery: map['outlines_mastery'],
       filterType: map['filter_type'],
-      cutQuestion: map['cut_question'],
+      cutQuestion: map['cut_question']?.toString(),
       userAnswer: map['user_answer'] ?? '',
     );
   }
+
+  bool get isCut => cutQuestion == '1' || cutQuestion == 'cutted';
+  set isCut(bool value) => cutQuestion = value ? '1' : '0';
 }
 
 String getLastAnswer(String userAnswer) {
@@ -386,7 +394,7 @@ Future<List<UserQuestion>> getUserQuestions(
         id: q.id,
         chapterId: q.chapterId ?? 'default_chapter_id',
         chapterParentId: q.chapterParentId ?? 'default_subject_id',
-        cutQuestion: '',
+        cutQuestion: '0',
         userAnswer: '',
         status: 0,
         collection: 0,

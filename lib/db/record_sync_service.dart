@@ -132,12 +132,15 @@ class RecordSyncService {
           final id = row['id'] as String;
           final srcStatus = (row['status'] as num?)?.toInt() ?? 0;
           final srcCollection = (row['collection'] as num?)?.toInt() ?? 0;
-          final srcCut = (row['cut_question'] as String?) ?? '';
+          final srcCut = (row['cut_question']?.toString()) ?? '0';
           final srcAnswer = (row['user_answer'] as String?) ?? '';
+          final srcIsCut = srcCut == '1' || srcCut == 'cutted';
 
           final local = localMap[id];
           if (local == null) {
-            batch.insert('Question', row,
+            final rowCopy = Map<String, dynamic>.from(row);
+            rowCopy['cut_question'] = srcIsCut ? '1' : '0';
+            batch.insert('Question', rowCopy,
                 conflictAlgorithm: ConflictAlgorithm.replace);
             merged++;
             continue;
@@ -145,11 +148,12 @@ class RecordSyncService {
 
           final localStatus = (local['status'] as num?)?.toInt() ?? 0;
           final localCollection = (local['collection'] as num?)?.toInt() ?? 0;
-          final localCut = (local['cut_question'] as String?) ?? '';
+          final localCut = (local['cut_question']?.toString()) ?? '0';
+          final localIsCut = localCut == '1' || localCut == 'cutted';
           // 收藏 / 斩题取并集。
           final newCollection =
               (localCollection == 1 || srcCollection == 1) ? 1 : 0;
-          final newCut = (localCut == '1' || srcCut == '1') ? '1' : localCut;
+          final newCut = (localIsCut || srcIsCut) ? '1' : '0';
           // 仅补充本地未做的题（保留本地已做结果）。
           final useSrc = localStatus == 0 && srcStatus != 0;
           final newStatus = useSrc ? srcStatus : localStatus;

@@ -250,7 +250,7 @@ class QuestionSearchRepository {
         'id': questionId,
         'chapter_id': '',
         'chapter_parent_id': '',
-        'cut_question': '',
+        'cut_question': '0',
         'user_answer': '',
         'status': 0,
         'collection': collection,

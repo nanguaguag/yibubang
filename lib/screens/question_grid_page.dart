@@ -119,17 +119,14 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
       if (category == 1 && uq.status != 2) return false; // 只保留做错的题目
       if (category == 2 && uq.collection != 1) return false; // 只保留收藏的题目
       if (category == 3 && uq.status != 0) return false; // 只保留未做的题目
-      if (cutType == 1 && uq.cutQuestion != "cutted") {
-        return false;
-      } // 过滤 cutType
-      if (cutType == 2 && uq.cutQuestion != "") {
-        return false;
-      } // 过滤 cutType
+      if (cutType == 1 && !uq.isCut) return false; // 过滤 cutType: 仅保留已斩
+      if (cutType == 2 && uq.isCut) return false; // 过滤 cutType: 仅保留未斩
       return true;
     }).toList();
     // 2️⃣ 根据 questionType 先过滤 questions
     questions = questions.where((q) {
-      if (questionType != 0 && int.parse(q.type!) != questionType) {
+      final qType = int.tryParse(q.type ?? '');
+      if (questionType != 0 && qType != questionType) {
         return false; // 过滤单选题、多选题
       }
       return true;
@@ -528,7 +525,7 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
       itemCount: questions.length,
       itemBuilder: (context, index) {
         final int questionState = userQuestions[index].status;
-        final bool cutted = userQuestions[index].cutQuestion == "cutted";
+        final bool cutted = userQuestions[index].isCut;
         Color buttonColor;
 
         switch (questionState) {
