@@ -3,13 +3,25 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart';
 import 'dart:io';
 import 'dart:async';
+import 'dart:math';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'question_bank_manager.dart';
 
+final Random _secureRandom = Random.secure();
+int _simpleIdSequence = 0;
+
+/// 生成高并发防碰撞唯一主键 ID。
+///
+/// 结合微秒级时间戳、进程内自增序数与安全随机数：
+/// 1. `DateTime.now().microsecondsSinceEpoch`: 微秒级时间基准；
+/// 2. `_simpleIdSequence`: 循环递增计数器 (0~999)，彻底解决单 CPU 紧密循环 (如批量修复或导入) 同微秒内碰撞；
+/// 3. `_secureRandom`: 6 位安全随机数 (100000~999999)，防止多实例或跨设备同时间戳碰撞。
 String generateSimpleId() {
-  final timestamp = DateTime.now().millisecondsSinceEpoch;
-  final random = (100000 + (DateTime.now().microsecond % 900000));
-  return '$timestamp$random';
+  final timestamp = DateTime.now().microsecondsSinceEpoch;
+  _simpleIdSequence = (_simpleIdSequence + 1) % 1000;
+  final seq = _simpleIdSequence.toString().padLeft(3, '0');
+  final random = _secureRandom.nextInt(900000) + 100000;
+  return '$timestamp$seq$random';
 }
 
 Future<void> dropAllTriggers(Database db) async {
@@ -464,7 +476,7 @@ class UserDBHelper {
         content TEXT NOT NULL,
         imgs TEXT NOT NULL,
         timestamp INTEGER NOT NULL,
-        FOREIGN KEY (question_id) REFERENCES questions(id)
+        FOREIGN KEY (question_id) REFERENCES Question(id)
       )
     ''');
 
