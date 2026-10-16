@@ -327,7 +327,11 @@ Future<MapEntry<int, int>> gradePendingQuestions(
     if (uq.status != 4) continue;
     final Question q = questions[i];
     final String ans = getLastAnswer(uq.userAnswer);
-    uq.status = sortString(ans) == sortString(q.answer ?? '') ? 1 : 2;
+    final String correctAns = q.answer ?? '';
+    uq.status =
+        (correctAns.isNotEmpty && sortString(ans) == sortString(correctAns))
+            ? 1
+            : 2;
     if (uq.status == 1) correct++;
     graded++;
     await updateQuestion(uq, q, durationMs: 0, bankId: bankId);

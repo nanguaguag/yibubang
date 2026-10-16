@@ -376,9 +376,10 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
 
   Widget _buildOptions(Question question, UserQuestion userQuestion) {
     final List<dynamic> optionJson = _getOptionJson(question);
+    final String answer = question.answer ?? '';
     for (Map<String, dynamic> option in optionJson) {
       final String key = option['key'];
-      final bool answerContains = question.answer!.contains(key);
+      final bool answerContains = answer.isNotEmpty && answer.contains(key);
       final bool userAnswerContains =
           getLastAnswer(userQuestion.userAnswer).contains(key);
       if ((mode == 3 && userQuestion.status == 0) || userQuestion.status == 4) {
@@ -607,8 +608,9 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     int myCorrectAnsCnt = 0;
     final List<String> myAnswers = userQuestion.userAnswer.split(';');
     final int totalAnsCnt = myAnswers.length;
+    final String correctAns = question.answer ?? '';
     for (String ans in myAnswers) {
-      if (sortString(ans) == sortString(question.answer!)) {
+      if (correctAns.isNotEmpty && sortString(ans) == sortString(correctAns)) {
         myCorrectAnsCnt += 1;
       }
     }
@@ -691,8 +693,9 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     int myCorrectAnsCnt = 0;
     final List<String> myAnswers = userQuestion.userAnswer.split(';');
     final int totalAnsCnt = myAnswers.length;
+    final String correctAns = question.answer ?? '';
     for (String ans in myAnswers) {
-      if (sortString(ans) == sortString(question.answer!)) {
+      if (correctAns.isNotEmpty && sortString(ans) == sortString(correctAns)) {
         myCorrectAnsCnt += 1;
       }
     }
@@ -1224,7 +1227,9 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
       });
       _nextPage();
     } else {
-      if (sortString(userAnswer) == sortString(question.answer!)) {
+      final String correctAns = question.answer ?? '';
+      if (correctAns.isNotEmpty &&
+          sortString(userAnswer) == sortString(correctAns)) {
         userQuestion.status = 1; // 回答正确
       } else {
         userQuestion.status = 2; // 回答错误
