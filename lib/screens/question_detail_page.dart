@@ -13,6 +13,7 @@ import '../models/chapter.dart';
 import '../models/question.dart';
 import '../models/question_stat.dart';
 import '../common/request.dart';
+import '../widgets/common/app_network_image.dart';
 import 'comment_page.dart';
 
 class MyCustomScrollBehavior extends MaterialScrollBehavior {
@@ -345,8 +346,8 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
                 },
                 child: Padding(
                   padding: const EdgeInsets.all(6),
-                  child: Image.network(
-                    titleImg,
+                  child: AppNetworkImage(
+                    imageUrl: titleImg,
                     height: 200,
                   ),
                 ),

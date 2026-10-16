@@ -6,6 +6,7 @@ import '../common/request.dart';
 import './settings_page.dart';
 import '../widgets/common/info_card.dart';
 import '../widgets/common/styled_tile.dart';
+import '../widgets/common/app_network_image.dart';
 
 /// **1. 入口页面：检查是否已登录**
 class AuthCheckPage extends StatefulWidget {
@@ -374,14 +375,14 @@ class _ProfilePageState extends State<ProfilePage> {
     return CircleAvatar(
       radius: 48,
       backgroundColor: colorScheme.primaryContainer,
-      // Image.network 支持加载失败兜底，避免 NetworkImage 异常直接上抛
+      // 使用 AppNetworkImage 提供磁盘与内存缓存，离线可用且异常兜底
       child: ClipOval(
-        child: Image.network(
-          avatar,
+        child: AppNetworkImage(
+          imageUrl: avatar,
           width: 96,
           height: 96,
           fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) => Icon(
+          errorWidget: (context, error, stackTrace) => Icon(
             Icons.person,
             size: 56,
             color: colorScheme.onPrimaryContainer,

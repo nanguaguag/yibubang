@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:flutter_image_gallery_saver/flutter_image_gallery_saver.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter/services.dart'; // for Clipboard
+import 'common/app_network_image.dart';
 
 class FullScreenImageView extends StatefulWidget {
   final List<String> imageUrls;
@@ -134,9 +135,24 @@ class _FullScreenImageViewState extends State<FullScreenImageView> {
           onPageChanged: (idx) => setState(() => _currentIndex = idx),
           builder: (context, index) {
             return PhotoViewGalleryPageOptions(
-              imageProvider: NetworkImage(widget.imageUrls[index]),
+              imageProvider: AppNetworkImage.provider(widget.imageUrls[index]),
               minScale: PhotoViewComputedScale.contained,
               maxScale: PhotoViewComputedScale.covered * 2,
+              errorBuilder: (context, error, stackTrace) {
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: const [
+                      Icon(Icons.broken_image_outlined, size: 54, color: Colors.white70),
+                      SizedBox(height: 12),
+                      Text(
+                        '图片加载失败，请检查网络连接',
+                        style: TextStyle(color: Colors.white70, fontSize: 14),
+                      ),
+                    ],
+                  ),
+                );
+              },
             );
           },
           scrollPhysics: const BouncingScrollPhysics(),

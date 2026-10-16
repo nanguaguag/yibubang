@@ -5,6 +5,7 @@ import 'package:yibubang/common/ykb_encrypt.dart';
 import 'package:flutter/services.dart';
 
 import '../widgets/image_view.dart';
+import '../widgets/common/app_network_image.dart';
 import '../models/question.dart';
 import '../models/comment.dart';
 import '../common/request.dart';
@@ -409,8 +410,13 @@ class CommentItem extends StatelessWidget {
         Row(
           children: [
             CircleAvatar(
-              backgroundImage: NetworkImage(comment.avatar),
               maxRadius: 10,
+              backgroundImage: comment.avatar.trim().isNotEmpty
+                  ? AppNetworkImage.provider(comment.avatar)
+                  : null,
+              child: comment.avatar.trim().isEmpty
+                  ? const Icon(Icons.person, size: 12)
+                  : null,
             ),
             SizedBox(width: 8.0),
             Column(
@@ -452,8 +458,8 @@ class CommentItem extends StatelessWidget {
             },
             child: Padding(
               padding: EdgeInsets.all(4),
-              child: Image.network(
-                comment.imgWatermark,
+              child: AppNetworkImage(
+                imageUrl: comment.imgWatermark,
                 height: 200,
               ),
             ),

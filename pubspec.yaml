@@ -49,6 +49,7 @@ dependencies:
   file_picker: 8.1.7
   path: ^1.9.0
   fl_chart: ^0.70.2
+  cached_network_image: ^4.0.3
 
 dev_dependencies:
   flutter_test:
