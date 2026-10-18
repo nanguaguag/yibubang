@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../models/chapter.dart';
 import '../../models/question.dart';
+import '../../services/ykb_sync_service.dart';
 
 /// 题目详情页状态管理控制器
 ///
@@ -224,6 +225,13 @@ class QuestionDetailController extends ChangeNotifier {
     userQuestions[_currentPage].cutQuestion = userQuestion.cutQuestion;
     onStateChanged?.call();
     notifyListeners();
+
+    // 同步斩题状态到医考帮
+    YkbSyncService.instance.syncCutQuestion(
+      question: question,
+      isCut: userQuestion.isCut,
+      chapter: chapter,
+    );
   }
 
   void copyQuestion(BuildContext context) {

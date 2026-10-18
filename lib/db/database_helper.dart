@@ -227,7 +227,7 @@ class UserDBHelper {
     String path = join(await getDatabasesPath(), 'user_data.sqlite');
     return await openDatabase(
       path,
-      version: 8,
+      version: 9,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -337,6 +337,19 @@ class UserDBHelper {
             note_id TEXT,
             question_id TEXT NOT NULL,
             payload TEXT,
+            retry_count INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            last_error TEXT
+          )
+        ''');
+      }
+      if (oldVersion < 9) {
+        await txn.execute('''
+          CREATE TABLE IF NOT EXISTS YkbSyncQueue (
+            id TEXT PRIMARY KEY,
+            type TEXT NOT NULL,
+            item_id TEXT,
+            payload TEXT NOT NULL,
             retry_count INTEGER NOT NULL DEFAULT 0,
             created_at INTEGER NOT NULL,
             last_error TEXT
@@ -543,6 +556,18 @@ class UserDBHelper {
         note_id TEXT,
         question_id TEXT NOT NULL,
         payload TEXT,
+        retry_count INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        last_error TEXT
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS YkbSyncQueue (
+        id TEXT PRIMARY KEY,
+        type TEXT NOT NULL,
+        item_id TEXT,
+        payload TEXT NOT NULL,
         retry_count INTEGER NOT NULL DEFAULT 0,
         created_at INTEGER NOT NULL,
         last_error TEXT

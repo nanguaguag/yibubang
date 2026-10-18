@@ -69,6 +69,9 @@ Future<void> initSettings() async {
   if (!prefs.containsKey('sync_notes_to_ykb')) {
     await prefs.setBool('sync_notes_to_ykb', true); // 同步笔记到医考帮默认开启
   }
+  if (!prefs.containsKey('sync_cut_to_ykb')) {
+    await prefs.setBool('sync_cut_to_ykb', true); // 同步斩题到医考帮默认开启
+  }
   await QuestionSectionConfig.loadConfig();
 }
 
