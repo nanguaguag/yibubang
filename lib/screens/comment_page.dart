@@ -324,9 +324,6 @@ class _CommentItemState extends State<CommentItem> {
           _isPraised = true;
           _praiseCount += 1;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(resp['message']?.toString() ?? '点赞成功！')),
-        );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(resp['message']?.toString() ?? '点赞失败')),

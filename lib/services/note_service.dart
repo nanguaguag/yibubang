@@ -21,6 +21,13 @@ class NoteService {
 
   bool _isProcessingQueue = false;
 
+  /// 全局笔记变动与同步状态更新通知器（触发 UI 实时刷新）
+  final ValueNotifier<int> noteSyncEventNotifier = ValueNotifier<int>(0);
+
+  void notifyNoteChanged() {
+    noteSyncEventNotifier.value++;
+  }
+
   /// 判断用户是否开启了「同步笔记到医考帮」
   Future<bool> isSyncEnabled() async {
     final prefs = await SharedPreferences.getInstance();
@@ -68,6 +75,7 @@ class NoteService {
       // 触发后台处理
       processQueue(question: question);
     }
+    notifyNoteChanged();
   }
 
   /// 删除笔记（先从本地 SQLite 移除，若开启同步且有 remoteId 则入删除队列）
@@ -92,6 +100,7 @@ class NoteService {
       ));
       processQueue(question: question);
     }
+    notifyNoteChanged();
   }
 
   /// 上传单张图片到医考帮服务器
@@ -506,6 +515,7 @@ class NoteService {
         where: 'id = ?',
         whereArgs: [note.id],
       );
+      notifyNoteChanged();
       return true;
     }
 

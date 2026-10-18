@@ -30,6 +30,28 @@ class QuestionNoteViewState extends State<QuestionNoteView> {
   void initState() {
     super.initState();
     _loadNotes();
+    NoteService.instance.noteSyncEventNotifier.addListener(_onSyncEvent);
+  }
+
+  @override
+  void dispose() {
+    NoteService.instance.noteSyncEventNotifier.removeListener(_onSyncEvent);
+    super.dispose();
+  }
+
+  void _onSyncEvent() {
+    if (mounted) {
+      _refreshLocalNotes();
+    }
+  }
+
+  Future<void> _refreshLocalNotes() async {
+    final local = await NoteService.instance.getLocalNotes(widget.question.id);
+    if (mounted) {
+      setState(() {
+        _notes = local;
+      });
+    }
   }
 
   @override
@@ -254,11 +276,6 @@ class QuestionNoteViewState extends State<QuestionNoteView> {
                             question: widget.question,
                           );
                           await _loadNotes();
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('笔记已保存')),
-                            );
-                          }
                         },
                         child: const Text('保存'),
                       ),
@@ -295,11 +312,6 @@ class QuestionNoteViewState extends State<QuestionNoteView> {
     if (confirmed == true) {
       await NoteService.instance.deleteNote(note, question: widget.question);
       await _loadNotes();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('笔记已删除')),
-        );
-      }
     }
   }
 

@@ -144,7 +144,8 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
 
   Widget _buildCutQuestionBtn() {
     return ListenableBuilder(
-      listenable: _controller,
+      listenable:
+          Listenable.merge([_controller, _controller.currentPageNotifier]),
       builder: (context, _) {
         final uq = _controller.userQuestions[_controller.currentPage];
         return IconButton(
@@ -159,7 +160,8 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
 
   Widget _buildCopyBtn() {
     return ListenableBuilder(
-      listenable: _controller,
+      listenable:
+          Listenable.merge([_controller, _controller.currentPageNotifier]),
       builder: (context, _) {
         final uq = _controller.userQuestions[_controller.currentPage];
         if (uq.status == 0 || uq.status == 3) {
@@ -175,7 +177,8 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
 
   Widget _buildCollectionBtn() {
     return ListenableBuilder(
-      listenable: _controller,
+      listenable:
+          Listenable.merge([_controller, _controller.currentPageNotifier]),
       builder: (context, _) {
         final uq = _controller.userQuestions[_controller.currentPage];
         return IconButton(
