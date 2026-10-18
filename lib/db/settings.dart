@@ -1,4 +1,5 @@
 import 'package:shared_preferences/shared_preferences.dart';
+import '../models/question_section_config.dart';
 
 // 存储数据
 Future<void> initSettings() async {
@@ -66,8 +67,9 @@ Future<void> initSettings() async {
     await prefs.setBool('autoResume', false); // 启动自动继续上次进度
   }
   if (!prefs.containsKey('sync_notes_to_ykb')) {
-    await prefs.setBool('sync_notes_to_ykb', false); // 同步笔记到医考帮
+    await prefs.setBool('sync_notes_to_ykb', true); // 同步笔记到医考帮默认开启
   }
+  await QuestionSectionConfig.loadConfig();
 }
 
 Future<void> clearUserInfo() async {

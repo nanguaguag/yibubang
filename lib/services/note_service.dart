@@ -24,7 +24,7 @@ class NoteService {
   /// 判断用户是否开启了「同步笔记到医考帮」
   Future<bool> isSyncEnabled() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool(keySyncNotesToYkb) ?? false;
+    return prefs.getBool(keySyncNotesToYkb) ?? true;
   }
 
   /// 获取指定题目的所有本地笔记
@@ -54,6 +54,7 @@ class NoteService {
       noteToSave.toMap(),
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
+    debugPrint('[NoteService] saveNote locally: ${note.id}, syncEnabled: $syncEnabled');
 
     if (syncEnabled) {
       await _enqueue(NoteSyncQueueItem(
@@ -79,6 +80,7 @@ class NoteService {
       where: 'id = ?',
       whereArgs: [note.id],
     );
+    debugPrint('[NoteService] deleteNote locally: ${note.id}, remoteId: ${note.remoteId}');
 
     if (syncEnabled && note.remoteId != null && note.remoteId!.isNotEmpty) {
       await _enqueue(NoteSyncQueueItem(
@@ -102,6 +104,10 @@ class NoteService {
     try {
       final prefs = await SharedPreferences.getInstance();
       final loggedIn = prefs.getBool('loggedin') ?? false;
+      if (!loggedIn) {
+        debugPrint('[NoteService] uploadImage skipped: user not logged in');
+        return null;
+      }
       final token = prefs.getString('token') ?? '';
       final secret = prefs.getString('secret') ?? '';
       final userId = prefs.getString('user_id') ?? '';
@@ -127,7 +133,7 @@ class NoteService {
         'timestamp': timestamp,
         'signature': getSignature(timestamp, fields, loggedIn),
         'client-type': 'android',
-        'app-version': '2630',
+        'app-version': '2801',
         'uuid': imei,
         'channel': channelDefault,
         'app-type': 'ykb',
@@ -136,10 +142,14 @@ class NoteService {
       request.fields.addAll(fields);
       request.files.add(await http.MultipartFile.fromPath('file', file.path));
 
+      debugPrint('[NoteService] uploadImage start for ${file.path}');
       final streamedResponse = await request.send();
       final response = await http.Response.fromStream(streamedResponse);
-      final data = jsonDecode(utf8.decode(response.bodyBytes));
-      if (data['code'] == '200' && data['data'] != null) {
+      final bodyStr = utf8.decode(response.bodyBytes);
+      debugPrint('[NoteService] uploadImage response (${response.statusCode}): $bodyStr');
+
+      final data = jsonDecode(bodyStr);
+      if ((data['code'] == '200' || data['code'] == 200) && data['data'] != null) {
         final bImg = data['data']['b_img']?.toString() ?? '';
         final sImg = data['data']['s_img']?.toString() ?? bImg;
         return NoteImage(
@@ -147,9 +157,11 @@ class NoteService {
           sImg: sImg,
           localPath: file.path,
         );
+      } else {
+        debugPrint('[NoteService] uploadImage failed with code: ${data['code']}, msg: ${data['message']}');
       }
-    } catch (e) {
-      debugPrint('[NoteService] uploadImage error: $e');
+    } catch (e, stack) {
+      debugPrint('[NoteService] uploadImage exception: $e\n$stack');
     }
     return null;
   }
@@ -245,12 +257,20 @@ class NoteService {
             // 本地已存在，如果内容有差异且本地没有未上传改动，覆盖为云端内容
             if (matchedLocal.syncStatus == 0) {
               final contentDiff = matchedLocal.content != rContent;
-              final imageDiff = matchedLocal.images.length != rImages.length;
-              if (contentDiff || imageDiff || matchedLocal.remoteId == null) {
+              // 云端只有第1张图片，保留本地后续图片
+              final List<NoteImage> mergedImages = [
+                if (rImages.isNotEmpty)
+                  rImages.first
+                else if (matchedLocal.images.isNotEmpty)
+                  matchedLocal.images.first,
+                if (matchedLocal.images.length > 1)
+                  ...matchedLocal.images.sublist(1),
+              ];
+              if (contentDiff || matchedLocal.remoteId == null) {
                 final updated = matchedLocal.copyWith(
                   remoteId: rId,
                   content: rContent,
-                  images: rImages,
+                  images: mergedImages,
                   updatedAt: rTimestamp,
                   syncStatus: 0,
                 );
@@ -291,6 +311,7 @@ class NoteService {
       final prefs = await SharedPreferences.getInstance();
       final loggedIn = prefs.getBool('loggedin') ?? false;
       if (!loggedIn) {
+        debugPrint('[NoteService] processQueue skipped: not logged in');
         _isProcessingQueue = false;
         return;
       }
@@ -306,6 +327,7 @@ class NoteService {
         _isProcessingQueue = false;
         return;
       }
+      debugPrint('[NoteService] processQueue started, pending items: ${queueRows.length}');
 
       for (final row in queueRows) {
         final item = NoteSyncQueueItem.fromMap(row);
@@ -319,8 +341,8 @@ class NoteService {
           } else {
             success = true;
           }
-        } catch (e) {
-          debugPrint('[NoteService] process queue item error: $e');
+        } catch (e, stack) {
+          debugPrint('[NoteService] process queue item error: $e\n$stack');
           await db.update(
             'NoteSyncQueue',
             {
@@ -335,12 +357,14 @@ class NoteService {
         }
 
         if (success) {
+          debugPrint('[NoteService] queue item succeeded: ${item.id}');
           await db.delete(
             'NoteSyncQueue',
             where: 'id = ?',
             whereArgs: [item.id],
           );
         } else {
+          debugPrint('[NoteService] queue item failed: ${item.id}');
           await db.update(
             'NoteSyncQueue',
             {
@@ -383,13 +407,16 @@ class NoteService {
         ? fallbackQuestion!.appId!
         : '1';
 
-    // 检查并上传尚未上传的本地图片
-    final List<NoteImage> updatedImages = [];
-    bool imagesChanged = false;
-    for (final img in note.images) {
-      if (img.bImg.isEmpty && img.localPath != null && img.localPath!.isNotEmpty) {
-        final file = File(img.localPath!);
+    // 云端优先保存第一张图片：检查第一张图片是否需要上传
+    final List<NoteImage> updatedImages = List.from(note.images);
+    if (updatedImages.isNotEmpty) {
+      final firstImg = updatedImages.first;
+      if (firstImg.bImg.isEmpty &&
+          firstImg.localPath != null &&
+          firstImg.localPath!.isNotEmpty) {
+        final file = File(firstImg.localPath!);
         if (await file.exists()) {
+          debugPrint('[NoteService] uploading first image to cloud: ${file.path}');
           final uploaded = await uploadImage(
             file,
             subjectId: subjectId,
@@ -397,23 +424,17 @@ class NoteService {
             appId: appId,
           );
           if (uploaded != null) {
-            updatedImages.add(uploaded);
-            imagesChanged = true;
-            continue;
+            updatedImages[0] = uploaded;
+            note = note.copyWith(images: updatedImages);
+            await db.update(
+              'Notes',
+              note.toMap(),
+              where: 'id = ?',
+              whereArgs: [note.id],
+            );
           }
         }
       }
-      updatedImages.add(img);
-    }
-
-    if (imagesChanged) {
-      note = note.copyWith(images: updatedImages);
-      await db.update(
-        'Notes',
-        note.toMap(),
-        where: 'id = ?',
-        whereArgs: [note.id],
-      );
     }
 
     // 调用 pushNote
@@ -430,12 +451,22 @@ class NoteService {
     if (note.remoteId != null && note.remoteId!.isNotEmpty) {
       params['id'] = note.remoteId;
     }
+    if (note.images.isNotEmpty) {
+      final firstImg = note.images.first;
+      if (firstImg.bImg.isNotEmpty) {
+        params['b_img'] = firstImg.bImg;
+        params['s_img'] = firstImg.sImg.isNotEmpty ? firstImg.sImg : firstImg.bImg;
+        params['img'] = jsonEncode([firstImg.toJson()]);
+      }
+    }
 
+    debugPrint('[NoteService] calling pushNote with params: $params');
     final resp = await basicReq(
       '/allQuestion/Note/pushNote',
       params,
       method: 'POST',
     );
+    debugPrint('[NoteService] pushNote result: $resp');
 
     if (resp['code'] == '200' || resp['code'] == 200) {
       String? remoteId = note.remoteId;

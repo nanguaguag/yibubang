@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../models/question.dart';
+import '../../models/question_section_config.dart';
 import '../comment_page.dart';
 import 'question_detail_controller.dart';
 import 'question_header_view.dart';
@@ -36,78 +37,133 @@ class QuestionExplainView extends StatelessWidget {
 
     return Padding(
       padding: const EdgeInsets.all(16.0),
-      child: ListView(
-        controller: scrollController,
-        shrinkWrap: true,
-        physics: const ClampingScrollPhysics(),
-        children: [
-          QuestionHeaderView(
-            question: question,
-            index: index,
-            totalCount: controller.questions.length,
-          ),
-          const SizedBox(height: 12),
-          QuestionOptionsView(
-            question: question,
-            userQuestion: userQuestion,
-            index: index,
-            controller: controller,
-            onStateChanged: onStateChanged,
-          ),
-          const SizedBox(height: 10),
-          Row(
+      child: ValueListenableBuilder<List<QuestionSectionItem>>(
+        valueListenable: QuestionSectionConfig.configNotifier,
+        builder: (context, sections, _) {
+          final List<Widget> sectionWidgets = [];
+
+          for (final section in sections) {
+            if (!section.enabled) continue;
+            switch (section.id) {
+              case 'answer_stat':
+                sectionWidgets.add(
+                  Column(
+                    key: const ValueKey('section_answer_stat'),
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Text(
+                            '答案：正确答案 $answer, 你的答案 ',
+                            style: const TextStyle(fontSize: 14),
+                          ),
+                          Text(
+                            userAnswer,
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: userQuestion.status == 1
+                                  ? Colors.green
+                                  : Colors.red,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      QuestionStatView(
+                        question: question,
+                        userQuestion: userQuestion,
+                      ),
+                      if (question.source != null &&
+                          question.source!.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          child: Text(
+                            '来源：${question.source}',
+                            style: const TextStyle(fontSize: 14),
+                          ),
+                        ),
+                      const SizedBox(height: 10),
+                      const Divider(color: Color(0x22888888)),
+                    ],
+                  ),
+                );
+                break;
+              case 'restore':
+                if (question.restore != null && question.restore!.isNotEmpty) {
+                  sectionWidgets.add(
+                    _buildAnalysisSection(
+                      context,
+                      '考点还原',
+                      Icons.location_on_outlined,
+                      question.restore!,
+                    ),
+                  );
+                }
+                break;
+              case 'explain':
+                if (question.explain != null && question.explain!.isNotEmpty) {
+                  sectionWidgets.add(
+                    _buildAnalysisSection(
+                      context,
+                      '答案解析',
+                      Icons.lightbulb_outlined,
+                      question.explain!,
+                    ),
+                  );
+                }
+                break;
+              case 'label':
+                sectionWidgets.add(
+                  QuestionLabelView(
+                    key: const ValueKey('section_label'),
+                    question: question,
+                  ),
+                );
+                break;
+              case 'note':
+                sectionWidgets.add(
+                  QuestionNoteView(
+                    key: const ValueKey('section_note'),
+                    question: question,
+                  ),
+                );
+                break;
+              case 'comment':
+                sectionWidgets.add(
+                  CommentPage(
+                    key: ValueKey('comment_$index'),
+                    question: question,
+                    scrollController: scrollController,
+                  ),
+                );
+                break;
+            }
+          }
+
+          return ListView(
+            controller: scrollController,
+            shrinkWrap: true,
+            physics: const ClampingScrollPhysics(),
             children: [
-              Text(
-                '答案：正确答案 $answer, 你的答案 ',
-                style: const TextStyle(fontSize: 14),
+              QuestionHeaderView(
+                question: question,
+                index: index,
+                totalCount: controller.questions.length,
               ),
-              Text(
-                userAnswer,
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: userQuestion.status == 1 ? Colors.green : Colors.red,
-                ),
+              const SizedBox(height: 12),
+              QuestionOptionsView(
+                question: question,
+                userQuestion: userQuestion,
+                index: index,
+                controller: controller,
+                onStateChanged: onStateChanged,
               ),
+              const SizedBox(height: 10),
+              ...sectionWidgets,
             ],
-          ),
-          const SizedBox(height: 6),
-          QuestionStatView(
-            question: question,
-            userQuestion: userQuestion,
-          ),
-          if (question.source != null && question.source!.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Text(
-                '来源：${question.source}',
-                style: const TextStyle(fontSize: 14),
-              ),
-            ),
-          const SizedBox(height: 10),
-          const Divider(color: Color(0x22888888)),
-          if (question.restore != null && question.restore!.isNotEmpty)
-            _buildAnalysisSection(
-              context,
-              '考点还原',
-              Icons.location_on_outlined,
-              question.restore!,
-            ),
-          if (question.explain != null && question.explain!.isNotEmpty)
-            _buildAnalysisSection(
-              context,
-              '答案解析',
-              Icons.lightbulb_outlined,
-              question.explain!,
-            ),
-          QuestionLabelView(question: question),
-          QuestionNoteView(question: question),
-          CommentPage(
-            key: ValueKey('comment_$index'),
-            question: question,
-            scrollController: scrollController,
-          ),
-        ],
+          );
+        },
       ),
     );
   }

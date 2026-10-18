@@ -472,7 +472,9 @@ class QuestionNoteViewState extends State<QuestionNoteView> {
                         ),
                         const SizedBox(width: 8),
                         // 同步状态图标
-                        if (note.syncStatus == 0)
+                        if (note.remoteId != null &&
+                            note.remoteId!.isNotEmpty &&
+                            note.syncStatus == 0)
                           const Tooltip(
                             message: '已同步到医考帮',
                             child: Icon(Icons.cloud_done_outlined,
@@ -480,9 +482,15 @@ class QuestionNoteViewState extends State<QuestionNoteView> {
                           )
                         else if (note.syncStatus == 1)
                           const Tooltip(
-                            message: '等待同步',
+                            message: '等待同步到医考帮',
                             child: Icon(Icons.cloud_upload_outlined,
                                 size: 14, color: Colors.orange),
+                          )
+                        else
+                          const Tooltip(
+                            message: '未同步到医考帮 (仅本地)',
+                            child: Icon(Icons.cloud_off_outlined,
+                                size: 14, color: Colors.grey),
                           ),
                         const Spacer(),
                         IconButton(

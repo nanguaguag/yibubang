@@ -8,6 +8,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../common/adaptive_route.dart';
 import '../common/app_strings.dart';
 import '../db/data_transfer.dart';
 import '../db/record_sync_service.dart';
@@ -18,6 +19,7 @@ import '../widgets/common/info_card.dart';
 import '../widgets/common/styled_tile.dart';
 import '../widgets/theme_controller.dart';
 import 'cloud_sync_page.dart';
+import 'question_sections_page.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -34,7 +36,7 @@ class _SettingsPageState extends State<SettingsPage> {
   bool acceptUpdate = true;
   bool syncQuestionBank = false;
   bool autoResume = false;
-  bool syncNotesToYkb = false;
+  bool syncNotesToYkb = true;
   int mode = 0; // 默认刷题模式，对应 AppStrings.modesList
   double fontScale = 1.0; // 刷题字号缩放比例
 
@@ -60,7 +62,7 @@ class _SettingsPageState extends State<SettingsPage> {
     acceptUpdate = _prefs.getBool(keyAcceptUpdate) ?? true;
     syncQuestionBank = _prefs.getBool(keySyncQuestionBank) ?? false;
     autoResume = _prefs.getBool(keyAutoResume) ?? false;
-    syncNotesToYkb = _prefs.getBool(keySyncNotesToYkb) ?? false;
+    syncNotesToYkb = _prefs.getBool(keySyncNotesToYkb) ?? true;
     mode = _prefs.getInt('mode') ?? 0;
     fontScale = _normalizeFontScale(_prefs.getDouble('fontScale') ?? 1.0);
     await CloudSyncService.instance.init();
@@ -375,6 +377,25 @@ class _SettingsPageState extends State<SettingsPage> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8),
             child: _buildThemeSelector(),
+          ),
+          const SizedBox(height: 10),
+          InfoCard(
+            children: [
+              IconTile(
+                icon: Icons.view_quilt_outlined,
+                label: '题目页板块设置',
+                value: '排序与显隐',
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    adaptivePageRoute(
+                      builder: (context) => const QuestionSectionsPage(),
+                    ),
+                  );
+                },
+              ),
+            ],
           ),
           const SizedBox(height: 14),
           const _SectionTitle(title: '通用'),

@@ -14,13 +14,13 @@ class FullScreenImageView extends StatefulWidget {
   final int initialIndex;
 
   const FullScreenImageView({
-    Key? key,
+    super.key,
     required this.imageUrls,
     required this.initialIndex,
-  }) : super(key: key);
+  });
 
   @override
-  _FullScreenImageViewState createState() => _FullScreenImageViewState();
+  State<FullScreenImageView> createState() => _FullScreenImageViewState();
 }
 
 class _FullScreenImageViewState extends State<FullScreenImageView> {
@@ -34,15 +34,40 @@ class _FullScreenImageViewState extends State<FullScreenImageView> {
     _pageController = PageController(initialPage: _currentIndex);
   }
 
+  ImageProvider _getImageProvider(String url) {
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      return AppNetworkImage.provider(url);
+    }
+    final file = File(url);
+    if (file.existsSync()) {
+      return FileImage(file);
+    }
+    return AppNetworkImage.provider(url);
+  }
+
   Future<void> _saveImage(String url) async {
-    // 下载图片
-    final response = await http.get(Uri.parse(url));
-    if (response.statusCode != 200) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('下载失败')),
-      );
-      return;
+    // 读取或下载图片
+    final List<int> bytes;
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      final response = await http.get(Uri.parse(url));
+      if (response.statusCode != 200) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('下载失败')),
+        );
+        return;
+      }
+      bytes = response.bodyBytes;
+    } else {
+      final file = File(url);
+      if (!file.existsSync()) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('文件不存在')),
+        );
+        return;
+      }
+      bytes = await file.readAsBytes();
     }
 
     // 如果是移动端请求权限
@@ -50,10 +75,10 @@ class _FullScreenImageViewState extends State<FullScreenImageView> {
       if (!await Permission.photos.request().isGranted) return;
       // 保存到相册
       try {
-        await FlutterImageGallerySaver.saveImage(response.bodyBytes);
+        await FlutterImageGallerySaver.saveImage(Uint8List.fromList(bytes));
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('成功保存到相册')),
+          const SnackBar(content: Text('成功保存到相册')),
         );
       } catch (e) {
         if (!mounted) return;
@@ -66,7 +91,7 @@ class _FullScreenImageViewState extends State<FullScreenImageView> {
       final dir = await getApplicationDocumentsDirectory();
       final filePath = '${dir.path}/photo_$_currentIndex.jpg';
       final file = File(filePath);
-      await file.writeAsBytes(response.bodyBytes);
+      await file.writeAsBytes(bytes);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('已保存到 $filePath')),
@@ -135,7 +160,7 @@ class _FullScreenImageViewState extends State<FullScreenImageView> {
           onPageChanged: (idx) => setState(() => _currentIndex = idx),
           builder: (context, index) {
             return PhotoViewGalleryPageOptions(
-              imageProvider: AppNetworkImage.provider(widget.imageUrls[index]),
+              imageProvider: _getImageProvider(widget.imageUrls[index]),
               minScale: PhotoViewComputedScale.contained,
               maxScale: PhotoViewComputedScale.covered * 2,
               errorBuilder: (context, error, stackTrace) {
