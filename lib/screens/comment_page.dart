@@ -231,14 +231,117 @@ class _CommentPageState extends State<CommentPage>
 }
 
 // 单个评论项
-class CommentItem extends StatelessWidget {
+class CommentItem extends StatefulWidget {
   final Comment comment;
   final Question question;
 
-  CommentItem({
+  const CommentItem({
+    super.key,
     required this.comment,
     required this.question,
   });
+
+  @override
+  State<CommentItem> createState() => _CommentItemState();
+}
+
+class _CommentItemState extends State<CommentItem> {
+  late int _praiseCount;
+  late int _opposeCount;
+  bool _isPraised = false;
+  bool _isPraising = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _praiseCount = int.tryParse(widget.comment.praiseNum) ?? 0;
+    _opposeCount = int.tryParse(widget.comment.opposeNum) ?? 0;
+  }
+
+  @override
+  void didUpdateWidget(covariant CommentItem oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.comment.id != widget.comment.id ||
+        oldWidget.comment.praiseNum != widget.comment.praiseNum) {
+      _praiseCount = int.tryParse(widget.comment.praiseNum) ?? 0;
+      _opposeCount = int.tryParse(widget.comment.opposeNum) ?? 0;
+      _isPraised = false;
+    }
+  }
+
+  Future<void> _handlePraise() async {
+    if (_isPraising) return;
+
+    final prefs = await SharedPreferences.getInstance();
+    final loggedIn = prefs.getBool('loggedin') ?? false;
+    if (!loggedIn) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请先登录后再点赞')),
+      );
+      return;
+    }
+
+    if (_isPraised) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('您已经点赞过该评论了')),
+      );
+      return;
+    }
+
+    setState(() => _isPraising = true);
+    try {
+      final identityId = widget.question.identityId?.isNotEmpty == true
+          ? widget.question.identityId!
+          : (prefs.getString('identityId') ?? '');
+      final subjectId = widget.question.chapterParentId ?? '';
+      final appId = widget.question.appId?.isNotEmpty == true
+          ? widget.question.appId!
+          : '1';
+
+      final resp = await basicReq(
+        '/Comment/Main/praise',
+        {
+          'id': widget.comment.id,
+          'obj_id': widget.question.id,
+          'type': '1',
+          'comment_type': '2',
+          'module_type': '1',
+          'subject_id': subjectId,
+          'identity_id': identityId,
+          'app_id': appId,
+          'is_vip': '0',
+          'is_svip': '0',
+        },
+      );
+
+      if (!mounted) return;
+      if (resp['code'] == '200' || resp['code'] == 200) {
+        setState(() {
+          _isPraised = true;
+          _praiseCount += 1;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(resp['message']?.toString() ?? '点赞成功！')),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(resp['message']?.toString() ?? '点赞失败')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('点赞出错: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isPraising = false);
+      }
+    }
+  }
 
   Widget _gotoReplyBtn(
     Comment comment,
@@ -269,67 +372,65 @@ class CommentItem extends StatelessWidget {
     Question question,
     BuildContext context,
   ) {
-    if (int.parse(comment.praiseNum) == int.parse(comment.opposeNum)) {
-      return Row(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          _gotoReplyBtn(comment, question, context),
-          Icon(Icons.thumb_up_outlined, size: 16, color: Colors.grey),
-          SizedBox(width: 4.0),
-          Text(
-            comment.praiseNum,
-            style: TextStyle(color: Colors.grey),
+    final bool hasPraised = _isPraised || _praiseCount > _opposeCount;
+    final Color praiseColor = hasPraised ? Colors.green : Colors.grey;
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.end,
+      children: [
+        _gotoReplyBtn(comment, question, context),
+        InkWell(
+          onTap: _isPraising ? null : _handlePraise,
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6.0, vertical: 4.0),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  hasPraised ? Icons.thumb_up : Icons.thumb_up_outlined,
+                  size: 16,
+                  color: praiseColor,
+                ),
+                const SizedBox(width: 4.0),
+                Text(
+                  '$_praiseCount',
+                  style: TextStyle(
+                    color: praiseColor,
+                    fontWeight: hasPraised ? FontWeight.bold : FontWeight.normal,
+                  ),
+                ),
+              ],
+            ),
           ),
-          SizedBox(width: 8.0),
-          Icon(Icons.thumb_down_outlined, size: 16, color: Colors.grey),
-          SizedBox(width: 4.0),
-          Text(
-            comment.opposeNum,
-            style: TextStyle(color: Colors.grey),
+        ),
+        const SizedBox(width: 8.0),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6.0, vertical: 4.0),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                _opposeCount > _praiseCount
+                    ? Icons.thumb_down
+                    : Icons.thumb_down_outlined,
+                size: 16,
+                color: _opposeCount > _praiseCount ? Colors.red : Colors.grey,
+              ),
+              const SizedBox(width: 4.0),
+              Text(
+                '$_opposeCount',
+                style: TextStyle(
+                  color: _opposeCount > _praiseCount
+                      ? Colors.redAccent
+                      : Colors.grey,
+                ),
+              ),
+            ],
           ),
-        ],
-      );
-    } else if (int.parse(comment.praiseNum) > int.parse(comment.opposeNum)) {
-      return Row(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          _gotoReplyBtn(comment, question, context),
-          Icon(Icons.thumb_up, size: 16, color: Colors.green),
-          SizedBox(width: 4.0),
-          Text(
-            comment.praiseNum,
-            style: TextStyle(color: Colors.green),
-          ),
-          SizedBox(width: 8.0),
-          Icon(Icons.thumb_down_outlined, size: 16, color: Colors.grey),
-          SizedBox(width: 4.0),
-          Text(
-            comment.opposeNum,
-            style: TextStyle(color: Colors.grey),
-          ),
-        ],
-      );
-    } else {
-      return Row(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          _gotoReplyBtn(comment, question, context),
-          Icon(Icons.thumb_up_outlined, size: 16, color: Colors.grey),
-          SizedBox(width: 4.0),
-          Text(
-            comment.praiseNum,
-            style: TextStyle(color: Colors.grey),
-          ),
-          SizedBox(width: 8.0),
-          Icon(Icons.thumb_down, size: 16, color: Colors.red),
-          SizedBox(width: 4.0),
-          Text(
-            comment.opposeNum,
-            style: TextStyle(color: Colors.redAccent),
-          ),
-        ],
-      );
-    }
+        ),
+      ],
+    );
   }
 
   void _showFullScreenImage(
@@ -465,7 +566,7 @@ class CommentItem extends StatelessWidget {
             ),
           ),
         // 点赞数显示
-        _commentPraise(comment, question, context),
+        _commentPraise(comment, widget.question, context),
       ],
     );
   }
@@ -477,7 +578,7 @@ class CommentItem extends StatelessWidget {
         return Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            SizedBox(height: 20),
+            const SizedBox(height: 20),
             ListTile(
               leading: const Icon(Icons.copy),
               title: const Text('复制评论'),
@@ -491,7 +592,7 @@ class CommentItem extends StatelessWidget {
                 Navigator.pop(ctx);
               },
             ),
-            SizedBox(height: 20),
+            const SizedBox(height: 20),
           ],
         );
       },
@@ -504,13 +605,13 @@ class CommentItem extends StatelessWidget {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
       ),
-      margin: EdgeInsets.all(8.0),
+      margin: const EdgeInsets.all(8.0),
       child: InkWell(
-        onTap: () => _showOptions(context, comment),
+        onTap: () => _showOptions(context, widget.comment),
         borderRadius: BorderRadius.circular(16),
         child: Padding(
-          padding: EdgeInsets.all(8.0),
-          child: _commentContent(comment, context),
+          padding: const EdgeInsets.all(8.0),
+          child: _commentContent(widget.comment, context),
         ),
       ),
     );
