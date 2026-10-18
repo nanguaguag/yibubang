@@ -8,8 +8,10 @@ import '../widgets/image_view.dart';
 import '../widgets/common/app_network_image.dart';
 import '../models/question.dart';
 import '../models/comment.dart';
+import '../models/note.dart';
 import '../common/request.dart';
 import '../db/settings.dart';
+import '../services/note_service.dart';
 
 import 'my_page.dart';
 import 'comment_reply_page.dart';
@@ -590,6 +592,38 @@ class _CommentItemState extends State<CommentItem> {
                   const SnackBar(content: Text('复制成功！')),
                 );
                 Navigator.pop(ctx);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.bookmark_add_outlined),
+              title: const Text('保存为笔记'),
+              onTap: () async {
+                Navigator.pop(ctx);
+                final now = DateTime.now().millisecondsSinceEpoch;
+                final List<NoteImage> images = [];
+                if (comment.imgWatermark.isNotEmpty) {
+                  images.add(NoteImage(
+                    bImg: comment.imgWatermark,
+                    sImg: comment.imgWatermark,
+                  ));
+                }
+                final newNote = QuestionNote(
+                  id: 'local_${now}_${widget.question.id}',
+                  questionId: widget.question.id,
+                  content: comment.content,
+                  images: images,
+                  timestamp: now,
+                  updatedAt: now,
+                );
+                await NoteService.instance.saveNote(
+                  newNote,
+                  question: widget.question,
+                );
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('已成功将评论保存为笔记！')),
+                  );
+                }
               },
             ),
             const SizedBox(height: 20),
