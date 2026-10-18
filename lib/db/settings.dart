@@ -76,6 +76,9 @@ Future<void> initSettings() async {
     final legacy = prefs.getBool('questionUpload') ?? prefs.getBool('sync_question_bank') ?? true;
     await prefs.setBool('sync_answers_to_ykb', legacy); // 做题同步到医考帮默认开启
   }
+  if (!prefs.containsKey('sync_redo_to_ykb')) {
+    await prefs.setBool('sync_redo_to_ykb', true); // 章节重做同步到医考帮默认开启
+  }
   await QuestionSectionConfig.loadConfig();
 }
 

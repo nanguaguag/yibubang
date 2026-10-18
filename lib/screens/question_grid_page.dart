@@ -9,6 +9,7 @@ import '../models/chapter.dart';
 import '../models/question.dart';
 import '../models/answer_statistics.dart';
 import '../services/cloud_sync_service.dart';
+import '../services/ykb_sync_service.dart';
 
 // Question Status: 题目状态
 // - 0: 未做
@@ -291,12 +292,20 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
                   ),
                 );
                 _refreshPage();
+                // 同步重做章节到医考帮
+                final String? appId = questions.isNotEmpty
+                    ? (questions.first.nativeAppId ?? questions.first.appId)
+                    : null;
+                unawaited(YkbSyncService.instance.syncRedoChapter(
+                  chapter: widget.chapter,
+                  appId: appId,
+                ));
                 if (CloudSyncService.instance.isConfigured &&
                     CloudSyncService.instance.autoSync) {
                   unawaited(CloudSyncService.instance.sync());
                 }
               },
-              child: Text("确认"),
+              child: const Text("确认"),
             ),
           ],
         );
@@ -330,14 +339,16 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: Text("重做全部错题？"),
-          content: Text("您确定要重做吗？该操作不可撤销！"),
+          title: const Text("重做全部错题？"),
+          content: const Text(
+            "您确定要重做吗？该操作不可撤销！\n\n注：医考帮无单重做错题接口，“仅重做错题”不会同步到医考帮云端。",
+          ),
           actions: [
             TextButton(
               onPressed: () {
                 Navigator.of(context).pop(); // 关闭对话框
               },
-              child: Text("取消"),
+              child: const Text("取消"),
             ),
             TextButton(
               onPressed: () async {
