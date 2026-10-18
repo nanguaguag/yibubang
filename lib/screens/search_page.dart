@@ -174,6 +174,24 @@ class _QuestionSearchPageState extends State<QuestionSearchPage> {
   }
 
   Future<void> _clearHistory() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('清空搜索历史'),
+        content: const Text('确定要清空所有搜索历史记录吗？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('清空'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
     final history = await _repository.clearHistory();
     if (mounted) setState(() => _history = history);
   }

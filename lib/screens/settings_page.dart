@@ -240,6 +240,25 @@ class _SettingsPageState extends State<SettingsPage> {
   // 清空搜索历史 / 清空全部做题记录
   // ------------------------------------------------------------------
   Future<void> _clearSearchHistory() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('清空搜索历史'),
+        content: const Text('确定要清空所有搜索历史记录吗？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('清空'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
     await QuestionSearchRepository().clearHistory();
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
