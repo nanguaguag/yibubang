@@ -72,6 +72,10 @@ Future<void> initSettings() async {
   if (!prefs.containsKey('sync_cut_to_ykb')) {
     await prefs.setBool('sync_cut_to_ykb', true); // 同步斩题到医考帮默认开启
   }
+  if (!prefs.containsKey('sync_answers_to_ykb')) {
+    final legacy = prefs.getBool('questionUpload') ?? prefs.getBool('sync_question_bank') ?? true;
+    await prefs.setBool('sync_answers_to_ykb', legacy); // 做题同步到医考帮默认开启
+  }
   await QuestionSectionConfig.loadConfig();
 }
 

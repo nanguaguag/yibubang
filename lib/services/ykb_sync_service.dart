@@ -143,6 +143,9 @@ class YkbSyncService {
     required Question question,
     required UserQuestion userQuestion,
     int durationMs = 0,
+    String? subjectId,
+    String? chapterId,
+    String? identityId,
   }) async {
     final enabled = await isSyncAnswersEnabled();
     if (!enabled) return;
@@ -151,14 +154,19 @@ class YkbSyncService {
     if (userQuestion.status != 1 && userQuestion.status != 2) return;
 
     final prefs = await SharedPreferences.getInstance();
-    final subjectId = question.chapterParentId?.isNotEmpty == true
-        ? question.chapterParentId!
-        : '';
-    final chapterId =
-        question.chapterId?.isNotEmpty == true ? question.chapterId! : '';
-    final identityId = question.identityId?.isNotEmpty == true
-        ? question.identityId!
-        : (prefs.getString('identityId') ?? '');
+    final resolvedSubjectId = (subjectId != null && subjectId.isNotEmpty)
+        ? subjectId
+        : (question.chapterParentId?.isNotEmpty == true
+            ? question.chapterParentId!
+            : '');
+    final resolvedChapterId = (chapterId != null && chapterId.isNotEmpty)
+        ? chapterId
+        : (question.chapterId?.isNotEmpty == true ? question.chapterId! : '');
+    final resolvedIdentityId = (identityId != null && identityId.isNotEmpty)
+        ? identityId
+        : (question.identityId?.isNotEmpty == true
+            ? question.identityId!
+            : (prefs.getString('identityId') ?? ''));
     final appId = question.nativeAppId?.isNotEmpty == true
         ? question.nativeAppId!
         : (question.appId ?? '12');
@@ -169,24 +177,24 @@ class YkbSyncService {
 
     final answerItem = {
       'paper_id': '0',
-      'identity_id': identityId,
-      'chapter_id': chapterId,
+      'identity_id': resolvedIdentityId,
+      'chapter_id': resolvedChapterId,
       'collection_id': '',
       'category_id': '',
-      'chapter_parent_id': subjectId,
+      'chapter_parent_id': resolvedSubjectId,
       'answer': answerStr,
       'question_id': int.tryParse(question.id) ?? question.id,
       'is_right': isRight,
       'app_id': appId,
       'duration': durationSec,
-      'subject_id': subjectId,
+      'subject_id': resolvedSubjectId,
     };
 
     final payload = <String, dynamic>{
-      'subject_id': subjectId,
+      'subject_id': resolvedSubjectId,
       'is_svip': '0',
       'module_type': '1',
-      'identity_id': identityId,
+      'identity_id': resolvedIdentityId,
       'is_vip': '0',
       'question_category_id': '2',
       'app_id': appId,

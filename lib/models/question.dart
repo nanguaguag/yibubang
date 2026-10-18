@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../db/database_helper.dart';
 import '../db/question_bank_manager.dart';
+import '../services/ykb_sync_service.dart';
 import 'chapter.dart';
 
 class UserQuestion {
@@ -625,4 +627,28 @@ Future<void> updateQuestion(
   );
   // 一次性提交
   await batch.commit(noResult: true);
+
+  if (uq.status == 1 || uq.status == 2) {
+    String? subjectId = q.chapterParentId;
+    String? chapterId = q.chapterId;
+    String? identityId = q.identityId;
+    if ((subjectId == null || subjectId.isEmpty) && iqRows.isNotEmpty) {
+      subjectId = iqRows.first['subject_id'] as String?;
+    }
+    if ((chapterId == null || chapterId.isEmpty) && iqRows.isNotEmpty) {
+      chapterId = iqRows.first['chapter_id'] as String?;
+    }
+    if ((identityId == null || identityId.isEmpty) && iqRows.isNotEmpty) {
+      identityId = iqRows.first['identity_id'] as String?;
+    }
+
+    unawaited(YkbSyncService.instance.syncAnswer(
+      question: q,
+      userQuestion: uq,
+      durationMs: durationMs,
+      subjectId: subjectId,
+      chapterId: chapterId,
+      identityId: identityId,
+    ));
+  }
 }
