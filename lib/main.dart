@@ -9,6 +9,8 @@ import 'common/app_strings.dart';
 import 'db/settings.dart';
 import 'repositories/question_bank_repository.dart';
 import 'services/cloud_sync_service.dart';
+import 'services/note_service.dart';
+import 'services/ykb_sync_service.dart';
 import 'widgets/theme_controller.dart';
 import 'package:flutter/foundation.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -59,6 +61,10 @@ Future<void> _initializeQuestionBank() async {
     if (syncService.isConfigured && syncService.autoSync) {
       unawaited(syncService.sync());
     }
+
+    // 后台静默处理医考帮离线同步队列
+    unawaited(YkbSyncService.instance.processQueue());
+    unawaited(NoteService.instance.processQueue());
   } catch (error) {
     // 目录迁移失败时仍启动应用，让用户可以通过题库管理或备份恢复继续处理。
     debugPrint('题库目录初始化失败：$error');

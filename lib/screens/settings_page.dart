@@ -15,6 +15,7 @@ import '../db/record_sync_service.dart';
 import '../repositories/question_search_repository.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/note_service.dart';
+import '../services/ykb_sync_service.dart';
 import '../widgets/common/info_card.dart';
 import '../widgets/common/styled_tile.dart';
 import '../widgets/theme_controller.dart';
@@ -34,16 +35,23 @@ class _SettingsPageState extends State<SettingsPage> {
 
   // 通用设置
   bool acceptUpdate = true;
-  bool syncQuestionBank = false;
   bool autoResume = false;
-  bool syncNotesToYkb = true;
   int mode = 0; // 默认刷题模式，对应 AppStrings.modesList
   double fontScale = 1.0; // 刷题字号缩放比例
+
+  // 医考帮云端同步设置
+  bool syncAnswersToYkb = true;
+  bool syncCutToYkb = true;
+  bool syncNotesToYkb = true;
+  bool syncRedoToYkb = true;
 
   static const String keyAcceptUpdate = 'accept_update';
   static const String keySyncQuestionBank = 'sync_question_bank';
   static const String keyAutoResume = 'autoResume';
+  static const String keySyncAnswersToYkb = 'sync_answers_to_ykb';
+  static const String keySyncCutToYkb = 'sync_cut_to_ykb';
   static const String keySyncNotesToYkb = 'sync_notes_to_ykb';
+  static const String keySyncRedoToYkb = 'sync_redo_to_ykb';
 
   static const List<double> _fontScales = [0.85, 1.0, 1.15, 1.3];
   static const List<String> _fontScaleLabels = ['小', '标准', '大', '特大'];
@@ -60,9 +68,14 @@ class _SettingsPageState extends State<SettingsPage> {
     _prefs = await SharedPreferences.getInstance();
 
     acceptUpdate = _prefs.getBool(keyAcceptUpdate) ?? true;
-    syncQuestionBank = _prefs.getBool(keySyncQuestionBank) ?? false;
     autoResume = _prefs.getBool(keyAutoResume) ?? false;
     syncNotesToYkb = _prefs.getBool(keySyncNotesToYkb) ?? true;
+    syncCutToYkb = _prefs.getBool(keySyncCutToYkb) ?? true;
+    syncRedoToYkb = _prefs.getBool(keySyncRedoToYkb) ?? true;
+    syncAnswersToYkb = _prefs.getBool(keySyncAnswersToYkb) ??
+        _prefs.getBool('questionUpload') ??
+        _prefs.getBool(keySyncQuestionBank) ??
+        true;
     mode = _prefs.getInt('mode') ?? 0;
     fontScale = _normalizeFontScale(_prefs.getDouble('fontScale') ?? 1.0);
     await CloudSyncService.instance.init();
@@ -432,17 +445,6 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
               ),
               IconTile(
-                icon: Icons.sync,
-                label: '同步题库',
-                trailing: Switch(
-                  value: syncQuestionBank,
-                  onChanged: (v) {
-                    setState(() => syncQuestionBank = v);
-                    _setBool(keySyncQuestionBank, v);
-                  },
-                ),
-              ),
-              IconTile(
                 icon: Icons.play_circle_outline,
                 label: '启动自动继续上次进度',
                 trailing: Switch(
@@ -496,22 +498,38 @@ class _SettingsPageState extends State<SettingsPage> {
             ],
           ),
           const SizedBox(height: 14),
-          const _SectionTitle(title: '数据'),
+          const _SectionTitle(title: '医考帮云端同步'),
           InfoCard(
             children: [
               IconTile(
-                icon: Icons.cloud_sync,
-                label: '云端做题记录同步',
-                value: CloudSyncService.instance.isConfigured ? '已开启' : '未开启',
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () async {
-                  await Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (context) => const CloudSyncPage(),
-                    ),
-                  );
-                  if (mounted) setState(() {});
-                },
+                icon: Icons.cloud_upload_outlined,
+                label: '做题同步到医考帮',
+                trailing: Switch(
+                  value: syncAnswersToYkb,
+                  onChanged: (v) {
+                    setState(() => syncAnswersToYkb = v);
+                    _setBool(keySyncAnswersToYkb, v);
+                    _setBool(keySyncQuestionBank, v);
+                    _setBool('questionUpload', v);
+                    if (v) {
+                      YkbSyncService.instance.processQueue();
+                    }
+                  },
+                ),
+              ),
+              IconTile(
+                icon: Icons.content_cut,
+                label: '同步斩题到医考帮',
+                trailing: Switch(
+                  value: syncCutToYkb,
+                  onChanged: (v) {
+                    setState(() => syncCutToYkb = v);
+                    _setBool(keySyncCutToYkb, v);
+                    if (v) {
+                      YkbSyncService.instance.processQueue();
+                    }
+                  },
+                ),
               ),
               IconTile(
                 icon: Icons.note_alt_outlined,
@@ -526,6 +544,41 @@ class _SettingsPageState extends State<SettingsPage> {
                     }
                   },
                 ),
+              ),
+              IconTile(
+                icon: Icons.replay,
+                label: '章节重做同步到医考帮',
+                value: '仅整章重做时同步，重做错题不同步',
+                trailing: Switch(
+                  value: syncRedoToYkb,
+                  onChanged: (v) {
+                    setState(() => syncRedoToYkb = v);
+                    _setBool(keySyncRedoToYkb, v);
+                    if (v) {
+                      YkbSyncService.instance.processQueue();
+                    }
+                  },
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          const _SectionTitle(title: '多端做题记录云同步 (自建云端)'),
+          InfoCard(
+            children: [
+              IconTile(
+                icon: Icons.cloud_sync,
+                label: '多端做题记录同步',
+                value: CloudSyncService.instance.isConfigured ? '已开启' : '未开启',
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () async {
+                  await Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) => const CloudSyncPage(),
+                    ),
+                  );
+                  if (mounted) setState(() {});
+                },
               ),
               IconTile(
                 icon: Icons.build,
