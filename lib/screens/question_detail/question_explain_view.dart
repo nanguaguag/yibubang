@@ -4,6 +4,7 @@ import '../../models/question.dart';
 import '../comment_page.dart';
 import 'question_detail_controller.dart';
 import 'question_header_view.dart';
+import 'question_label_view.dart';
 import 'question_options_view.dart';
 import 'question_stat_view.dart';
 
@@ -98,6 +99,7 @@ class QuestionExplainView extends StatelessWidget {
               Icons.lightbulb_outlined,
               question.explain!,
             ),
+          QuestionLabelView(question: question),
           CommentPage(
             key: ValueKey('comment_$index'),
             question: question,
