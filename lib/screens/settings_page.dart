@@ -21,6 +21,7 @@ import '../widgets/common/styled_tile.dart';
 import '../widgets/theme_controller.dart';
 import 'about_page.dart';
 import 'cloud_sync_page.dart';
+import 'developer_page.dart';
 import 'question_sections_page.dart';
 
 class SettingsPage extends StatefulWidget {
@@ -39,6 +40,7 @@ class _SettingsPageState extends State<SettingsPage> {
   bool autoResume = false;
   int mode = 0; // 默认刷题模式，对应 AppStrings.modesList
   double fontScale = 1.0; // 刷题字号缩放比例
+  bool developerModeEnabled = false;
 
   // 医考帮云端同步设置
   bool syncAnswersToYkb = true;
@@ -79,6 +81,8 @@ class _SettingsPageState extends State<SettingsPage> {
         true;
     mode = _prefs.getInt('mode') ?? 0;
     fontScale = _normalizeFontScale(_prefs.getDouble('fontScale') ?? 1.0);
+    developerModeEnabled =
+        _prefs.getBool(AppStrings.keyDeveloperModeEnabled) ?? false;
     await CloudSyncService.instance.init();
 
     if (!mounted) return;
@@ -618,15 +622,36 @@ class _SettingsPageState extends State<SettingsPage> {
                 icon: Icons.info_outline,
                 label: '关于医不帮',
                 trailing: const Icon(Icons.chevron_right),
-                onTap: () {
-                  Navigator.push(
+                onTap: () async {
+                  await Navigator.push(
                     context,
                     adaptivePageRoute(
                       builder: (context) => const AboutPage(),
                     ),
                   );
+                  if (mounted) {
+                    setState(() {
+                      developerModeEnabled =
+                          _prefs.getBool(AppStrings.keyDeveloperModeEnabled) ??
+                              false;
+                    });
+                  }
                 },
               ),
+              if (developerModeEnabled)
+                IconTile(
+                  icon: Icons.developer_mode,
+                  label: '开发者模式',
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      adaptivePageRoute(
+                        builder: (context) => const DeveloperPage(),
+                      ),
+                    );
+                  },
+                ),
               IconTile(
                 icon: Icons.system_update,
                 label: '检查更新',

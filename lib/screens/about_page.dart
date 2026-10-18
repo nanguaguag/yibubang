@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../common/adaptive_route.dart';
@@ -19,6 +20,7 @@ class AboutPage extends StatefulWidget {
 class _AboutPageState extends State<AboutPage> {
   String _version = '2.0.4';
   String _buildNumber = '';
+  bool _developerModeEnabled = false;
 
   int _versionTapCount = 0;
   Timer? _tapResetTimer;
@@ -30,6 +32,17 @@ class _AboutPageState extends State<AboutPage> {
   void initState() {
     super.initState();
     _loadPackageInfo();
+    _loadDeveloperMode();
+  }
+
+  Future<void> _loadDeveloperMode() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() {
+        _developerModeEnabled =
+            prefs.getBool(AppStrings.keyDeveloperModeEnabled) ?? false;
+      });
+    }
   }
 
   @override
@@ -50,7 +63,7 @@ class _AboutPageState extends State<AboutPage> {
     } catch (_) {}
   }
 
-  void _onVersionTap() {
+  Future<void> _onVersionTap() async {
     _tapResetTimer?.cancel();
     _tapResetTimer = Timer(const Duration(seconds: 2), () {
       _versionTapCount = 0;
@@ -59,21 +72,25 @@ class _AboutPageState extends State<AboutPage> {
     _versionTapCount++;
     if (_versionTapCount >= 5) {
       _versionTapCount = 0;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('已进入开发者模式 🛠️'),
-          duration: Duration(seconds: 1),
-        ),
-      );
-      Navigator.push(
-        context,
-        adaptivePageRoute(builder: (context) => const DeveloperPage()),
-      );
-    } else if (_versionTapCount >= 2) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(AppStrings.keyDeveloperModeEnabled, true);
+      if (mounted) {
+        setState(() {
+          _developerModeEnabled = true;
+        });
+        ScaffoldMessenger.of(context).clearSnackBars();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('已开启开发者模式 🛠️'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } else if (_versionTapCount >= 2 && !_developerModeEnabled) {
       ScaffoldMessenger.of(context).clearSnackBars();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('再点击 ${5 - _versionTapCount} 次进入开发者模式'),
+          content: Text('再点击 ${5 - _versionTapCount} 次开启开发者模式'),
           duration: const Duration(milliseconds: 600),
         ),
       );
@@ -361,6 +378,46 @@ class _AboutPageState extends State<AboutPage> {
                   trailing: const Icon(Icons.chevron_right),
                   onTap: _showLicenseDialog,
                 ),
+                if (_developerModeEnabled) ...[
+                  const Divider(height: 1, indent: 16, endIndent: 16),
+                  ListTile(
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 4,
+                    ),
+                    leading: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.errorContainer
+                            .withValues(alpha: 0.7),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Icon(
+                        Icons.developer_mode,
+                        color: theme.colorScheme.onErrorContainer,
+                        size: 22,
+                      ),
+                    ),
+                    title: const Text(
+                      '开发者模式',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    subtitle: const Text(
+                      '凭证、同步队列及调试选项',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        adaptivePageRoute(
+                          builder: (context) => const DeveloperPage(),
+                        ),
+                      );
+                    },
+                  ),
+                ],
               ],
             ),
           ),
