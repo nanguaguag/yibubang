@@ -2,6 +2,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
 import '../models/answer_statistics.dart';
+import '../services/cloud_sync_service.dart';
 
 /// 做题统计页
 ///
@@ -27,6 +28,21 @@ class _StatisticsPageState extends State<StatisticsPage> {
   void initState() {
     super.initState();
     _future = _load();
+    CloudSyncService.instance.addListener(_onSyncChanged);
+  }
+
+  @override
+  void dispose() {
+    CloudSyncService.instance.removeListener(_onSyncChanged);
+    super.dispose();
+  }
+
+  void _onSyncChanged() {
+    if (mounted) {
+      setState(() {
+        _future = _load();
+      });
+    }
   }
 
   Future<_AllStats> _load() async {
@@ -114,11 +130,28 @@ class _StatisticsPageState extends State<StatisticsPage> {
     }
   }
 
+  Future<void> _handleRefresh() async {
+    if (CloudSyncService.instance.isConfigured) {
+      await CloudSyncService.instance.sync();
+    }
+    setState(() {
+      _future = _load();
+    });
+    await _future;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('做题统计'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: '刷新统计',
+            onPressed: _handleRefresh,
+          ),
+        ],
       ),
       body: FutureBuilder<_AllStats>(
         future: _future,
@@ -130,30 +163,34 @@ class _StatisticsPageState extends State<StatisticsPage> {
             return Center(child: Text('加载失败: ${snapshot.error}'));
           }
           final data = snapshot.data!;
-          return ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              _buildMetricCards(data),
-              const SizedBox(height: 24),
-              _buildHeatTitle(context),
-              const SizedBox(height: 12),
-              _ContributionWall(days: data.heatByDay),
-              const SizedBox(height: 8),
-              _buildHeatLegend(context, data.maxDayCount()),
-              const SizedBox(height: 24),
-              _buildChartToggle(context),
-              const SizedBox(height: 16),
-              _ChartCard(
-                title: '刷题数量',
-                chart: _buildCountChart(data.charts[_chartPeriod]!),
-              ),
-              const SizedBox(height: 16),
-              _ChartCard(
-                title: '刷题时长',
-                chart: _buildDurationChart(data.charts[_chartPeriod]!),
-              ),
-              const SizedBox(height: 16),
-            ],
+          return RefreshIndicator(
+            onRefresh: _handleRefresh,
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              physics: const AlwaysScrollableScrollPhysics(),
+              children: [
+                _buildMetricCards(data),
+                const SizedBox(height: 24),
+                _buildHeatTitle(context),
+                const SizedBox(height: 12),
+                _ContributionWall(days: data.heatByDay),
+                const SizedBox(height: 8),
+                _buildHeatLegend(context, data.maxDayCount()),
+                const SizedBox(height: 24),
+                _buildChartToggle(context),
+                const SizedBox(height: 16),
+                _ChartCard(
+                  title: '刷题数量',
+                  chart: _buildCountChart(data.charts[_chartPeriod]!),
+                ),
+                const SizedBox(height: 16),
+                _ChartCard(
+                  title: '刷题时长',
+                  chart: _buildDurationChart(data.charts[_chartPeriod]!),
+                ),
+                const SizedBox(height: 16),
+              ],
+            ),
           );
         },
       ),

@@ -245,6 +245,7 @@ class QuestionSearchRepository {
       whereArgs: [questionId],
       limit: 1,
     );
+    final now = DateTime.now().millisecondsSinceEpoch;
     if (rows.isEmpty) {
       await userDb.insert('Question', {
         'id': questionId,
@@ -254,11 +255,15 @@ class QuestionSearchRepository {
         'user_answer': '',
         'status': 0,
         'collection': collection,
+        'updated_at': now,
       });
     } else {
       await userDb.update(
         'Question',
-        {'collection': collection},
+        {
+          'collection': collection,
+          'updated_at': now,
+        },
         where: 'id = ?',
         whereArgs: [questionId],
       );

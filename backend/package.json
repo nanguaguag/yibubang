@@ -1,0 +1,20 @@
+{
+  "name": "yibubang-sync-server",
+  "version": "1.0.0",
+  "description": "Cloudflare Workers + D1 sync backend for Yibubang",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:init:local": "wrangler d1 execute yibubang-sync-db --local --file=./schema.sql",
+    "db:init:remote": "wrangler d1 execute yibubang-sync-db --remote --file=./schema.sql"
+  },
+  "dependencies": {
+    "hono": "^4.6.14"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261006.1",
+    "typescript": "^5.7.3",
+    "wrangler": "^4.151.1"
+  }
+}

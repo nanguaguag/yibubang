@@ -1,0 +1,24 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "yibubang-sync-server",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-01-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "yibubang-sync-db",
+      "database_id": "8da12c55-e7fb-4f2d-9120-0da499ebff4e"
+    }
+  ],
+  "routes": [
+    {
+      "pattern": "yibubang.melonhu.com",
+      "custom_domain": true
+    }
+  ],
+  "observability": {
+    "enabled": true
+  }
+}

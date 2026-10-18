@@ -227,7 +227,7 @@ class UserDBHelper {
     String path = join(await getDatabasesPath(), 'user_data.sqlite');
     return await openDatabase(
       path,
-      version: 6,
+      version: 7,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -299,6 +299,17 @@ class UserDBHelper {
         );
         await txn.execute(
           "UPDATE Question SET cut_question = '0' WHERE cut_question = '' OR cut_question IS NULL",
+        );
+      }
+      if (oldVersion < 7) {
+        final questionColumns = await _columns(txn, 'Question');
+        if (!questionColumns.contains('updated_at')) {
+          await txn.execute(
+            'ALTER TABLE Question ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0',
+          );
+        }
+        await txn.execute(
+          'CREATE INDEX IF NOT EXISTS idx_question_updated ON Question(updated_at)',
         );
       }
       await _createMigrationStateTable(txn);
@@ -465,8 +476,14 @@ class UserDBHelper {
         cut_question TEXT DEFAULT '0' NOT NULL,
         user_answer TEXT DEFAULT "" NOT NULL,
         status INTEGER DEFAULT 0 NOT NULL,
-        collection INTEGER DEFAULT 0 NOT NULL
+        collection INTEGER DEFAULT 0 NOT NULL,
+        updated_at INTEGER DEFAULT 0 NOT NULL
       )
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_question_updated
+        ON Question(updated_at);
     ''');
 
     await db.execute('''

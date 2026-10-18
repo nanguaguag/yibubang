@@ -8,6 +8,7 @@ import 'common/app_shapes.dart';
 import 'common/app_strings.dart';
 import 'db/settings.dart';
 import 'repositories/question_bank_repository.dart';
+import 'services/cloud_sync_service.dart';
 import 'widgets/theme_controller.dart';
 import 'package:flutter/foundation.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -51,6 +52,13 @@ Future<void> _initializeQuestionBank() async {
   try {
     await QuestionBankRepository().initialize();
     debugPrint('[startup] 题库目录初始化完成(${sw.elapsedMilliseconds}ms)');
+
+    // 题库初始化完成后，静默进行云端增量同步 (不阻塞主线程)
+    final syncService = CloudSyncService.instance;
+    await syncService.init();
+    if (syncService.isConfigured && syncService.autoSync) {
+      unawaited(syncService.sync());
+    }
   } catch (error) {
     // 目录迁移失败时仍启动应用，让用户可以通过题库管理或备份恢复继续处理。
     debugPrint('题库目录初始化失败：$error');
@@ -68,7 +76,7 @@ ThemeData _buildTheme(Brightness brightness) {
     // 统一页面转场为 Material 3，去除 iOS 风格滑入
     pageTransitionsTheme: const PageTransitionsTheme(
       builders: {
-        TargetPlatform.android: FadeUpwardsPageTransitionsBuilder(),
+        TargetPlatform.android: FadeForwardsPageTransitionsBuilder(),
         TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
         TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
       },

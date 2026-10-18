@@ -134,9 +134,9 @@ Future<void> repairActivities({String? bankId}) async {
       .toSet();
   debugPrint('[repairActivities] Activities已记录题目数=${recordedIds.length}');
 
-  // 2. 已正确/做错的题目
+  // 2. 已正确/做错的题目（包含更新时间戳）
   final done = await userDb.rawQuery(
-    'SELECT id, status, chapter_parent_id, chapter_id '
+    'SELECT id, status, chapter_parent_id, chapter_id, updated_at '
     'FROM Question WHERE status IN (?, ?) ORDER BY id ASC',
     [1, 2],
   );
@@ -164,10 +164,16 @@ Future<void> repairActivities({String? bankId}) async {
     }
     final status = row['status'] as int;
     final isRight = status == 1 ? '1' : '0';
-    // 作答时间平均分布到一年内（i=0 最近，i=last 约一年前）
-    final daysBack = total == 1 ? 182 : ((index / (total - 1)) * 365).round();
-    final ts =
-        todayMid.subtract(Duration(days: daysBack)).millisecondsSinceEpoch;
+    final updatedAt = (row['updated_at'] as num?)?.toInt() ?? 0;
+
+    // 优先使用真实的 updated_at 作答时间戳；仅在历史完全无时间戳时才均分（兜底）
+    final int ts;
+    if (updatedAt > 0) {
+      ts = updatedAt;
+    } else {
+      final daysBack = total == 1 ? 182 : ((index / (total - 1)) * 365).round();
+      ts = todayMid.subtract(Duration(days: daysBack)).millisecondsSinceEpoch;
+    }
 
     batch.insert('Activities', {
       'id': generateSimpleId(),

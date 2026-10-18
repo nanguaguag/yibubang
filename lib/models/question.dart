@@ -12,6 +12,8 @@ class UserQuestion {
   int status; // 题目状态
   int collection; // 是否收藏
 
+  int updatedAt;
+
   UserQuestion({
     required this.id,
     required this.chapterId,
@@ -20,6 +22,7 @@ class UserQuestion {
     required this.userAnswer,
     required this.status,
     required this.collection,
+    this.updatedAt = 0,
   });
 
   bool get isCut => cutQuestion == '1' || cutQuestion == 'cutted';
@@ -34,6 +37,7 @@ class UserQuestion {
       'user_answer': userAnswer,
       'status': status,
       'collection': collection,
+      'updated_at': updatedAt,
     };
   }
 
@@ -48,6 +52,7 @@ class UserQuestion {
       userAnswer: map['user_answer'] ?? '',
       status: map['status'] ?? 0,
       collection: map['collection'] ?? 0,
+      updatedAt: (map['updated_at'] as num?)?.toInt() ?? 0,
     );
   }
 }
@@ -426,6 +431,8 @@ Future<void> updateQuestionSimple(
   UserQuestion uq,
   Question q,
 ) async {
+  final now = DateTime.now().millisecondsSinceEpoch;
+  uq.updatedAt = now;
   final userDb = await UserDBHelper().database;
   await userDb.update(
     'Question',
@@ -434,6 +441,7 @@ Future<void> updateQuestionSimple(
       'collection': uq.collection,
       'user_answer': uq.userAnswer,
       'cut_question': uq.cutQuestion,
+      'updated_at': now,
     },
     where: 'id = ?',
     whereArgs: [uq.id],
@@ -565,12 +573,16 @@ Future<void> updateQuestion(
   }
 
   // 3. 更新 UserDB 中的 Question 表
+  final nowMs = DateTime.now().millisecondsSinceEpoch;
+  uq.updatedAt = nowMs;
   batch.update(
     'Question',
     {
       'status': uq.status,
       'collection': uq.collection,
+      'cut_question': uq.cutQuestion,
       'user_answer': uq.userAnswer,
+      'updated_at': nowMs,
     },
     where: 'id = ?',
     whereArgs: [uq.id],

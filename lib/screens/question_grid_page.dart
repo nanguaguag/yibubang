@@ -1,3 +1,4 @@
+import 'dart:async';
 import '../common/adaptive_route.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
@@ -7,6 +8,7 @@ import '../common/app_strings.dart';
 import '../models/chapter.dart';
 import '../models/question.dart';
 import '../models/answer_statistics.dart';
+import '../services/cloud_sync_service.dart';
 
 // Question Status: 题目状态
 // - 0: 未做
@@ -59,6 +61,13 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
     _chapterStats = _loadChapterStats();
     _loadSettings();
     _jump2Question();
+    CloudSyncService.instance.addListener(_onCloudSyncUpdate);
+  }
+
+  void _onCloudSyncUpdate() {
+    if (mounted) {
+      _refreshPage();
+    }
   }
 
   Future<PeriodStats> _loadChapterStats() async {
@@ -83,6 +92,7 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
 
   @override
   void dispose() {
+    CloudSyncService.instance.removeListener(_onCloudSyncUpdate);
     _scrollController.dispose();
     super.dispose();
   }
@@ -281,6 +291,10 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
                   ),
                 );
                 _refreshPage();
+                if (CloudSyncService.instance.isConfigured &&
+                    CloudSyncService.instance.autoSync) {
+                  unawaited(CloudSyncService.instance.sync());
+                }
               },
               child: Text("确认"),
             ),
@@ -345,6 +359,10 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
                   ),
                 );
                 _refreshPage();
+                if (CloudSyncService.instance.isConfigured &&
+                    CloudSyncService.instance.autoSync) {
+                  unawaited(CloudSyncService.instance.sync());
+                }
               },
               child: Text("确认"),
             ),

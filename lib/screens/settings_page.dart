@@ -12,9 +12,11 @@ import '../common/app_strings.dart';
 import '../db/data_transfer.dart';
 import '../db/record_sync_service.dart';
 import '../repositories/question_search_repository.dart';
+import '../services/cloud_sync_service.dart';
 import '../widgets/common/info_card.dart';
 import '../widgets/common/styled_tile.dart';
 import '../widgets/theme_controller.dart';
+import 'cloud_sync_page.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -57,6 +59,7 @@ class _SettingsPageState extends State<SettingsPage> {
     autoResume = _prefs.getBool(keyAutoResume) ?? false;
     mode = _prefs.getInt('mode') ?? 0;
     fontScale = _normalizeFontScale(_prefs.getDouble('fontScale') ?? 1.0);
+    await CloudSyncService.instance.init();
 
     if (!mounted) return;
     setState(() {
@@ -452,6 +455,20 @@ class _SettingsPageState extends State<SettingsPage> {
           const _SectionTitle(title: '数据'),
           InfoCard(
             children: [
+              IconTile(
+                icon: Icons.cloud_sync,
+                label: '云端做题记录同步',
+                value: CloudSyncService.instance.isConfigured ? '已开启' : '未开启',
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () async {
+                  await Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) => const CloudSyncPage(),
+                    ),
+                  );
+                  if (mounted) setState(() {});
+                },
+              ),
               IconTile(
                 icon: Icons.build,
                 label: '重新统计',

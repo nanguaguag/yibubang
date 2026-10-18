@@ -160,6 +160,11 @@ class RecordSyncService {
           final newAnswer =
               useSrc ? srcAnswer : (local['user_answer'] as String? ?? '');
 
+          final srcUpdatedAt = (row['updated_at'] as num?)?.toInt() ?? 0;
+          final localUpdatedAt = (local['updated_at'] as num?)?.toInt() ?? 0;
+          final newUpdatedAt =
+              srcUpdatedAt > localUpdatedAt ? srcUpdatedAt : localUpdatedAt;
+
           batch.update(
             'Question',
             {
@@ -167,6 +172,7 @@ class RecordSyncService {
               'collection': newCollection,
               'cut_question': newCut,
               'user_answer': newAnswer,
+              'updated_at': newUpdatedAt,
             },
             where: 'id = ?',
             whereArgs: [id],

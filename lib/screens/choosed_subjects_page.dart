@@ -9,6 +9,7 @@ import '../models/subject.dart';
 import '../models/chapter.dart';
 import '../widgets/theme_controller.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../services/cloud_sync_service.dart';
 
 class SubjectWithChapters {
   final Subject subject;
@@ -58,6 +59,13 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
     themeController.recoverTheme(); // 恢复主题
     subjectsWithChapters = getSubjectsWithChapters();
     _maybeAutoResume();
+    CloudSyncService.instance.addListener(_refreshData);
+  }
+
+  @override
+  void dispose() {
+    CloudSyncService.instance.removeListener(_refreshData);
+    super.dispose();
   }
 
   bool _autoResumeTriggered = false;
