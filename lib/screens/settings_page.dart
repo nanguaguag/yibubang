@@ -19,6 +19,7 @@ import '../services/ykb_sync_service.dart';
 import '../widgets/common/info_card.dart';
 import '../widgets/common/styled_tile.dart';
 import '../widgets/theme_controller.dart';
+import 'about_page.dart';
 import 'cloud_sync_page.dart';
 import 'question_sections_page.dart';
 
@@ -498,7 +499,7 @@ class _SettingsPageState extends State<SettingsPage> {
             ],
           ),
           const SizedBox(height: 14),
-          const _SectionTitle(title: '医考帮云端同步'),
+          const _SectionTitle(title: '医考帮'),
           InfoCard(
             children: [
               IconTile(
@@ -548,7 +549,7 @@ class _SettingsPageState extends State<SettingsPage> {
               IconTile(
                 icon: Icons.replay,
                 label: '章节重做同步到医考帮',
-                value: '仅整章重做时同步，重做错题不同步',
+                //value: '仅整章重做时同步，重做错题不同步',
                 trailing: Switch(
                   value: syncRedoToYkb,
                   onChanged: (v) {
@@ -563,7 +564,7 @@ class _SettingsPageState extends State<SettingsPage> {
             ],
           ),
           const SizedBox(height: 14),
-          const _SectionTitle(title: '多端做题记录云同步 (自建云端)'),
+          const _SectionTitle(title: '做题记录'),
           InfoCard(
             children: [
               IconTile(
@@ -613,6 +614,19 @@ class _SettingsPageState extends State<SettingsPage> {
           const _SectionTitle(title: '关于'),
           InfoCard(
             children: [
+              IconTile(
+                icon: Icons.info_outline,
+                label: '关于医不帮',
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    adaptivePageRoute(
+                      builder: (context) => const AboutPage(),
+                    ),
+                  );
+                },
+              ),
               IconTile(
                 icon: Icons.system_update,
                 label: '检查更新',
