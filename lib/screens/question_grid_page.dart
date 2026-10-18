@@ -281,7 +281,12 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
                     bool prevCorrect = uq.status == 1; // 储存之前的状态
                     uq.userAnswer += ';'; // 末尾加上 ; 表示清除前面的做题记录
                     uq.status = 0;
-                    await updateQuestion(uq, q, prevCorrect: prevCorrect);
+                    await updateQuestion(
+                      uq,
+                      q,
+                      prevCorrect: prevCorrect,
+                      chapter: widget.chapter,
+                    );
                   }
                 }
                 if (!mounted) return;
@@ -359,7 +364,12 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
                   if (uq.status == 2) {
                     uq.userAnswer += ';'; // 末尾加上 ; 表示清除前面的做题记录
                     uq.status = 0;
-                    await updateQuestion(uq, q, prevCorrect: false);
+                    await updateQuestion(
+                      uq,
+                      q,
+                      prevCorrect: false,
+                      chapter: widget.chapter,
+                    );
                   }
                 }
                 if (!mounted) return;

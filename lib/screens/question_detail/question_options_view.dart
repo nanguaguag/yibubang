@@ -129,15 +129,14 @@ class QuestionOptionsView extends StatelessWidget {
                     value ?? '',
                   );
                   onStateChanged();
-                  if (mode == 1 || mode == 2) {
-                    controller.submitAnswer(
-                      question,
-                      userQuestion,
-                      index,
-                      context,
-                      onStateChanged: onStateChanged,
-                    );
-                  }
+                  // 单选题选择后即时提交判题并记录流水
+                  controller.submitAnswer(
+                    question,
+                    userQuestion,
+                    index,
+                    context,
+                    onStateChanged: onStateChanged,
+                  );
                 },
               );
             case '2': // 多选题
@@ -181,8 +180,8 @@ class QuestionOptionsView extends StatelessWidget {
 
   Widget _buildSubmitButton(BuildContext context) {
     final mode = controller.mode;
-    // 测试模式下不显示「提交」按钮（交卷统一在底部）；快刷模式单选自动提交也不显示
-    if (mode == 2 || (mode == 1 && question.type == '1')) {
+    // 测试模式下不显示「提交」按钮（交卷统一在底部）；单选点击即提交也不显示「提交」按钮
+    if (mode == 2 || question.type == '1') {
       return const SizedBox.shrink();
     }
 

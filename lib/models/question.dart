@@ -456,6 +456,7 @@ Future<void> updateQuestion(
   bool prevCorrect = true,
   int durationMs = 0,
   String? bankId,
+  Chapter? chapter,
 }) async {
   final prefs = await SharedPreferences.getInstance();
   final resolvedBankId = bankId ?? prefs.getString('activeBankId');
@@ -590,6 +591,23 @@ Future<void> updateQuestion(
     whereArgs: [uq.id],
   );
 
+  // 提取真正的 subjectId, chapterId, identityId
+  String? resolvedSubjectId;
+  String? resolvedChapterId;
+  String? resolvedIdentityId;
+  if (iqRows.isNotEmpty) {
+    resolvedSubjectId = iqRows.first['subject_id'] as String?;
+    resolvedChapterId = iqRows.first['chapter_id'] as String?;
+    resolvedIdentityId = iqRows.first['identity_id'] as String?;
+  }
+  resolvedSubjectId ??= chapter?.subjectId;
+  resolvedChapterId ??= chapter?.id;
+  resolvedIdentityId ??= chapter?.identityId;
+
+  resolvedSubjectId ??= q.chapterParentId;
+  resolvedChapterId ??= q.chapterId;
+  resolvedIdentityId ??= q.identityId;
+
   // 3. UserDB Activity 表中插入记录
   final int isCorrect = 2 - uq.status; // 1 -> 1, 2 -> 0
   // 只有在真正作答（status 1/2）时才把时长计入统计；撤题/测试模式记为 0。
@@ -603,8 +621,8 @@ Future<void> updateQuestion(
       'title': 'NewAnswer',
       'description': '''{
         "paper_id": "0",
-        "identity_id": "${q.identityId}",
-        "chapter_id": "${q.chapterId}",
+        "identity_id": "${resolvedIdentityId ?? q.identityId}",
+        "chapter_id": "${resolvedChapterId ?? q.chapterId}",
         "collection_id": "",
         "category_id": "",
         "chapter_parent_id": "${q.chapterParentId}",
@@ -613,13 +631,13 @@ Future<void> updateQuestion(
         "is_right": "$isCorrect",
         "app_id": "${q.nativeAppId}",
         "duration": "$recordedDurationSec",
-        "subject_id": "${q.chapterParentId}"
+        "subject_id": "${resolvedSubjectId ?? q.chapterParentId}"
       }''',
       'bank_id': resolvedBankId,
       'question_id': q.id,
-      'identity_id': q.identityId,
-      'subject_id': q.chapterParentId,
-      'chapter_id': q.chapterId,
+      'identity_id': resolvedIdentityId ?? q.identityId,
+      'subject_id': resolvedSubjectId ?? q.chapterParentId,
+      'chapter_id': resolvedChapterId ?? q.chapterId,
       'is_right': '$isCorrect',
       'duration': recordedDuration,
       'timestamp': DateTime.now().millisecondsSinceEpoch,
@@ -629,26 +647,14 @@ Future<void> updateQuestion(
   await batch.commit(noResult: true);
 
   if (uq.status == 1 || uq.status == 2) {
-    String? subjectId = q.chapterParentId;
-    String? chapterId = q.chapterId;
-    String? identityId = q.identityId;
-    if ((subjectId == null || subjectId.isEmpty) && iqRows.isNotEmpty) {
-      subjectId = iqRows.first['subject_id'] as String?;
-    }
-    if ((chapterId == null || chapterId.isEmpty) && iqRows.isNotEmpty) {
-      chapterId = iqRows.first['chapter_id'] as String?;
-    }
-    if ((identityId == null || identityId.isEmpty) && iqRows.isNotEmpty) {
-      identityId = iqRows.first['identity_id'] as String?;
-    }
-
     unawaited(YkbSyncService.instance.syncAnswer(
       question: q,
       userQuestion: uq,
       durationMs: durationMs,
-      subjectId: subjectId,
-      chapterId: chapterId,
-      identityId: identityId,
+      subjectId: resolvedSubjectId,
+      chapterId: resolvedChapterId,
+      identityId: resolvedIdentityId,
+      chapterParentId: q.chapterParentId,
     ));
   }
 }

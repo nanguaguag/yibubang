@@ -1,8 +1,9 @@
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:http/http.dart' as http;
-import 'ykb_encrypt.dart';
-import 'dart:convert';
 import 'dart:async';
+import 'dart:convert';
+import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+import 'ykb_encrypt.dart';
 
 import '../db/settings.dart';
 
@@ -41,22 +42,45 @@ Future<Map<String, dynamic>> basicReq(
   };
 
   Uri uri = Uri.parse(rootUrl + url);
+  debugPrint('[API-REQ] >>> $method $url');
+  debugPrint('[API-REQ] Params: $params');
+  debugPrint('[API-REQ] Headers: $headers');
+
   http.Response response;
-  if (method == "POST") {
-    response = await http.post(uri, headers: headers, body: params);
-  } else if (method == "GET") {
-    uri = uri.replace(
-      queryParameters: params.map(
-        (k, v) => MapEntry(k, v.toString()),
-      ),
-    );
-    response = await http.get(uri, headers: headers);
-  } else {
-    return {"msg": "Unknown Method"};
+  try {
+    if (method == "POST") {
+      response = await http.post(uri, headers: headers, body: params);
+    } else if (method == "GET") {
+      uri = uri.replace(
+        queryParameters: params.map(
+          (k, v) => MapEntry(k, v.toString()),
+        ),
+      );
+      response = await http.get(uri, headers: headers);
+    } else {
+      debugPrint('[API-REQ] Unknown method: $method');
+      return {"msg": "Unknown Method"};
+    }
+  } catch (e, stack) {
+    debugPrint('[API-ERROR] <<< $method $url exception: $e');
+    debugPrint('$stack');
+    rethrow;
   }
-  Map<String, dynamic> resp = json.decode(response.body);
+
+  debugPrint('[API-RESP] <<< $method $url [${response.statusCode}]');
+  debugPrint('[API-RESP] Body: ${response.body}');
+
+  Map<String, dynamic> resp;
+  try {
+    resp = json.decode(response.body) as Map<String, dynamic>;
+  } catch (e) {
+    debugPrint('[API-RESP] JSON decode error: $e');
+    return {'code': response.statusCode.toString(), 'message': response.body};
+  }
+
   if (resp['code'] == '309') {
     // 会话过期，请重新登录
+    debugPrint('[API-RESP] Session expired (code 309), clearing user info');
     clearUserInfo();
   }
 

@@ -3,6 +3,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
 import 'package:yibubang/db/settings.dart';
 import '../common/request.dart';
+import '../services/note_service.dart';
+import '../services/ykb_sync_service.dart';
 import './settings_page.dart';
 import '../widgets/common/info_card.dart';
 import '../widgets/common/styled_tile.dart';
@@ -116,6 +118,10 @@ class _LoginPageState extends State<LoginPage> {
           await prefs.setString('entrance_time', userData['entrance_time']);
 
           await prefs.setBool('loggedin', true);
+
+          // 登录成功后自动拉起离线同步队列
+          YkbSyncService.instance.processQueue();
+          NoteService.instance.processQueue();
 
           if (!mounted) return;
           // 登录成功后直接刷新为个人信息页，不再跳转到独立的“登录成功”页面

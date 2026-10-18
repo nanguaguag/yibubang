@@ -151,6 +151,7 @@ class QuestionDetailController extends ChangeNotifier {
     currentPageNotifier.value = page;
     pageOpenedAt = DateTime.now().millisecondsSinceEpoch;
     _saveLastQIndex();
+    notifyListeners();
   }
 
   void submitAnswer(
@@ -197,7 +198,13 @@ class QuestionDetailController extends ChangeNotifier {
       } else {
         userQuestion.status = 2; // 回答错误
       }
-      updateQuestion(userQuestion, question, durationMs: elapsedMs, bankId: bankId);
+      updateQuestion(
+        userQuestion,
+        question,
+        durationMs: elapsedMs,
+        bankId: bankId,
+        chapter: chapter,
+      );
       userQuestions[index].status = userQuestion.status;
       onStateChanged?.call();
       if (userQuestion.status == 1 && _mode == 1) {
@@ -232,6 +239,11 @@ class QuestionDetailController extends ChangeNotifier {
       isCut: userQuestion.isCut,
       chapter: chapter,
     );
+
+    // 斩题后自动切到下一题
+    if (userQuestion.isCut) {
+      nextPage();
+    }
   }
 
   void copyQuestion(BuildContext context) {
