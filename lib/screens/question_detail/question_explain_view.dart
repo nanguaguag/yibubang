@@ -5,6 +5,7 @@ import '../comment_page.dart';
 import 'question_detail_controller.dart';
 import 'question_header_view.dart';
 import 'question_label_view.dart';
+import 'question_note_view.dart';
 import 'question_options_view.dart';
 import 'question_stat_view.dart';
 
@@ -100,6 +101,7 @@ class QuestionExplainView extends StatelessWidget {
               question.explain!,
             ),
           QuestionLabelView(question: question),
+          QuestionNoteView(question: question),
           CommentPage(
             key: ValueKey('comment_$index'),
             question: question,

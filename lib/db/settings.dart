@@ -65,6 +65,9 @@ Future<void> initSettings() async {
   if (!prefs.containsKey('autoResume')) {
     await prefs.setBool('autoResume', false); // 启动自动继续上次进度
   }
+  if (!prefs.containsKey('sync_notes_to_ykb')) {
+    await prefs.setBool('sync_notes_to_ykb', false); // 同步笔记到医考帮
+  }
 }
 
 Future<void> clearUserInfo() async {

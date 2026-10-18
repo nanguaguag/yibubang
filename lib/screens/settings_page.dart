@@ -13,6 +13,7 @@ import '../db/data_transfer.dart';
 import '../db/record_sync_service.dart';
 import '../repositories/question_search_repository.dart';
 import '../services/cloud_sync_service.dart';
+import '../services/note_service.dart';
 import '../widgets/common/info_card.dart';
 import '../widgets/common/styled_tile.dart';
 import '../widgets/theme_controller.dart';
@@ -33,12 +34,14 @@ class _SettingsPageState extends State<SettingsPage> {
   bool acceptUpdate = true;
   bool syncQuestionBank = false;
   bool autoResume = false;
+  bool syncNotesToYkb = false;
   int mode = 0; // 默认刷题模式，对应 AppStrings.modesList
   double fontScale = 1.0; // 刷题字号缩放比例
 
   static const String keyAcceptUpdate = 'accept_update';
   static const String keySyncQuestionBank = 'sync_question_bank';
   static const String keyAutoResume = 'autoResume';
+  static const String keySyncNotesToYkb = 'sync_notes_to_ykb';
 
   static const List<double> _fontScales = [0.85, 1.0, 1.15, 1.3];
   static const List<String> _fontScaleLabels = ['小', '标准', '大', '特大'];
@@ -57,6 +60,7 @@ class _SettingsPageState extends State<SettingsPage> {
     acceptUpdate = _prefs.getBool(keyAcceptUpdate) ?? true;
     syncQuestionBank = _prefs.getBool(keySyncQuestionBank) ?? false;
     autoResume = _prefs.getBool(keyAutoResume) ?? false;
+    syncNotesToYkb = _prefs.getBool(keySyncNotesToYkb) ?? false;
     mode = _prefs.getInt('mode') ?? 0;
     fontScale = _normalizeFontScale(_prefs.getDouble('fontScale') ?? 1.0);
     await CloudSyncService.instance.init();
@@ -468,6 +472,20 @@ class _SettingsPageState extends State<SettingsPage> {
                   );
                   if (mounted) setState(() {});
                 },
+              ),
+              IconTile(
+                icon: Icons.note_alt_outlined,
+                label: '同步笔记到医考帮',
+                trailing: Switch(
+                  value: syncNotesToYkb,
+                  onChanged: (v) {
+                    setState(() => syncNotesToYkb = v);
+                    _setBool(keySyncNotesToYkb, v);
+                    if (v) {
+                      NoteService.instance.processQueue();
+                    }
+                  },
+                ),
               ),
               IconTile(
                 icon: Icons.build,

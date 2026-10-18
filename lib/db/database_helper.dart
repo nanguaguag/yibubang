@@ -227,7 +227,7 @@ class UserDBHelper {
     String path = join(await getDatabasesPath(), 'user_data.sqlite');
     return await openDatabase(
       path,
-      version: 7,
+      version: 8,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -311,6 +311,37 @@ class UserDBHelper {
         await txn.execute(
           'CREATE INDEX IF NOT EXISTS idx_question_updated ON Question(updated_at)',
         );
+      }
+      if (oldVersion < 8) {
+        final noteColumns = await _columns(txn, 'Notes');
+        if (!noteColumns.contains('remote_id')) {
+          await txn.execute('ALTER TABLE Notes ADD COLUMN remote_id TEXT');
+        }
+        if (!noteColumns.contains('updated_at')) {
+          await txn.execute(
+            'ALTER TABLE Notes ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0',
+          );
+        }
+        if (!noteColumns.contains('sync_status')) {
+          await txn.execute(
+            'ALTER TABLE Notes ADD COLUMN sync_status INTEGER NOT NULL DEFAULT 0',
+          );
+        }
+        await txn.execute(
+          'CREATE INDEX IF NOT EXISTS idx_notes_question ON Notes(question_id)',
+        );
+        await txn.execute('''
+          CREATE TABLE IF NOT EXISTS NoteSyncQueue (
+            id TEXT PRIMARY KEY,
+            action TEXT NOT NULL,
+            note_id TEXT,
+            question_id TEXT NOT NULL,
+            payload TEXT,
+            retry_count INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            last_error TEXT
+          )
+        ''');
       }
       await _createMigrationStateTable(txn);
     });
@@ -489,11 +520,32 @@ class UserDBHelper {
     await db.execute('''
       CREATE TABLE IF NOT EXISTS Notes (
         id TEXT PRIMARY KEY,
+        remote_id TEXT,
         question_id TEXT NOT NULL,
         content TEXT NOT NULL,
-        imgs TEXT NOT NULL,
+        imgs TEXT NOT NULL DEFAULT '[]',
         timestamp INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL DEFAULT 0,
+        sync_status INTEGER NOT NULL DEFAULT 0,
         FOREIGN KEY (question_id) REFERENCES Question(id)
+      )
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_notes_question
+        ON Notes(question_id);
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS NoteSyncQueue (
+        id TEXT PRIMARY KEY,
+        action TEXT NOT NULL,
+        note_id TEXT,
+        question_id TEXT NOT NULL,
+        payload TEXT,
+        retry_count INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        last_error TEXT
       )
     ''');
 
