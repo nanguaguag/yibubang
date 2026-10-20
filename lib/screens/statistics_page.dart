@@ -592,32 +592,114 @@ class _ContributionWallState extends State<_ContributionWall> {
       child: SingleChildScrollView(
         controller: _controller,
         scrollDirection: Axis.horizontal,
-        child: Row(
+        child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _WeekdayLabels(cell: cell, gap: gap),
-            for (var w = 0; w < weeks.length; w++)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: gap / 2),
-                child: Column(
-                  children: [
-                    for (var d = 0; d < 7; d++)
-                      Padding(
-                        padding: EdgeInsets.only(bottom: d == 6 ? 0 : gap),
-                        child: _HeatCell(
-                          date: weeks[w][d],
-                          count: widget.days[formatDayKey(weeks[w][d])] ?? 0,
-                          maxCount: maxCount,
-                          size: cell,
-                          isToday: formatDayKey(weeks[w][d]) == formatDayKey(todayDate),
-                          isFuture: weeks[w][d].isAfter(todayDate),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _WeekdayLabels(cell: cell, gap: gap),
+                for (var w = 0; w < weeks.length; w++)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: gap / 2),
+                    child: Column(
+                      children: [
+                        for (var d = 0; d < 7; d++)
+                          Padding(
+                            padding: EdgeInsets.only(bottom: d == 6 ? 0 : gap),
+                            child: _HeatCell(
+                              date: weeks[w][d],
+                              count: widget.days[formatDayKey(weeks[w][d])] ?? 0,
+                              maxCount: maxCount,
+                              size: cell,
+                              isToday: formatDayKey(weeks[w][d]) == formatDayKey(todayDate),
+                              isFuture: weeks[w][d].isAfter(todayDate),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            _MonthLabels(
+              weeks: weeks,
+              cell: cell,
+              gap: gap,
+              leadingWidth: 18.0,
+            ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// 下方月份横坐标标签（Jan, Feb, Mar ...）
+class _MonthLabels extends StatelessWidget {
+  final List<List<DateTime>> weeks;
+  final double cell;
+  final double gap;
+  final double leadingWidth;
+
+  const _MonthLabels({
+    required this.weeks,
+    required this.cell,
+    required this.gap,
+    required this.leadingWidth,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    const monthNames = [
+      '', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    ];
+
+    final labels = <Widget>[];
+    int? lastMonth;
+
+    for (var w = 0; w < weeks.length; w++) {
+      final week = weeks[w];
+      int monthToLabel = -1;
+      for (final day in week) {
+        if (day.day <= 7 && day.month != lastMonth) {
+          monthToLabel = day.month;
+          break;
+        }
+      }
+      if (w == 0 && lastMonth == null) {
+        monthToLabel = week.first.month;
+      }
+
+      if (monthToLabel != -1 && monthToLabel != lastMonth) {
+        lastMonth = monthToLabel;
+        final left = leadingWidth + w * (cell + gap);
+        labels.add(
+          Positioned(
+            left: left,
+            top: 0,
+            child: Text(
+              monthNames[monthToLabel],
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontSize: 9,
+                fontWeight: FontWeight.w600,
+                color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.75),
+              ),
+            ),
+          ),
+        );
+      }
+    }
+
+    final totalWidth = leadingWidth + weeks.length * (cell + gap);
+    return SizedBox(
+      width: totalWidth,
+      height: 14,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: labels,
       ),
     );
   }
