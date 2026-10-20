@@ -213,13 +213,65 @@ class _StatisticsPageState extends State<StatisticsPage> {
   // 顶部指标卡
   // ---------------------------------------------------------------------
   Widget _buildMetricCards(_AllStats data) {
+    final now = DateTime.now();
     return Row(
       children: [
-        Expanded(child: _MetricCard(period: '今日', stats: data.today)),
+        Expanded(
+          child: _MetricCard(
+            period: '今日',
+            stats: data.today,
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => AnsweredRecordsPage(
+                    title: '今日刷题记录',
+                    startMs: todayStartMs(now),
+                    endMs: tomorrowStartMs(now),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
         const SizedBox(width: 8),
-        Expanded(child: _MetricCard(period: '本周', stats: data.week)),
+        Expanded(
+          child: _MetricCard(
+            period: '本周',
+            stats: data.week,
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => AnsweredRecordsPage(
+                    title: '本周刷题记录',
+                    startMs: weekStartMs(now),
+                    endMs: nextWeekStartMs(now),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
         const SizedBox(width: 8),
-        Expanded(child: _MetricCard(period: '本月', stats: data.month)),
+        Expanded(
+          child: _MetricCard(
+            period: '本月',
+            stats: data.month,
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => AnsweredRecordsPage(
+                    title: '本月刷题记录',
+                    startMs: monthStartMs(now),
+                    endMs: nextMonthStartMs(now),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
       ],
     );
   }
@@ -463,42 +515,64 @@ class _StatisticsPageState extends State<StatisticsPage> {
 class _MetricCard extends StatelessWidget {
   final String period;
   final PeriodStats stats;
+  final VoidCallback? onTap;
 
-  const _MetricCard({required this.period, required this.stats});
+  const _MetricCard({
+    required this.period,
+    required this.stats,
+    this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: scheme.primaryContainer,
+    return Material(
+      color: scheme.primaryContainer,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: scheme.outlineVariant.withValues(alpha: 0.5),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            period,
-            style: theme.textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.w700,
-              color: scheme.primary,
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: scheme.outlineVariant.withValues(alpha: 0.5),
             ),
           ),
-          const SizedBox(height: 10),
-          _metricRow(theme, Icons.timer_outlined,
-              _fmtDuration(stats.totalDuration.inMilliseconds)),
-          const SizedBox(height: 6),
-          _metricRow(
-              theme, Icons.rate_review_outlined, '${stats.answeredCount} 题'),
-          const SizedBox(height: 6),
-          _metricRow(theme, Icons.check_circle_outline,
-              '${(stats.accuracy * 100).round()}% 正确'),
-        ],
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    period,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: scheme.primary,
+                    ),
+                  ),
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    size: 16,
+                    color: scheme.primary.withValues(alpha: 0.7),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              _metricRow(theme, Icons.timer_outlined,
+                  _fmtDuration(stats.totalDuration.inMilliseconds)),
+              const SizedBox(height: 6),
+              _metricRow(
+                  theme, Icons.rate_review_outlined, '${stats.answeredCount} 题'),
+              const SizedBox(height: 6),
+              _metricRow(theme, Icons.check_circle_outline,
+                  '${(stats.accuracy * 100).round()}% 正确'),
+            ],
+          ),
+        ),
       ),
     );
   }
