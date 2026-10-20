@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../models/answer_statistics.dart';
 import '../services/cloud_sync_service.dart';
+import 'answered_records_page.dart';
 
 /// 做题统计页
 ///
@@ -614,6 +615,7 @@ class _ContributionWallState extends State<_ContributionWall> {
                               size: cell,
                               isToday: formatDayKey(weeks[w][d]) == formatDayKey(todayDate),
                               isFuture: weeks[w][d].isAfter(todayDate),
+                              onTap: () => _showDayStatsBottomSheet(context, weeks[w][d]),
                             ),
                           ),
                       ],
@@ -737,13 +739,14 @@ class _WeekdayLabels extends StatelessWidget {
   }
 }
 
-class _HeatCell extends StatelessWidget {
+class _HeatCell extends StatefulWidget {
   final DateTime date;
   final int count;
   final int maxCount;
   final double size;
   final bool isToday;
   final bool isFuture;
+  final VoidCallback? onTap;
 
   const _HeatCell({
     required this.date,
@@ -752,42 +755,330 @@ class _HeatCell extends StatelessWidget {
     required this.size,
     this.isToday = false,
     this.isFuture = false,
+    this.onTap,
   });
+
+  @override
+  State<_HeatCell> createState() => _HeatCellState();
+}
+
+class _HeatCellState extends State<_HeatCell> {
+  bool _isHovered = false;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     Color color;
-    if (isFuture) {
+    if (widget.isFuture) {
       color = theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.15);
-    } else if (maxCount <= 0 || count <= 0) {
+    } else if (widget.maxCount <= 0 || widget.count <= 0) {
       color = theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.45);
     } else {
-      final t = (count / maxCount).clamp(0.0, 1.0);
+      final t = (widget.count / widget.maxCount).clamp(0.0, 1.0);
       color = theme.colorScheme.primary.withValues(
         alpha: (0.25 + 0.75 * t).clamp(0.0, 1.0),
       );
     }
 
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 400),
-      curve: Curves.easeOutCubic,
-      width: size,
-      height: size,
+    final tooltipMsg = widget.isFuture
+        ? '${formatDayKey(widget.date)} (未来)'
+        : '${formatDayKey(widget.date)}: ${widget.count} 题';
+
+    return MouseRegion(
+      cursor: widget.isFuture ? SystemMouseCursors.basic : SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      child: Tooltip(
+        message: tooltipMsg,
+        waitDuration: const Duration(milliseconds: 300),
+        child: GestureDetector(
+          onTap: widget.isFuture ? null : widget.onTap,
+          child: AnimatedScale(
+            scale: _isHovered && !widget.isFuture ? 1.35 : 1.0,
+            duration: const Duration(milliseconds: 150),
+            curve: Curves.easeOutCubic,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOutCubic,
+              width: widget.size,
+              height: widget.size,
+              decoration: BoxDecoration(
+                color: _isHovered && !widget.isFuture
+                    ? (widget.count > 0 ? theme.colorScheme.primary : theme.colorScheme.outlineVariant)
+                    : color,
+                borderRadius: BorderRadius.circular(3),
+                boxShadow: _isHovered && !widget.isFuture
+                    ? [
+                        BoxShadow(
+                          color: theme.colorScheme.primary.withValues(alpha: 0.4),
+                          blurRadius: 4,
+                          spreadRadius: 1,
+                        ),
+                      ]
+                    : null,
+                border: widget.isToday
+                    ? Border.all(
+                        color: theme.colorScheme.primary,
+                        width: 1.5,
+                      )
+                    : (widget.isFuture
+                        ? Border.all(
+                            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.2),
+                            width: 0.5,
+                          )
+                        : null),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 底部弹出当天的详细刷题情况
+void _showDayStatsBottomSheet(BuildContext context, DateTime date) {
+  final start = DateTime(date.year, date.month, date.day);
+  final end = start.add(const Duration(days: 1));
+  final startMs = start.millisecondsSinceEpoch;
+  final endMs = end.millisecondsSinceEpoch;
+
+  const weekdays = ['', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六', '星期日'];
+  final dateStr = '${date.year}年${date.month}月${date.day}日 ${weekdays[date.weekday]}';
+
+  final now = DateTime.now();
+  final isToday = date.year == now.year && date.month == now.month && date.day == now.day;
+
+  showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    isScrollControlled: true,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+    ),
+    builder: (ctx) {
+      final theme = Theme.of(ctx);
+      final scheme = theme.colorScheme;
+      return FutureBuilder<PeriodStats>(
+        future: getDayStats(date),
+        builder: (context, snapshot) {
+          final stats = snapshot.data;
+          final isLoading = snapshot.connectionState != ConnectionState.done;
+          final count = stats?.answeredCount ?? 0;
+          final duration = stats?.totalDuration ?? Duration.zero;
+          final accuracy = stats?.accuracy ?? 0.0;
+          final correctCount = stats?.correctCount ?? 0;
+
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // 标题行：0. 日期
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: scheme.primaryContainer,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(
+                          Icons.calendar_month_rounded,
+                          color: scheme.onPrimaryContainer,
+                          size: 22,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Text(
+                                  dateStr,
+                                  style: theme.textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                if (isToday) ...[
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: scheme.primary,
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      '今日',
+                                      style: theme.textTheme.labelSmall?.copyWith(
+                                        color: scheme.onPrimary,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                            Text(
+                              '单日做题统计',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: scheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+
+                  if (isLoading)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 36),
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  else ...[
+                    // 1. 刷题量、2. 用时、3. 正确率 三指标卡
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _DayDetailMetricTile(
+                            icon: Icons.rate_review_outlined,
+                            iconColor: scheme.primary,
+                            title: '刷题量',
+                            value: '$count 题',
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _DayDetailMetricTile(
+                            icon: Icons.timer_outlined,
+                            iconColor: Colors.orange,
+                            title: '用时',
+                            value: _fmtDuration(duration.inMilliseconds),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _DayDetailMetricTile(
+                            icon: Icons.check_circle_outline,
+                            iconColor: Colors.green,
+                            title: '正确率',
+                            value: count > 0 ? '${(accuracy * 100).round()}%' : '--',
+                            subValue: count > 0 ? '$correctCount对 / ${count - correctCount}错' : null,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+                    // 操作按钮
+                    if (count > 0)
+                      FilledButton.icon(
+                        icon: const Icon(Icons.menu_book_rounded),
+                        label: const Text('查看全部题目'),
+                        style: FilledButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        onPressed: () {
+                          Navigator.pop(ctx);
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => AnsweredRecordsPage(
+                                title: '${date.year}年${date.month}月${date.day}日 刷题记录',
+                                startMs: startMs,
+                                endMs: endMs,
+                              ),
+                            ),
+                          );
+                        },
+                      )
+                    else
+                      OutlinedButton.icon(
+                        icon: const Icon(Icons.close_rounded),
+                        label: const Text('关闭 (当天无作答记录)'),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        onPressed: () => Navigator.pop(ctx),
+                      ),
+                  ],
+                ],
+              ),
+            ),
+          );
+        },
+      );
+    },
+  );
+}
+
+class _DayDetailMetricTile extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String title;
+  final String value;
+  final String? subValue;
+
+  const _DayDetailMetricTile({
+    required this.icon,
+    required this.iconColor,
+    required this.title,
+    required this.value,
+    this.subValue,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
       decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(3),
-        border: isToday
-            ? Border.all(
-                color: theme.colorScheme.primary,
-                width: 1.5,
-              )
-            : (isFuture
-                ? Border.all(
-                    color: theme.colorScheme.outlineVariant.withValues(alpha: 0.2),
-                    width: 0.5,
-                  )
-                : null),
+        color: scheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.5)),
+      ),
+      child: Column(
+        children: [
+          Icon(icon, size: 22, color: iconColor),
+          const SizedBox(height: 6),
+          Text(
+            title,
+            style: theme.textTheme.labelMedium?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.bold,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          if (subValue != null) ...[
+            const SizedBox(height: 2),
+            Text(
+              subValue!,
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontSize: 10,
+                color: scheme.onSurfaceVariant,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ],
       ),
     );
   }

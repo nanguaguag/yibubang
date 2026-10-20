@@ -1,7 +1,11 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../db/database_helper.dart';
+import '../db/question_bank_manager.dart';
+import 'question.dart';
 
 /// 全局刷题流水变更通知，当写入新的答题记录时自增触发监听
 final ValueNotifier<int> answersChangedNotifier = ValueNotifier<int>(0);
@@ -104,12 +108,24 @@ Future<PeriodStats> getPeriodStats({
   for (final row in rows) {
     answered += 1;
     durationMs += (row['duration'] as num?)?.toInt() ?? 0;
-    if (row['is_right'] == '1') correct += 1;
+    final ir = row['is_right'];
+    if (ir == '1' || ir == 1) correct += 1;
   }
   return PeriodStats(
     totalDuration: Duration(milliseconds: durationMs),
     answeredCount: answered,
     correctCount: correct,
+  );
+}
+
+/// 获取指定自然日的做题统计数据
+Future<PeriodStats> getDayStats(DateTime date, {String? bankId}) {
+  final start = DateTime(date.year, date.month, date.day);
+  final end = start.add(const Duration(days: 1));
+  return getPeriodStats(
+    startMs: start.millisecondsSinceEpoch,
+    endMs: end.millisecondsSinceEpoch,
+    bankId: bankId,
   );
 }
 
@@ -257,3 +273,161 @@ int nextMonthStartMs(DateTime now) =>
 /// 今天 0 点（本地天，用于小时粒度）。当 `now` 是 6 点时，
 /// 返回从今天 0 点开始到 `now` 当天的完整 24 小时桶。
 int todayDayMs(DateTime now) => todayStartMs(now);
+
+/// 作答记录明细条目
+class AnsweredRecordItem {
+  final String activityId;
+  final String questionId;
+  final int timestamp;
+  final bool isRight;
+  final int durationMs;
+  final String userAnswer;
+  final String bankId;
+  final String? subjectId;
+  final String? chapterId;
+  final Question? question;
+  final UserQuestion? userQuestion;
+
+  const AnsweredRecordItem({
+    required this.activityId,
+    required this.questionId,
+    required this.timestamp,
+    required this.isRight,
+    required this.durationMs,
+    required this.userAnswer,
+    required this.bankId,
+    this.subjectId,
+    this.chapterId,
+    this.question,
+    this.userQuestion,
+  });
+}
+
+/// 查询指定时间范围内的所有刷题记录及题目对象
+Future<List<AnsweredRecordItem>> getAnsweredRecordsInRange({
+  required int startMs,
+  required int endMs,
+  String? bankId,
+}) async {
+  final userDb = await UserDBHelper().database;
+  final conditions = <String>[
+    'title IN (?, ?)',
+    'timestamp >= ?',
+    'timestamp < ?',
+    "(is_right = '0' OR is_right = '1' OR is_right = 0 OR is_right = 1)",
+  ];
+  final args = <Object>['NewAnswer', 'Backfill', startMs, endMs];
+  if (bankId != null) {
+    conditions.add('bank_id = ?');
+    args.add(bankId);
+  }
+
+  final rows = await userDb.rawQuery(
+    'SELECT * FROM Activities WHERE ${conditions.join(' AND ')} ORDER BY timestamp DESC',
+    args,
+  );
+  if (rows.isEmpty) return <AnsweredRecordItem>[];
+
+  final questionIds = rows
+      .map((r) => r['question_id']?.toString())
+      .whereType<String>()
+      .toSet()
+      .toList();
+
+  final userQuestionsMap = <String, UserQuestion>{};
+  if (questionIds.isNotEmpty) {
+    final placeholders = List.filled(questionIds.length, '?').join(',');
+    final uqRows = await userDb.rawQuery(
+      'SELECT * FROM Question WHERE id IN ($placeholders)',
+      questionIds,
+    );
+    for (final r in uqRows) {
+      final uq = UserQuestion.fromMap(r);
+      userQuestionsMap[uq.id] = uq;
+    }
+  }
+
+  final prefs = await SharedPreferences.getInstance();
+  final currentBankId = prefs.getString('activeBankId') ?? 'dental_final';
+  final questionMap = <String, Question>{};
+
+  final bankToQids = <String, Set<String>>{};
+  for (final row in rows) {
+    final qid = row['question_id']?.toString();
+    if (qid == null || qid.isEmpty) continue;
+    final bId = (row['bank_id'] as String?)?.isNotEmpty == true
+        ? (row['bank_id'] as String)
+        : currentBankId;
+    bankToQids.putIfAbsent(bId, () => <String>{}).add(qid);
+  }
+
+  final dbManager = QuestionBankDatabaseManager();
+  for (final entry in bankToQids.entries) {
+    final bId = entry.key;
+    final qids = entry.value.toList();
+    try {
+      final qDb = await dbManager.openBank(bId);
+      final placeholders = List.filled(qids.length, '?').join(',');
+      final qRows = await qDb.rawQuery(
+        'SELECT * FROM Question WHERE id IN ($placeholders)',
+        qids,
+      );
+      for (final qr in qRows) {
+        final q = Question.fromMap(qr);
+        questionMap[q.id] = q;
+      }
+    } catch (_) {}
+  }
+
+  final missingQids =
+      questionIds.where((id) => !questionMap.containsKey(id)).toList();
+  if (missingQids.isNotEmpty) {
+    try {
+      final qDb = await dbManager.openBank(currentBankId);
+      final placeholders = List.filled(missingQids.length, '?').join(',');
+      final qRows = await qDb.rawQuery(
+        'SELECT * FROM Question WHERE id IN ($placeholders)',
+        missingQids,
+      );
+      for (final qr in qRows) {
+        final q = Question.fromMap(qr);
+        questionMap[q.id] = q;
+      }
+    } catch (_) {}
+  }
+
+  final result = <AnsweredRecordItem>[];
+  for (final row in rows) {
+    final qid = row['question_id']?.toString() ?? '';
+    final isRight = row['is_right'] == '1' || row['is_right'] == 1;
+    final duration = (row['duration'] as num?)?.toInt() ?? 0;
+    final timestamp = (row['timestamp'] as num).toInt();
+
+    String userAns = '';
+    try {
+      final desc = row['description'] as String?;
+      if (desc != null && desc.isNotEmpty) {
+        final decoded = jsonDecode(desc) as Map<String, dynamic>;
+        userAns = decoded['answer']?.toString() ?? '';
+      }
+    } catch (_) {}
+    if (userAns.isEmpty && userQuestionsMap.containsKey(qid)) {
+      userAns = getLastAnswer(userQuestionsMap[qid]!.userAnswer);
+    }
+
+    result.add(AnsweredRecordItem(
+      activityId: row['id']?.toString() ?? '',
+      questionId: qid,
+      timestamp: timestamp,
+      isRight: isRight,
+      durationMs: duration,
+      userAnswer: userAns,
+      bankId: (row['bank_id'] as String?) ?? currentBankId,
+      subjectId: row['subject_id'] as String?,
+      chapterId: row['chapter_id'] as String?,
+      question: questionMap[qid],
+      userQuestion: userQuestionsMap[qid],
+    ));
+  }
+  return result;
+}
