@@ -29,15 +29,25 @@ class _StatisticsPageState extends State<StatisticsPage> {
     super.initState();
     _future = _load();
     CloudSyncService.instance.addListener(_onSyncChanged);
+    answersChangedNotifier.addListener(_onAnswersChanged);
   }
 
   @override
   void dispose() {
     CloudSyncService.instance.removeListener(_onSyncChanged);
+    answersChangedNotifier.removeListener(_onAnswersChanged);
     super.dispose();
   }
 
   void _onSyncChanged() {
+    if (mounted) {
+      setState(() {
+        _future = _load();
+      });
+    }
+  }
+
+  void _onAnswersChanged() {
     if (mounted) {
       setState(() {
         _future = _load();
@@ -63,13 +73,14 @@ class _StatisticsPageState extends State<StatisticsPage> {
       endMs: nextMonthStartMs(now),
     );
 
-    // 年度格子墙：从去年今天到今日（共一年）
-    final yearStart = now.subtract(const Duration(days: 364));
+    // 年度格子墙：从去年今天到今日（共一年），使用标准化日期起点
+    final today0 = DateTime(now.year, now.month, now.day);
+    final yearStart = today0.subtract(const Duration(days: 364));
     final heat = await getDailyAggregation(
       startMs: yearStart.millisecondsSinceEpoch,
       endMs: tomorrowStartMs(now),
     );
-    final heatByDay = {for (final d in heat) d.date: d.count};
+    final heatByDay = {for (final d in heat) formatDayKey(d.date): d.count};
 
     // 三个周期的图表数据
     final todayChart = await _loadChart(_Period.today, now);
@@ -514,7 +525,7 @@ class _MetricCard extends StatelessWidget {
 // 刷题格子墙（GitHub 风格）
 // ---------------------------------------------------------------------
 class _ContributionWall extends StatefulWidget {
-  final Map<DateTime, int> days;
+  final Map<String, int> days;
 
   const _ContributionWall({required this.days});
 
@@ -545,21 +556,21 @@ class _ContributionWallState extends State<_ContributionWall> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final today = DateTime.now();
-    final todayKey = _dayKey(today);
+    final now = DateTime.now();
+    final todayDate = DateTime(now.year, now.month, now.day);
 
     // 起始：恰好一年前，并回溯到所在周的周一
-    var start = today.subtract(const Duration(days: 364));
-    start = _dayKey(start).subtract(Duration(days: _dayKey(start).weekday - 1));
+    final startDay = todayDate.subtract(const Duration(days: 364));
+    final mondayStart = startDay.subtract(Duration(days: startDay.weekday - 1));
 
-    // 按周分组（每列 7 天，周一 ~ 周日）
+    // 按周分组（每列 7 天，周一 ~ 周日），使用安全的 DateTime 累加避免时区漂移
     final weeks = <List<DateTime>>[];
-    var day = _dayKey(start);
-    while (!day.isAfter(todayKey)) {
+    var currentDay = DateTime(mondayStart.year, mondayStart.month, mondayStart.day);
+    while (!currentDay.isAfter(todayDate)) {
       final week = <DateTime>[];
       for (var i = 0; i < 7; i++) {
-        week.add(day);
-        day = day.add(const Duration(days: 1));
+        week.add(currentDay);
+        currentDay = DateTime(currentDay.year, currentDay.month, currentDay.day + 1);
       }
       weeks.add(week);
     }
@@ -594,9 +605,12 @@ class _ContributionWallState extends State<_ContributionWall> {
                       Padding(
                         padding: EdgeInsets.only(bottom: d == 6 ? 0 : gap),
                         child: _HeatCell(
-                          count: widget.days[weeks[w][d]] ?? 0,
+                          date: weeks[w][d],
+                          count: widget.days[formatDayKey(weeks[w][d])] ?? 0,
                           maxCount: maxCount,
                           size: cell,
+                          isToday: formatDayKey(weeks[w][d]) == formatDayKey(todayDate),
+                          isFuture: weeks[w][d].isAfter(todayDate),
                         ),
                       ),
                   ],
@@ -642,21 +656,29 @@ class _WeekdayLabels extends StatelessWidget {
 }
 
 class _HeatCell extends StatelessWidget {
+  final DateTime date;
   final int count;
   final int maxCount;
   final double size;
+  final bool isToday;
+  final bool isFuture;
 
   const _HeatCell({
+    required this.date,
     required this.count,
     required this.maxCount,
     required this.size,
+    this.isToday = false,
+    this.isFuture = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     Color color;
-    if (maxCount <= 0 || count <= 0) {
+    if (isFuture) {
+      color = theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.15);
+    } else if (maxCount <= 0 || count <= 0) {
       color = theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.45);
     } else {
       final t = (count / maxCount).clamp(0.0, 1.0);
@@ -664,6 +686,7 @@ class _HeatCell extends StatelessWidget {
         alpha: (0.25 + 0.75 * t).clamp(0.0, 1.0),
       );
     }
+
     return AnimatedContainer(
       duration: const Duration(milliseconds: 400),
       curve: Curves.easeOutCubic,
@@ -672,12 +695,22 @@ class _HeatCell extends StatelessWidget {
       decoration: BoxDecoration(
         color: color,
         borderRadius: BorderRadius.circular(3),
+        border: isToday
+            ? Border.all(
+                color: theme.colorScheme.primary,
+                width: 1.5,
+              )
+            : (isFuture
+                ? Border.all(
+                    color: theme.colorScheme.outlineVariant.withValues(alpha: 0.2),
+                    width: 0.5,
+                  )
+                : null),
       ),
     );
   }
 }
 
-DateTime _dayKey(DateTime t) => DateTime(t.year, t.month, t.day);
 
 // ---------------------------------------------------------------------
 // 图表卡片
@@ -723,7 +756,7 @@ class _AllStats {
   final PeriodStats today;
   final PeriodStats week;
   final PeriodStats month;
-  final Map<DateTime, int> heatByDay;
+  final Map<String, int> heatByDay;
   final Map<_Period, _ChartData> charts;
 
   const _AllStats({

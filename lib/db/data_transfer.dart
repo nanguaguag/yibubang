@@ -7,6 +7,7 @@ import 'package:sqflite/sqflite.dart';
 
 import 'database_helper.dart';
 import 'question_bank_manager.dart';
+import '../models/answer_statistics.dart';
 
 // 重新统计刷题数量
 Future<bool> rebuildQuestionCount({String? bankId}) async {
@@ -195,6 +196,7 @@ Future<void> repairActivities({String? bankId}) async {
   if (added > 0) {
     await batch.commit(noResult: true);
     debugPrint('[repairActivities] 已写入 Activities 成功');
+    notifyAnswersChanged();
   }
 }
 

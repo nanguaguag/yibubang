@@ -1,6 +1,18 @@
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../db/database_helper.dart';
+
+/// 全局刷题流水变更通知，当写入新的答题记录时自增触发监听
+final ValueNotifier<int> answersChangedNotifier = ValueNotifier<int>(0);
+
+void notifyAnswersChanged() {
+  answersChangedNotifier.value++;
+}
+
+/// 格式化日期为 YYYY-MM-DD 字符串作为稳定的日期键
+String formatDayKey(DateTime t) =>
+    '${t.year.toString().padLeft(4, '0')}-${t.month.toString().padLeft(2, '0')}-${t.day.toString().padLeft(2, '0')}';
 
 /// 时间段统计：某段时间内的总用时、累及作答数、正确数。
 ///
@@ -48,7 +60,7 @@ Future<List<Map<String, dynamic>>> _queryAnswersInRange({
     'title IN (?, ?)',
     'timestamp >= ?',
     'timestamp < ?',
-    "is_right IN ('0', '1')",
+    "(is_right = '0' OR is_right = '1' OR is_right = 0 OR is_right = 1)",
   ];
   // NewAnswer 为实时答题流水；Backfill 为历史数据修复补记，两者都计入统计。
   final args = <Object>['NewAnswer', 'Backfill', startMs, endMs];
@@ -119,16 +131,20 @@ Future<List<DailyStat>> getDailyAggregation({
     subjectId: subjectId,
     chapterId: chapterId,
   );
-  // 每天：count、durations 累加
-  final dayData = <DateTime, (int, int)>{};
+  // 每天：count、durations 累加，使用精确的 formatDayKey 字符串作为键
+  final dayData = <String, (int, int)>{};
+  final dateMap = <String, DateTime>{};
 
   DateTime dayKey(DateTime t) => DateTime(t.year, t.month, t.day);
 
   for (final row in rows) {
     final ts = (row['timestamp'] as num).toInt();
-    final date = dayKey(DateTime.fromMillisecondsSinceEpoch(ts));
-    final existing = dayData[date] ?? (0, 0);
-    dayData[date] = (
+    final dt = DateTime.fromMillisecondsSinceEpoch(ts);
+    final date = dayKey(dt);
+    final k = formatDayKey(date);
+    dateMap[k] = date;
+    final existing = dayData[k] ?? (0, 0);
+    dayData[k] = (
       existing.$1 + 1,
       existing.$2 + ((row['duration'] as num?)?.toInt() ?? 0)
     );
@@ -140,8 +156,9 @@ Future<List<DailyStat>> getDailyAggregation({
   final result = <DailyStat>[];
   for (var d = startDay;
       !d.isAfter(endDay);
-      d = d.add(const Duration(days: 1))) {
-    final data = dayData[d] ?? (0, 0);
+      d = DateTime(d.year, d.month, d.day + 1)) {
+    final k = formatDayKey(d);
+    final data = dayData[k] ?? (0, 0);
     result.add(DailyStat(date: d, count: data.$1, durationMs: data.$2));
   }
   return result;

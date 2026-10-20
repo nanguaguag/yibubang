@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../db/database_helper.dart';
 import '../db/question_bank_manager.dart';
 import '../services/ykb_sync_service.dart';
+import 'answer_statistics.dart';
 import 'chapter.dart';
 
 class UserQuestion {
@@ -645,6 +646,7 @@ Future<void> updateQuestion(
   );
   // 一次性提交
   await batch.commit(noResult: true);
+  notifyAnswersChanged();
 
   if (uq.status == 1 || uq.status == 2) {
     unawaited(YkbSyncService.instance.syncAnswer(
