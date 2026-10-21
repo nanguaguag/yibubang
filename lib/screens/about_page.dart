@@ -18,7 +18,7 @@ class AboutPage extends StatefulWidget {
 }
 
 class _AboutPageState extends State<AboutPage> {
-  String _version = '2.0.4';
+  String _version = '2.0.5';
   String _buildNumber = '';
   bool _developerModeEnabled = false;
 
