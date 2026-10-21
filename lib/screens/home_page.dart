@@ -1,16 +1,13 @@
-import 'dart:convert';
-import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'package:url_launcher/url_launcher.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../common/app_strings.dart';
+import '../db/data_transfer.dart';
+import '../repositories/question_bank_repository.dart';
 import '../screens/choosed_subjects_page.dart';
 import '../screens/my_page.dart';
 import '../screens/statistics_page.dart';
-import '../db/data_transfer.dart';
-import '../repositories/question_bank_repository.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:package_info_plus/package_info_plus.dart';
+import '../services/app_update_service.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -70,29 +67,10 @@ class _HomePageState extends State<HomePage> {
     }
 
     try {
-      await _loadAppUpdateData();
       if (mounted) await _checkForAppUpdate();
     } catch (error) {
-      debugPrint('应用更新清单获取失败：$error');
+      debugPrint('应用更新检查失败：$error');
     }
-  }
-
-  Future<void> _loadAppUpdateData() async {
-    final response = await http.get(
-      Uri.parse('https://files.melonhu.cn/yibubang/yibubang_update.json'),
-      headers: {
-        'Content-Type': 'application/json; charset=utf-8',
-        'Accept-Charset': 'utf-8',
-      },
-    ).timeout(const Duration(seconds: 5));
-    if (response.statusCode != 200) {
-      throw HttpException('应用更新清单请求失败：HTTP ${response.statusCode}');
-    }
-    final decoded = jsonDecode(utf8.decode(response.bodyBytes));
-    if (decoded is! Map<String, dynamic>) {
-      throw const FormatException('应用更新清单格式不正确');
-    }
-    updateData = decoded;
   }
 
   // 三个页面对应底部导航栏
@@ -108,21 +86,6 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  /// 比较版本号函数，返回 1 表示 v1 大于 v2，0 表示相等，-1 表示 v1 小于 v2
-  int _compareVersions(String v1, String v2) {
-    List<int> v1Parts = v1.split('.').map(int.parse).toList();
-    List<int> v2Parts = v2.split('.').map(int.parse).toList();
-    int length =
-        v1Parts.length > v2Parts.length ? v1Parts.length : v2Parts.length;
-    for (int i = 0; i < length; i++) {
-      int part1 = i < v1Parts.length ? v1Parts[i] : 0;
-      int part2 = i < v2Parts.length ? v2Parts[i] : 0;
-      if (part1 > part2) return 1;
-      if (part1 < part2) return -1;
-    }
-    return 0;
-  }
-
   void showRestartDialog(BuildContext context) {
     showDialog(
       context: context,
@@ -134,9 +97,7 @@ class _HomePageState extends State<HomePage> {
           actions: [
             TextButton(
               onPressed: () {
-                // 用户确认后退出 app 或关闭对话框
-                // SystemNavigator.pop(); // 用这个退出 app
-                Navigator.of(context).pop(); // 或者只是关闭对话框
+                Navigator.of(context).pop();
               },
               child: const Text("OK"),
             ),
@@ -148,54 +109,22 @@ class _HomePageState extends State<HomePage> {
 
   /// 检查应用更新，如果有新版本则弹窗提示
   Future<void> _checkForAppUpdate() async {
-    if (updateData.isEmpty) return;
-    String latestVersion = updateData["latest_app"] ?? currentVersion;
-    SharedPreferences prefs = await SharedPreferences.getInstance();
+    final prefs = await SharedPreferences.getInstance();
     // 用户关闭「接受应用更新」时跳过更新弹窗
     if (!(prefs.getBool('accept_update') ?? true)) return;
     if (!mounted) return;
 
     if (prefs.getBool('needToRebuildQuestionCount') ?? false) {
       if (await rebuildQuestionCount()) {
-        // 重算成功
         prefs.setBool('needToRebuildQuestionCount', false);
       }
       if (!mounted) return;
-      //Navigator.of(context, rootNavigator: true).pop();
       showRestartDialog(context);
     }
-    if (_compareVersions(latestVersion, currentVersion) > 0) {
-      // 弹窗提示更新
-      showDialog(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: Text('应用更新'),
-          content: Text(updateData["update_info"] ?? "检测到新版本，请及时更新"),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-              child: Text('取消'),
-            ),
-            TextButton(
-              onPressed: () async {
-                Navigator.of(context).pop();
-                // 打开默认浏览器，跳转到更新页面
-                String url = updateData["latest_app_url"] ??
-                    "https://github.com/nanguaguag/yibubang/releases/";
-                final Uri uri = Uri.parse(url);
-                if (await canLaunchUrl(uri)) {
-                  await launchUrl(uri);
-                } else {
-                  debugPrint("无法打开更新页面：$url");
-                }
-              },
-              child: Text('前往GitHub下载'),
-            ),
-          ],
-        ),
-      );
+
+    final newUpdate = await AppUpdateService().checkUpdate();
+    if (newUpdate != null && mounted) {
+      await AppUpdateService().showUpdateDialog(context, newUpdate);
     }
   }
 

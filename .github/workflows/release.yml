@@ -1,0 +1,240 @@
+name: Release Build & Publish
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release Tag (例如 v2.0.5)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  # -------------------------------------------------------------
+  # 1. Android 构建
+  # -------------------------------------------------------------
+  build-android:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve Tag Name
+        id: vars
+        run: |
+          RAW_TAG="${{ github.event.inputs.tag_name || github.ref_name }}"
+          echo "TAG=$RAW_TAG" >> $GITHUB_OUTPUT
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.27.3'
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build release APK
+        run: flutter build apk --release
+
+      - name: Package APK
+        run: |
+          cp build/app/outputs/flutter-apk/app-release.apk "yibubang-${{ steps.vars.outputs.TAG }}-android.apk"
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-android
+          path: yibubang-*-android.apk
+
+  # -------------------------------------------------------------
+  # 2. Windows 构建
+  # -------------------------------------------------------------
+  build-windows:
+    name: Build Windows App
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve Tag Name
+        id: vars
+        shell: bash
+        run: |
+          RAW_TAG="${{ github.event.inputs.tag_name || github.ref_name }}"
+          echo "TAG=$RAW_TAG" >> $GITHUB_OUTPUT
+
+      - name: Set up Visual Studio environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.27.3'
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build Windows app
+        run: flutter build windows --release
+
+      - name: Compress Windows bundle
+        shell: pwsh
+        run: |
+          $tag = "${{ steps.vars.outputs.TAG }}"
+          Compress-Archive -Path "build\windows\x64\runner\Release\*" -DestinationPath "yibubang-$tag-windows-x64.zip"
+
+      - name: Upload Windows Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-windows
+          path: yibubang-*-windows-x64.zip
+
+  # -------------------------------------------------------------
+  # 3. macOS 构建
+  # -------------------------------------------------------------
+  build-macos:
+    name: Build macOS App
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve Tag Name
+        id: vars
+        run: |
+          RAW_TAG="${{ github.event.inputs.tag_name || github.ref_name }}"
+          echo "TAG=$RAW_TAG" >> $GITHUB_OUTPUT
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.27.3'
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build macOS app
+        run: flutter build macos --release
+
+      - name: Compress macOS bundle
+        run: |
+          TAG="${{ steps.vars.outputs.TAG }}"
+          cd build/macos/Build/Products/Release/
+          zip -r -y "../../../../../yibubang-${TAG}-macos.zip" yibubang.app
+          cd ../../../../../
+
+      - name: Upload macOS Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-macos
+          path: yibubang-*-macos.zip
+
+  # -------------------------------------------------------------
+  # 4. Linux 构建
+  # -------------------------------------------------------------
+  build-linux:
+    name: Build Linux App
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve Tag Name
+        id: vars
+        run: |
+          RAW_TAG="${{ github.event.inputs.tag_name || github.ref_name }}"
+          echo "TAG=$RAW_TAG" >> $GITHUB_OUTPUT
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.27.3'
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build Linux app
+        run: flutter build linux --release
+
+      - name: Compress Linux bundle
+        run: |
+          TAG="${{ steps.vars.outputs.TAG }}"
+          cd build/linux/x64/release/bundle
+          tar -czvf "../../../../../yibubang-${TAG}-linux-x64.tar.gz" *
+          cd ../../../../../
+
+      - name: Upload Linux Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-linux
+          path: yibubang-*-linux-x64.tar.gz
+
+  # -------------------------------------------------------------
+  # 5. 汇聚发布 GitHub Release 并回写 yibubang_update.json
+  # -------------------------------------------------------------
+  publish-release:
+    name: Publish GitHub Release & Sync Manifest
+    needs: [build-android, build-windows, build-macos, build-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main branch
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Resolve Tag Name & Release Notes
+        id: meta
+        run: |
+          RAW_TAG="${{ github.event.inputs.tag_name || github.ref_name }}"
+          echo "TAG=$RAW_TAG" >> $GITHUB_OUTPUT
+          # 提取当前 tag 的提交日志或 commit 信息作为发布说明
+          git log -1 --pretty=format:"%B" > release_notes.txt
+          echo "--- Release Notes ---"
+          cat release_notes.txt
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Update yibubang_update.json
+        run: |
+          python3 scripts/update_manifest.py "${{ steps.meta.outputs.TAG }}" release_notes.txt
+          cp yibubang_update.json release-assets/
+
+      - name: Commit and push updated manifest to main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add yibubang_update.json
+          git commit -m "chore(release): update yibubang_update.json for ${{ steps.meta.outputs.TAG }} [skip ci]" || echo "无清单变动需要提交"
+          git push origin main || echo "回写 main 分支跳过"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.TAG }}
+          name: 医不帮 ${{ steps.meta.outputs.TAG }}
+          body_path: release_notes.txt
+          draft: false
+          prerelease: false
+          files: |
+            release-assets/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

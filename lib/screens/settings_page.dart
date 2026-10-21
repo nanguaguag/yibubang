@@ -1,18 +1,16 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../common/adaptive_route.dart';
 import '../common/app_strings.dart';
+import '../common/github_proxy.dart';
 import '../db/data_transfer.dart';
 import '../db/record_sync_service.dart';
 import '../repositories/question_search_repository.dart';
+import '../services/app_update_service.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/note_service.dart';
 import '../services/ykb_sync_service.dart';
@@ -41,6 +39,7 @@ class _SettingsPageState extends State<SettingsPage> {
   int mode = 0; // 默认刷题模式，对应 AppStrings.modesList
   double fontScale = 1.0; // 刷题字号缩放比例
   bool developerModeEnabled = false;
+  String selectedProxyName = '直连 (官方 GitHub)';
 
   // 医考帮云端同步设置
   bool syncAnswersToYkb = true;
@@ -58,8 +57,6 @@ class _SettingsPageState extends State<SettingsPage> {
 
   static const List<double> _fontScales = [0.85, 1.0, 1.15, 1.3];
   static const List<String> _fontScaleLabels = ['小', '标准', '大', '特大'];
-
-  String _currentVersion = '0.0.0';
 
   @override
   void initState() {
@@ -83,6 +80,7 @@ class _SettingsPageState extends State<SettingsPage> {
     fontScale = _normalizeFontScale(_prefs.getDouble('fontScale') ?? 1.0);
     developerModeEnabled =
         _prefs.getBool(AppStrings.keyDeveloperModeEnabled) ?? false;
+    selectedProxyName = await GitHubProxyConfig.getSelectedName();
     await CloudSyncService.instance.init();
 
     if (!mounted) return;
@@ -314,32 +312,138 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   // ------------------------------------------------------------------
+  // GitHub 镜像加速选择
+  // ------------------------------------------------------------------
+  Future<void> _showGitHubProxyDialog() async {
+    final currentPrefix = await GitHubProxyConfig.getSelectedPrefix();
+    if (!mounted) return;
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        return SimpleDialog(
+          title: const Text('选择 GitHub 镜像加速站'),
+          children: [
+            ...GitHubProxyConfig.presets.map((preset) {
+              final isSelected = preset['prefix'] == currentPrefix;
+              return SimpleDialogOption(
+                onPressed: () async {
+                  await GitHubProxyConfig.setSelectedPrefix(preset['prefix']!);
+                  final name = await GitHubProxyConfig.getSelectedName();
+                  if (mounted) {
+                    setState(() {
+                      selectedProxyName = name;
+                    });
+                  }
+                  if (ctx.mounted) Navigator.pop(ctx);
+                },
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    children: [
+                      Icon(
+                        isSelected
+                            ? Icons.radio_button_checked
+                            : Icons.radio_button_unchecked,
+                        color: isSelected
+                            ? Theme.of(context).colorScheme.primary
+                            : Theme.of(context).hintColor,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              preset['name']!,
+                              style: TextStyle(
+                                fontWeight: isSelected
+                                    ? FontWeight.bold
+                                    : FontWeight.normal,
+                              ),
+                            ),
+                            Text(
+                              preset['description']!,
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }),
+            const Divider(),
+            SimpleDialogOption(
+              onPressed: () async {
+                Navigator.pop(ctx);
+                _showCustomProxyDialog();
+              },
+              child: const Row(
+                children: [
+                  Icon(Icons.edit_note_rounded, size: 20),
+                  SizedBox(width: 12),
+                  Text('自定义镜像前缀...'),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _showCustomProxyDialog() async {
+    final controller = TextEditingController(
+      text: await GitHubProxyConfig.getSelectedPrefix(),
+    );
+    if (!mounted) return;
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('自定义 GitHub 镜像前缀'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            hintText: '如 https://my-proxy.com/',
+            labelText: '镜像代理前缀 URL',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              await GitHubProxyConfig.setSelectedPrefix(controller.text.trim());
+              final name = await GitHubProxyConfig.getSelectedName();
+              if (mounted) {
+                setState(() {
+                  selectedProxyName = name;
+                });
+              }
+              if (ctx.mounted) Navigator.pop(ctx);
+            },
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ------------------------------------------------------------------
   // 手动检查更新
   // ------------------------------------------------------------------
   Future<void> _checkForUpdate() async {
     try {
-      final info = await PackageInfo.fromPlatform();
-      _currentVersion = info.version;
-
-      final response = await http
-          .get(
-            Uri.parse('https://files.melonhu.cn/yibubang/yibubang_update.json'),
-            headers: {'Content-Type': 'application/json; charset=utf-8'},
-          )
-          .timeout(const Duration(seconds: 5));
-
-      if (response.statusCode != 200) {
-        throw HttpException('更新清单请求失败：HTTP ${response.statusCode}');
-      }
-      final decoded = jsonDecode(utf8.decode(response.bodyBytes));
-      if (decoded is! Map<String, dynamic>) {
-        throw const FormatException('更新清单格式不正确');
-      }
+      final updateData = await AppUpdateService().checkUpdate();
       if (!mounted) return;
-
-      final latest = decoded['latest_app']?.toString() ?? _currentVersion;
-      if (_compareVersions(latest, _currentVersion) > 0) {
-        _showUpdateDialog(decoded);
+      if (updateData != null) {
+        await AppUpdateService().showUpdateDialog(context, updateData);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('已是最新版本')),
@@ -352,46 +456,6 @@ class _SettingsPageState extends State<SettingsPage> {
         SnackBar(content: Text('检查更新失败：$e')),
       );
     }
-  }
-
-  void _showUpdateDialog(Map<String, dynamic> updateData) {
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('应用更新'),
-        content: Text(updateData['update_info']?.toString() ?? '检测到新版本，请及时更新'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () async {
-              Navigator.of(ctx).pop();
-              final url = updateData['latest_app_url']?.toString() ??
-                  'https://github.com/nanguaguag/yibubang/releases/';
-              final uri = Uri.parse(url);
-              if (await canLaunchUrl(uri)) {
-                await launchUrl(uri);
-              }
-            },
-            child: const Text('前往下载'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  int _compareVersions(String v1, String v2) {
-    final a = v1.split('.').map((p) => int.tryParse(p) ?? 0).toList();
-    final b = v2.split('.').map((p) => int.tryParse(p) ?? 0).toList();
-    final length = a.length > b.length ? a.length : b.length;
-    for (var i = 0; i < length; i++) {
-      final av = i < a.length ? a[i] : 0;
-      final bv = i < b.length ? b[i] : 0;
-      if (av != bv) return av > bv ? 1 : -1;
-    }
-    return 0;
   }
 
   // ------------------------------------------------------------------
@@ -652,6 +716,24 @@ class _SettingsPageState extends State<SettingsPage> {
                     );
                   },
                 ),
+              IconTile(
+                icon: Icons.alt_route_rounded,
+                label: 'GitHub 镜像加速',
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      selectedProxyName,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    ),
+                    const Icon(Icons.chevron_right),
+                  ],
+                ),
+                onTap: _showGitHubProxyDialog,
+              ),
               IconTile(
                 icon: Icons.system_update,
                 label: '检查更新',

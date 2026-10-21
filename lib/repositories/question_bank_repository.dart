@@ -9,6 +9,8 @@ import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
 
+import '../common/github_proxy.dart';
+import '../common/version_utils.dart';
 import '../db/database_helper.dart';
 import '../db/question_bank_manager.dart';
 import '../models/question_bank.dart';
@@ -459,7 +461,17 @@ class QuestionBankRepository {
   Future<Map<String, dynamic>?> checkRemoteManifest() async {
     Map<String, dynamic> decoded;
     try {
-      final response = await http.get(Uri.parse(remoteManifestUrl));
+      final manifestUrl = await GitHubProxyConfig.getManifestUrl();
+      http.Response response;
+      try {
+        response = await http.get(Uri.parse(manifestUrl)).timeout(const Duration(seconds: 8));
+      } catch (proxyError) {
+        debugPrint('镜像题库清单拉取失败 ($proxyError)，尝试官方直连兜底...');
+        response = await http
+            .get(Uri.parse(GitHubProxyConfig.rawBaseUrl))
+            .timeout(const Duration(seconds: 8));
+      }
+
       if (response.statusCode != 200) {
         throw HttpException('题库清单请求失败：HTTP ${response.statusCode}');
       }
@@ -584,7 +596,8 @@ class QuestionBankRepository {
     final client = http.Client();
     File? temporary;
     try {
-      final request = http.Request('GET', Uri.parse(url));
+      final downloadUrl = await GitHubProxyConfig.resolveDownloadUrl(url);
+      final request = http.Request('GET', Uri.parse(downloadUrl));
       final response = await client.send(request);
       if (response.statusCode != 200) {
         throw HttpException('题库下载失败：HTTP ${response.statusCode}');
@@ -656,14 +669,6 @@ class QuestionBankRepository {
   }
 
   int compareVersions(String left, String right) {
-    final a = left.split('.').map((part) => int.tryParse(part) ?? 0).toList();
-    final b = right.split('.').map((part) => int.tryParse(part) ?? 0).toList();
-    final length = a.length > b.length ? a.length : b.length;
-    for (var i = 0; i < length; i++) {
-      final av = i < a.length ? a[i] : 0;
-      final bv = i < b.length ? b[i] : 0;
-      if (av != bv) return av > bv ? 1 : -1;
-    }
-    return 0;
+    return VersionUtils.compareVersions(left, right);
   }
 }

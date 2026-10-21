@@ -50,6 +50,7 @@ dependencies:
   path: ^1.9.0
   fl_chart: ^0.70.2
   cached_network_image: ^4.0.3
+  open_filex: ^5.0.0
 
 dev_dependencies:
   flutter_test:
