@@ -1,7 +1,7 @@
 {
     "latest_app": "2.0.5",
     "latest_app_url": "https://github.com/nanguaguag/yibubang/releases/tag/v2.0.5",
-    "update_info": "【医不帮 v2.0.5】：\n\n1. 软件更新重构：改用 GitHub Raw + 设置页多镜像站加速（ghproxy/ghps/自定义），支持应用内下载进度显示并自动拉起安装器；\n2. 自建多端云同步：升级数据库至 v7，基于 Cloudflare Workers + D1 与设备配对码实现跨设备毫秒级增量同步与 LWW 状态仲裁；\n3. 医考帮深度双向同步：实现做题、斩题、章节重做同步与本地 SQLite 离线重试队列，支持评论点赞与一键转笔记；\n4. 统计与打卡热力图：格子墙交互化升级（悬浮高亮、点击穿透查看当天答题记录），增加月份轴标签，支持指标卡下钻；\n5. 题目详情页架构重构：拆解子组件并引入控制器精准局部刷新，集成 cached_network_image 离线缓存，优化评论无限滚动与图片容错；\n6. 视觉与体验打磨：全面升级 Material 3 圆角风格，统一全局转场动画，Android 底部沉浸式小白条，连点5次开启开发者模式。",
+    "update_info": "【医不帮 v2.0.5】：\n\nfix(ci): 升级构建工具链、解决Gradle/AGP/NDK依赖冲突并支持分架构APK发布\n\n- 升级 AGP 至 8.11.1，Kotlin 至 2.2.20，Gradle 包装器至 8.14.0\n- 配置 NDK 28.2.13676358 满足 jni 插件依赖要求\n- GitHub Actions CI 配置 Java 17 与 Flutter stable 渠道\n- 兼容 cached_network_image 约束并保留 Material 3 页面过渡 FadeForwardsPageTransitionsBuilder\n- release.yml 支持同时构建并发布通用版与分架构版 APK（arm64-v8a, armeabi-v7a, x86_64）至 GitHub Release",
     "assets": {
         "android": "https://github.com/nanguaguag/yibubang/releases/download/v2.0.5/yibubang-v2.0.5-android.apk",
         "android_arm64": "https://github.com/nanguaguag/yibubang/releases/download/v2.0.5/yibubang-v2.0.5-android-arm64-v8a.apk",
