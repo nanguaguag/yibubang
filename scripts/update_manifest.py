@@ -31,6 +31,9 @@ def update_manifest(tag_name: str, release_notes: str = "", repo: str = "nanguag
 
     data["assets"] = {
         "android": f"https://github.com/{repo}/releases/download/v{clean_version}/yibubang-v{clean_version}-android.apk",
+        "android_arm64": f"https://github.com/{repo}/releases/download/v{clean_version}/yibubang-v{clean_version}-android-arm64-v8a.apk",
+        "android_armv7": f"https://github.com/{repo}/releases/download/v{clean_version}/yibubang-v{clean_version}-android-armeabi-v7a.apk",
+        "android_x86_64": f"https://github.com/{repo}/releases/download/v{clean_version}/yibubang-v{clean_version}-android-x86_64.apk",
         "windows": f"https://github.com/{repo}/releases/download/v{clean_version}/yibubang-v{clean_version}-windows-x64.zip",
         "macos": f"https://github.com/{repo}/releases/download/v{clean_version}/yibubang-v{clean_version}-macos.zip",
         "linux": f"https://github.com/{repo}/releases/download/v{clean_version}/yibubang-v{clean_version}-linux-x64.tar.gz"

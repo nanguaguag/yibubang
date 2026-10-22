@@ -4,6 +4,9 @@
     "update_info": "【医不帮 v2.0.5】：\n\n1. 软件更新重构：改用 GitHub Raw + 设置页多镜像站加速（ghproxy/ghps/自定义），支持应用内下载进度显示并自动拉起安装器；\n2. 自建多端云同步：升级数据库至 v7，基于 Cloudflare Workers + D1 与设备配对码实现跨设备毫秒级增量同步与 LWW 状态仲裁；\n3. 医考帮深度双向同步：实现做题、斩题、章节重做同步与本地 SQLite 离线重试队列，支持评论点赞与一键转笔记；\n4. 统计与打卡热力图：格子墙交互化升级（悬浮高亮、点击穿透查看当天答题记录），增加月份轴标签，支持指标卡下钻；\n5. 题目详情页架构重构：拆解子组件并引入控制器精准局部刷新，集成 cached_network_image 离线缓存，优化评论无限滚动与图片容错；\n6. 视觉与体验打磨：全面升级 Material 3 圆角风格，统一全局转场动画，Android 底部沉浸式小白条，连点5次开启开发者模式。",
     "assets": {
         "android": "https://github.com/nanguaguag/yibubang/releases/download/v2.0.5/yibubang-v2.0.5-android.apk",
+        "android_arm64": "https://github.com/nanguaguag/yibubang/releases/download/v2.0.5/yibubang-v2.0.5-android-arm64-v8a.apk",
+        "android_armv7": "https://github.com/nanguaguag/yibubang/releases/download/v2.0.5/yibubang-v2.0.5-android-armeabi-v7a.apk",
+        "android_x86_64": "https://github.com/nanguaguag/yibubang/releases/download/v2.0.5/yibubang-v2.0.5-android-x86_64.apk",
         "windows": "https://github.com/nanguaguag/yibubang/releases/download/v2.0.5/yibubang-v2.0.5-windows-x64.zip",
         "macos": "https://github.com/nanguaguag/yibubang/releases/download/v2.0.5/yibubang-v2.0.5-macos.zip",
         "linux": "https://github.com/nanguaguag/yibubang/releases/download/v2.0.5/yibubang-v2.0.5-linux-x64.tar.gz"
