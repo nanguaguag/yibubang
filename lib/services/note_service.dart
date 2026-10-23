@@ -11,6 +11,7 @@ import '../common/ykb_encrypt.dart';
 import '../db/database_helper.dart';
 import '../models/note.dart';
 import '../models/question.dart';
+import 'ykb_sync_service.dart';
 
 /// 医考帮笔记业务与同步队列服务
 class NoteService {
@@ -476,6 +477,16 @@ class NoteService {
       method: 'POST',
     );
     debugPrint('[NoteService] pushNote result: $resp');
+    final code = resp['code']?.toString() ?? '200';
+    SyncResponseCache.instance.record(
+      queueId: item.id,
+      itemId: note.questionId,
+      type: 'note_upload',
+      code: code,
+      payload: params,
+      response: resp,
+      rawResponse: const JsonEncoder.withIndent('  ').convert(resp),
+    );
 
     if (resp['code'] == '200' || resp['code'] == 200) {
       String? remoteId = note.remoteId;
@@ -550,6 +561,20 @@ class NoteService {
         'is_svip': '0',
       },
       method: 'POST',
+    );
+
+    final code = resp['code']?.toString() ?? '200';
+    SyncResponseCache.instance.record(
+      queueId: item.id,
+      itemId: item.questionId,
+      type: 'note_delete',
+      code: code,
+      payload: {
+        'id': item.noteId,
+        'question_id': item.questionId,
+      },
+      response: resp,
+      rawResponse: const JsonEncoder.withIndent('  ').convert(resp),
     );
 
     if (resp['code'] == '200' || resp['code'] == 200) {

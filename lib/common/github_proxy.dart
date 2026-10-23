@@ -11,22 +11,22 @@ class GitHubProxyConfig {
   /// 预设镜像加速列表
   static const List<Map<String, String>> presets = [
     {
-      'name': '直连 (官方 GitHub)',
+      'name': 'GitHub直连',
       'prefix': '',
       'description': '直接访问官方服务器（海外或开启代理推荐）',
     },
     {
-      'name': 'ghproxy.net (推荐国内)',
+      'name': 'ghproxy.net',
       'prefix': 'https://ghproxy.net/',
       'description': '常用稳定 GitHub 镜像加速站',
     },
     {
-      'name': 'ghps.cc (国内镜像)',
+      'name': 'ghps.cc',
       'prefix': 'https://ghps.cc/',
       'description': '常用 GitHub 镜像加速站',
     },
     {
-      'name': 'mirror.ghproxy.com (备用镜像)',
+      'name': 'mirror.ghproxy.com',
       'prefix': 'https://mirror.ghproxy.com/',
       'description': '备用镜像加速站',
     },

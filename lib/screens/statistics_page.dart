@@ -193,12 +193,24 @@ class _StatisticsPageState extends State<StatisticsPage> {
                 const SizedBox(height: 16),
                 _ChartCard(
                   title: '刷题数量',
-                  chart: _buildCountChart(data.charts[_chartPeriod]!),
+                  chart: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 250),
+                    child: KeyedSubtree(
+                      key: ValueKey('count_${_chartPeriod.name}'),
+                      child: _buildCountChart(data.charts[_chartPeriod]!),
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 16),
                 _ChartCard(
                   title: '刷题时长',
-                  chart: _buildDurationChart(data.charts[_chartPeriod]!),
+                  chart: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 250),
+                    child: KeyedSubtree(
+                      key: ValueKey('dur_${_chartPeriod.name}'),
+                      child: _buildDurationChart(data.charts[_chartPeriod]!),
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 16),
               ],
@@ -368,6 +380,7 @@ class _StatisticsPageState extends State<StatisticsPage> {
 
   Widget _buildCountChart(_ChartData d) {
     final theme = Theme.of(context);
+    final maxCount = d.counts.fold<int>(0, (m, e) => e > m ? e : m);
     final bars = <BarChartGroupData>[
       for (var i = 0; i < d.counts.length; i++)
         BarChartGroupData(
@@ -387,6 +400,7 @@ class _StatisticsPageState extends State<StatisticsPage> {
     return BarChart(
       BarChartData(
         minY: 0,
+        maxY: maxCount == 0 ? 10 : (maxCount * 1.2).ceilToDouble(),
         alignment: BarChartAlignment.spaceAround,
         barGroups: bars,
         gridData: const FlGridData(show: false),
@@ -394,6 +408,8 @@ class _StatisticsPageState extends State<StatisticsPage> {
         titlesData: _bottomTitles(d.labels),
         barTouchData: BarTouchData(
           touchTooltipData: BarTouchTooltipData(
+            fitInsideHorizontally: true,
+            fitInsideVertically: true,
             getTooltipColor: (_) => theme.colorScheme.inverseSurface,
             getTooltipItem: (group, groupIndex, rod, rodIndex) =>
                 BarTooltipItem(
@@ -403,7 +419,7 @@ class _StatisticsPageState extends State<StatisticsPage> {
           ),
         ),
       ),
-      duration: const Duration(milliseconds: 800),
+      duration: const Duration(milliseconds: 300),
       curve: Curves.easeOutCubic,
     );
   }
@@ -419,11 +435,16 @@ class _StatisticsPageState extends State<StatisticsPage> {
       LineChartData(
         minY: 0,
         maxY: maxDur == 0 ? 10 : _msToMin(maxDur) * 1.2,
+        minX: 0,
+        maxX: d.durationsMs.isEmpty ? 1 : (d.durationsMs.length - 1).toDouble(),
+        clipData: const FlClipData.all(),
         lineBarsData: [
           LineChartBarData(
             spots: spots,
             isCurved: true,
-            curveSmoothness: 0.32,
+            curveSmoothness: 0.25,
+            preventCurveOverShooting: true,
+            preventCurveOvershootingThreshold: 10.0,
             barWidth: 3,
             color: theme.colorScheme.tertiary,
             dotData: const FlDotData(show: false),
@@ -449,6 +470,8 @@ class _StatisticsPageState extends State<StatisticsPage> {
         ),
         lineTouchData: LineTouchData(
           touchTooltipData: LineTouchTooltipData(
+            fitInsideHorizontally: true,
+            fitInsideVertically: true,
             getTooltipColor: (_) => theme.colorScheme.inverseSurface,
             getTooltipItems: (spots) => spots.map((s) {
               return LineTooltipItem(
@@ -462,7 +485,7 @@ class _StatisticsPageState extends State<StatisticsPage> {
           ),
         ),
       ),
-      duration: const Duration(milliseconds: 800),
+      duration: const Duration(milliseconds: 300),
       curve: Curves.easeOutCubic,
     );
   }

@@ -22,31 +22,19 @@
 
 ---
 
-## 目录 / Table of Contents
+## 目录
 
-- [🇨🇳 简体中文](#-简体中文)
-  - [项目简介](#-项目简介)
-  - [核心特性](#-核心特性)
-  - [数据库与技术架构](#-数据库与技术架构)
-  - [内置与支持题库](#-内置与支持题库)
-  - [平台支持与下载](#-平台支持与下载)
-  - [快速上手与构建](#-快速上手与构建)
-  - [功能进展 (Roadmap)](#-功能进展-roadmap)
-  - [界面预览](#-界面预览)
-- [🇺🇸 English](#-english)
-  - [Introduction](#-introduction)
-  - [Key Features](#-key-features)
-  - [Architecture & Database Design](#-architecture--database-design)
-  - [Supported Question Banks](#-supported-question-banks)
-  - [Platform Support & Download](#-platform-support--download)
-  - [Getting Started & Build Guide](#-getting-started--build-guide)
-  - [Roadmap](#-roadmap)
-  - [Snapshots](#-snapshots)
+- [项目简介](#-项目简介)
+- [核心特性](#-核心特性)
+- [数据库与技术架构](#-数据库与技术架构)
+- [内置与支持题库](#-内置与支持题库)
+- [平台支持与下载](#-平台支持与下载)
+- [快速上手与构建](#-快速上手与构建)
+- [功能进展 (Roadmap)](#-功能进展-roadmap)
+- [界面预览](#-界面预览)
 - [社区交流与开源许可 / Community & License](#-社区交流与开源许可--community--license)
 
 ---
-
-## 🇨🇳 简体中文
 
 ### 💡 项目简介
 
@@ -229,3 +217,10 @@ flutter build linux
   <img src="assets/images/windows_snipshot1.png" alt="Windows 端答题详情" width="48%">
   <img src="assets/images/windows_snipshot2.png" alt="Windows 端复习统计" width="48%">
 </p>
+
+---
+
+### 社区交流与开源许可 / Community & License
+
+- **Telegram**: [https://t.me/yibubang](https://t.me/yibubang)
+- **Open Source License**: Distributed under the [MIT License](LICENSE).

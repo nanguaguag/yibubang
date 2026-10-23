@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../models/question.dart';
 import '../../models/question_section_config.dart';
@@ -175,6 +176,16 @@ class QuestionExplainView extends StatelessWidget {
     String analysisText,
   ) {
     const Color orangeAccent = Color(0xFFB39D6B);
+    void copySection() {
+      Clipboard.setData(ClipboardData(text: analysisText));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('$title已复制'),
+          duration: const Duration(seconds: 1),
+        ),
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -192,13 +203,37 @@ class QuestionExplainView extends StatelessWidget {
                 color: orangeAccent,
               ),
             ),
+            const Spacer(),
+            IconButton(
+              icon:
+                  const Icon(Icons.copy_rounded, size: 18, color: orangeAccent),
+              tooltip: '复制$title',
+              onPressed: copySection,
+            ),
           ],
         ),
         const SizedBox(height: 10),
-        _buildTextWithImage(
-          context,
-          analysisText,
-          'https://ykb-app-files.yikaobang.com.cn/question/restore/${question.nativeAppId}/${question.number}',
+        SelectionArea(
+          contextMenuBuilder: (context, selectableRegionState) {
+            return AdaptiveTextSelectionToolbar.buttonItems(
+              anchors: selectableRegionState.contextMenuAnchors,
+              buttonItems: [
+                ...selectableRegionState.contextMenuButtonItems,
+                ContextMenuButtonItem(
+                  label: '复制全部',
+                  onPressed: () {
+                    selectableRegionState.hideToolbar();
+                    copySection();
+                  },
+                ),
+              ],
+            );
+          },
+          child: _buildTextWithImage(
+            context,
+            analysisText,
+            'https://ykb-app-files.yikaobang.com.cn/question/restore/${question.nativeAppId}/${question.number}',
+          ),
         ),
         const SizedBox(height: 10),
         const Divider(color: Color(0x22888888)),

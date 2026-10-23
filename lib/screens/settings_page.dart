@@ -22,6 +22,8 @@ import 'cloud_sync_page.dart';
 import 'developer_page.dart';
 import 'question_sections_page.dart';
 
+enum _UpdateCheckState { idle, checking, hasUpdate, latest }
+
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
 
@@ -32,6 +34,10 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   late SharedPreferences _prefs;
   bool _loaded = false;
+
+  // 检查更新状态
+  _UpdateCheckState _updateCheckState = _UpdateCheckState.idle;
+  Map<String, dynamic>? _updateData;
 
   // 通用设置
   bool acceptUpdate = true;
@@ -439,19 +445,36 @@ class _SettingsPageState extends State<SettingsPage> {
   // 手动检查更新
   // ------------------------------------------------------------------
   Future<void> _checkForUpdate() async {
+    if (_updateCheckState == _UpdateCheckState.checking) return;
+    if (_updateCheckState == _UpdateCheckState.hasUpdate && _updateData != null) {
+      await AppUpdateService().showUpdateDialog(context, _updateData!);
+      return;
+    }
+
+    setState(() {
+      _updateCheckState = _UpdateCheckState.checking;
+    });
+
     try {
       final updateData = await AppUpdateService().checkUpdate();
       if (!mounted) return;
       if (updateData != null) {
+        setState(() {
+          _updateCheckState = _UpdateCheckState.hasUpdate;
+          _updateData = updateData;
+        });
         await AppUpdateService().showUpdateDialog(context, updateData);
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('已是最新版本')),
-        );
+        setState(() {
+          _updateCheckState = _UpdateCheckState.latest;
+        });
       }
     } catch (e) {
       debugPrint('[check-update] 检查更新异常: $e');
       if (!mounted) return;
+      setState(() {
+        _updateCheckState = _UpdateCheckState.idle;
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('检查更新失败：$e')),
       );
@@ -737,6 +760,44 @@ class _SettingsPageState extends State<SettingsPage> {
               IconTile(
                 icon: Icons.system_update,
                 label: '检查更新',
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (_updateCheckState == _UpdateCheckState.checking)
+                      const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    else
+                      Text(
+                        _updateCheckState == _UpdateCheckState.idle
+                            ? '点击获取'
+                            : (_updateCheckState == _UpdateCheckState.hasUpdate
+                                ? '发现新版本'
+                                : '已是最新'),
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight:
+                              _updateCheckState == _UpdateCheckState.hasUpdate
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
+                          color: _updateCheckState == _UpdateCheckState.hasUpdate
+                              ? Theme.of(context).colorScheme.primary
+                              : Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    const SizedBox(width: 4),
+                    Icon(
+                      Icons.chevron_right_rounded,
+                      color: Theme.of(context)
+                          .colorScheme
+                          .onSurfaceVariant
+                          .withValues(alpha: 0.4),
+                      size: 20,
+                    ),
+                  ],
+                ),
                 onTap: _checkForUpdate,
               ),
             ],

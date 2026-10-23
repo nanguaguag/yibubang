@@ -576,6 +576,18 @@ class _DeveloperPageState extends State<DeveloperPage>
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                     const Spacer(),
+                    TextButton.icon(
+                      onPressed: () {
+                        SyncResponseCache.instance.clear();
+                        setState(() {});
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('已清空同步响应缓存')),
+                        );
+                      },
+                      icon: const Icon(Icons.cleaning_services_outlined, size: 16),
+                      label: const Text('清理响应缓存', style: TextStyle(fontSize: 12)),
+                    ),
+                    const SizedBox(width: 4),
                     Text(
                       '共 ${_recentActivities.length} 条',
                       style: TextStyle(
@@ -604,37 +616,57 @@ class _DeveloperPageState extends State<DeveloperPage>
                       const Divider(height: 1, indent: 16, endIndent: 16),
                   itemBuilder: (ctx, index) {
                     final act = _recentActivities[index];
+                    final qId = act['question_id']?.toString() ?? '';
                     final isRight = act['is_right']?.toString();
                     final duration = (act['duration'] as num?)?.toInt() ?? 0;
                     final ts = (act['timestamp'] as num?)?.toInt() ?? 0;
+
+                    final cached = SyncResponseCache.instance.getByItemId(qId);
+                    final String displayCode = cached?.code ??
+                        (isRight == '1'
+                            ? '200'
+                            : (isRight == '0' ? '错题' : '--'));
+
                     return ListTile(
                       dense: true,
-                      leading: Icon(
-                        isRight == '1'
-                            ? Icons.check_circle
-                            : (isRight == '0'
-                                ? Icons.cancel
-                                : Icons.help_outline),
-                        color: isRight == '1'
-                            ? Colors.green
-                            : (isRight == '0' ? Colors.red : Colors.grey),
-                        size: 20,
-                      ),
+                      leading: _buildStatusBadge(displayCode),
                       title: Text(
-                        '题目 ${act['question_id'] ?? '-'}  |  用时 ${(duration / 1000).toStringAsFixed(1)}s',
+                        '题目 $qId  |  用时 ${(duration / 1000).toStringAsFixed(1)}s',
                         style: const TextStyle(fontWeight: FontWeight.w600),
                       ),
                       subtitle: Text(
                         '题库: ${act['bank_id'] ?? '-'}  |  时间: ${_formatTime(ts)}',
                         style: const TextStyle(fontSize: 11),
                       ),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.data_object, size: 18),
-                        tooltip: '查看 Payload',
-                        onPressed: () => _showRawJsonDialog(
-                          '作答明细 (题目 ${act['question_id']})',
-                          act['description']?.toString() ?? '{}',
-                        ),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.data_object, size: 18),
+                            tooltip: '查看 Payload',
+                            onPressed: () => _showRawJsonDialog(
+                              '作答 Payload (题目 $qId)',
+                              act['description']?.toString() ?? '{}',
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.reply_outlined, size: 18),
+                            tooltip: '查看 respond',
+                            onPressed: () {
+                              final respJson = cached?.rawResponse ??
+                                  const JsonEncoder.withIndent('  ').convert({
+                                    'status': isRight == '1' ? 200 : 400,
+                                    'msg': '本地流水记录（未命中响应缓存或已清理）',
+                                    'question_id': qId,
+                                    'is_right': isRight,
+                                  });
+                              _showRawJsonDialog(
+                                '同步 Respond (题目 $qId)',
+                                respJson,
+                              );
+                            },
+                          ),
+                        ],
                       ),
                     );
                   },
@@ -716,11 +748,60 @@ class _DeveloperPageState extends State<DeveloperPage>
     );
   }
 
+  Widget _buildStatusBadge(String code, {double fontSize = 11}) {
+    Color bg;
+    Color fg;
+    if (code == '200') {
+      bg = Colors.green.withValues(alpha: 0.15);
+      fg = Colors.green.shade700;
+    } else if (code.startsWith('4')) {
+      bg = Colors.orange.withValues(alpha: 0.15);
+      fg = Colors.deepOrange;
+    } else if (code.startsWith('5') || code == 'ERR') {
+      bg = Colors.red.withValues(alpha: 0.15);
+      fg = Colors.red;
+    } else {
+      bg = Colors.grey.withValues(alpha: 0.15);
+      fg = Colors.grey.shade700;
+    }
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Container(
+          constraints: const BoxConstraints(minWidth: 38),
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: fg.withValues(alpha: 0.3)),
+          ),
+          child: Text(
+            code,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: fontSize,
+              fontWeight: FontWeight.bold,
+              color: fg,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildYkbQueueTile(ThemeData theme, Map<String, dynamic> item) {
     final type = item['type']?.toString() ?? '';
     final createdAt = (item['created_at'] as num?)?.toInt() ?? 0;
     final retry = (item['retry_count'] as num?)?.toInt() ?? 0;
     final lastError = item['last_error']?.toString();
+    final queueId = item['id']?.toString() ?? '';
+    final itemId = item['item_id']?.toString();
+
+    final cached = SyncResponseCache.instance.getByQueueId(queueId) ??
+        SyncResponseCache.instance.getByItemId(itemId);
+    final String statusCode = cached?.code ?? (retry > 0 ? '重试' : '待同步');
 
     final typeNames = {
       'cut': '斩题同步',
@@ -730,6 +811,7 @@ class _DeveloperPageState extends State<DeveloperPage>
 
     return ListTile(
       dense: true,
+      leading: _buildStatusBadge(statusCode),
       title: Row(
         children: [
           Container(
@@ -783,6 +865,23 @@ class _DeveloperPageState extends State<DeveloperPage>
             ),
           ),
           IconButton(
+            icon: const Icon(Icons.reply_outlined, size: 18),
+            tooltip: '查看 respond',
+            onPressed: () {
+              final respJson = cached?.rawResponse ??
+                  const JsonEncoder.withIndent('  ').convert({
+                    'status': 'pending',
+                    'message': '队列项尚未向服务器请求或响应缓存已清理',
+                    'retry_count': retry,
+                    'last_error': lastError,
+                  });
+              _showRawJsonDialog(
+                'YkbSyncQueue Respond',
+                respJson,
+              );
+            },
+          ),
+          IconButton(
             icon: const Icon(Icons.close, size: 18),
             tooltip: '删除该项',
             onPressed: () async {
@@ -803,9 +902,16 @@ class _DeveloperPageState extends State<DeveloperPage>
     final createdAt = (item['created_at'] as num?)?.toInt() ?? 0;
     final retry = (item['retry_count'] as num?)?.toInt() ?? 0;
     final lastError = item['last_error']?.toString();
+    final queueId = item['id']?.toString() ?? '';
+    final questionId = item['question_id']?.toString();
+
+    final cached = SyncResponseCache.instance.getByQueueId(queueId) ??
+        SyncResponseCache.instance.getByItemId(questionId);
+    final String statusCode = cached?.code ?? (retry > 0 ? '重试' : '待同步');
 
     return ListTile(
       dense: true,
+      leading: _buildStatusBadge(statusCode),
       title: Row(
         children: [
           Container(
@@ -852,29 +958,46 @@ class _DeveloperPageState extends State<DeveloperPage>
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          IconButton(
-            icon: const Icon(Icons.code, size: 18),
-            tooltip: '查看 Payload',
-            onPressed: () => _showRawJsonDialog(
-              'NoteSyncQueue Payload',
-              item['payload']?.toString() ?? '{}',
-            ),
+        IconButton(
+          icon: const Icon(Icons.code, size: 18),
+          tooltip: '查看 Payload',
+          onPressed: () => _showRawJsonDialog(
+            'NoteSyncQueue Payload',
+            item['payload']?.toString() ?? '{}',
           ),
-          IconButton(
-            icon: const Icon(Icons.close, size: 18),
-            tooltip: '删除该项',
-            onPressed: () async {
-              final db = await UserDBHelper().database;
-              await db.delete('NoteSyncQueue',
-                  where: 'id = ?', whereArgs: [item['id']]);
-              await _loadQueuesAndActivities();
-              if (mounted) setState(() {});
-            },
-          ),
-        ],
-      ),
-    );
-  }
+        ),
+        IconButton(
+          icon: const Icon(Icons.reply_outlined, size: 18),
+          tooltip: '查看 respond',
+          onPressed: () {
+            final respJson = cached?.rawResponse ??
+                const JsonEncoder.withIndent('  ').convert({
+                  'status': 'pending',
+                  'message': '笔记队列项尚未向服务器请求或响应缓存已清理',
+                  'retry_count': retry,
+                  'last_error': lastError,
+                });
+            _showRawJsonDialog(
+              'NoteSyncQueue Respond',
+              respJson,
+            );
+          },
+        ),
+        IconButton(
+          icon: const Icon(Icons.close, size: 18),
+          tooltip: '删除该项',
+          onPressed: () async {
+            final db = await UserDBHelper().database;
+            await db.delete('NoteSyncQueue',
+                where: 'id = ?', whereArgs: [item['id']]);
+            await _loadQueuesAndActivities();
+            if (mounted) setState(() {});
+          },
+        ),
+      ],
+    ),
+  );
+}
 
   Future<void> _confirmClearQueue(String table) async {
     final confirmed = await showDialog<bool>(

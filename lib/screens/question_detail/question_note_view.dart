@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 
 import '../../common/adaptive_route.dart';
 import '../../models/note.dart';
@@ -224,16 +226,41 @@ class QuestionNoteViewState extends State<QuestionNoteView> {
                             allowMultiple: true,
                           );
                           if (result != null && result.files.isNotEmpty) {
-                            setSheetState(() {
-                              for (final f in result.files) {
-                                if (f.path != null) {
-                                  images.add(NoteImage(
+                            final appDir =
+                                await getApplicationSupportDirectory();
+                            final noteImagesDir =
+                                Directory(p.join(appDir.path, 'note_images'));
+                            if (!noteImagesDir.existsSync()) {
+                              noteImagesDir.createSync(recursive: true);
+                            }
+                            final List<NoteImage> newImgs = [];
+                            for (final f in result.files) {
+                              if (f.path != null) {
+                                try {
+                                  final srcFile = File(f.path!);
+                                  final ext = p.extension(f.path!);
+                                  final destFileName =
+                                      'note_${DateTime.now().millisecondsSinceEpoch}_${newImgs.length}$ext';
+                                  final destFile = File(
+                                      p.join(noteImagesDir.path, destFileName));
+                                  await srcFile.copy(destFile.path);
+                                  newImgs.add(NoteImage(
+                                    bImg: '',
+                                    sImg: '',
+                                    localPath: destFile.path,
+                                  ));
+                                } catch (e) {
+                                  debugPrint('[Note] 复制所选本地图片到应用沙盒失败: $e');
+                                  newImgs.add(NoteImage(
                                     bImg: '',
                                     sImg: '',
                                     localPath: f.path,
                                   ));
                                 }
                               }
+                            }
+                            setSheetState(() {
+                              images.addAll(newImgs);
                             });
                           }
                         },
@@ -324,6 +351,12 @@ class QuestionNoteViewState extends State<QuestionNoteView> {
           width: width,
           height: height,
           fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => Container(
+            width: width,
+            height: height,
+            color: Colors.grey.withValues(alpha: 0.2),
+            child: const Icon(Icons.broken_image, color: Colors.grey),
+          ),
         );
       }
     }

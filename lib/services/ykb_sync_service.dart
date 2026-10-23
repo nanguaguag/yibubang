@@ -51,6 +51,92 @@ class YkbSyncQueueItem {
       );
 }
 
+/// 内存中的同步响应记录（不写入数据库，可随时清理）
+class SyncResponseRecord {
+  final String queueId;
+  final String? itemId;
+  final String type;
+  final String code; // '200', '400', '403', '500', 'ERR' 等
+  final Map<String, dynamic>? payload;
+  final Map<String, dynamic>? response;
+  final String rawResponse;
+  final int timestamp;
+
+  SyncResponseRecord({
+    required this.queueId,
+    this.itemId,
+    required this.type,
+    required this.code,
+    this.payload,
+    this.response,
+    required this.rawResponse,
+    required this.timestamp,
+  });
+
+  bool get isSuccess => code == '200';
+}
+
+/// 同步响应全局内存缓存
+class SyncResponseCache {
+  static final SyncResponseCache instance = SyncResponseCache._internal();
+  SyncResponseCache._internal();
+
+  final Map<String, SyncResponseRecord> _byQueueId = {};
+  final Map<String, SyncResponseRecord> _byItemId = {};
+  final List<SyncResponseRecord> _history = [];
+
+  void record({
+    required String queueId,
+    String? itemId,
+    required String type,
+    required String code,
+    Map<String, dynamic>? payload,
+    Map<String, dynamic>? response,
+    required String rawResponse,
+  }) {
+    final item = SyncResponseRecord(
+      queueId: queueId,
+      itemId: itemId,
+      type: type,
+      code: code,
+      payload: payload,
+      response: response,
+      rawResponse: rawResponse,
+      timestamp: DateTime.now().millisecondsSinceEpoch,
+    );
+    _byQueueId[queueId] = item;
+    if (itemId != null && itemId.isNotEmpty) {
+      _byItemId[itemId] = item;
+    }
+    _history.insert(0, item);
+    if (_history.length > 200) {
+      final removed = _history.removeLast();
+      _byQueueId.remove(removed.queueId);
+      if (removed.itemId != null) {
+        _byItemId.remove(removed.itemId);
+      }
+    }
+  }
+
+  SyncResponseRecord? getByQueueId(String? queueId) {
+    if (queueId == null) return null;
+    return _byQueueId[queueId];
+  }
+
+  SyncResponseRecord? getByItemId(String? itemId) {
+    if (itemId == null) return null;
+    return _byItemId[itemId];
+  }
+
+  List<SyncResponseRecord> get history => List.unmodifiable(_history);
+
+  void clear() {
+    _byQueueId.clear();
+    _byItemId.clear();
+    _history.clear();
+  }
+}
+
 /// 医考帮云端数据（斩题、做题、章节重做）同步及离线队列服务
 class YkbSyncService {
   static final YkbSyncService instance = YkbSyncService._internal();
@@ -306,7 +392,17 @@ class YkbSyncService {
               Map<String, dynamic>.from(item.payload),
             );
             debugPrint('[YkbSyncService] 斩题同步响应: $resp');
-            if (resp['code'] == '200') {
+            final code = resp['code']?.toString() ?? '200';
+            SyncResponseCache.instance.record(
+              queueId: item.id,
+              itemId: item.itemId,
+              type: item.type,
+              code: code,
+              payload: item.payload,
+              response: resp,
+              rawResponse: const JsonEncoder.withIndent('  ').convert(resp),
+            );
+            if (code == '200') {
               success = true;
             } else {
               await _markError(
@@ -318,7 +414,17 @@ class YkbSyncService {
               Map<String, dynamic>.from(item.payload),
             );
             debugPrint('[YkbSyncService] 作答同步响应: $resp');
-            if (resp['code'] == '200') {
+            final code = resp['code']?.toString() ?? '200';
+            SyncResponseCache.instance.record(
+              queueId: item.id,
+              itemId: item.itemId,
+              type: item.type,
+              code: code,
+              payload: item.payload,
+              response: resp,
+              rawResponse: const JsonEncoder.withIndent('  ').convert(resp),
+            );
+            if (code == '200') {
               success = true;
             } else {
               await _markError(
@@ -330,7 +436,17 @@ class YkbSyncService {
               Map<String, dynamic>.from(item.payload),
             );
             debugPrint('[YkbSyncService] 重做章节同步响应: $resp');
-            if (resp['code'] == '200') {
+            final code = resp['code']?.toString() ?? '200';
+            SyncResponseCache.instance.record(
+              queueId: item.id,
+              itemId: item.itemId,
+              type: item.type,
+              code: code,
+              payload: item.payload,
+              response: resp,
+              rawResponse: const JsonEncoder.withIndent('  ').convert(resp),
+            );
+            if (code == '200') {
               success = true;
             } else {
               await _markError(
@@ -348,6 +464,15 @@ class YkbSyncService {
         } catch (e, stack) {
           debugPrint('[YkbSyncService] 网络或异常中断 ${item.type}: $e');
           debugPrint('$stack');
+          SyncResponseCache.instance.record(
+            queueId: item.id,
+            itemId: item.itemId,
+            type: item.type,
+            code: 'ERR',
+            payload: item.payload,
+            response: {'error': e.toString()},
+            rawResponse: const JsonEncoder.withIndent('  ').convert({'error': e.toString()}),
+          );
           await _markError(item, e.toString());
           break; // 网络断开，保留在队列中等待下次重试
         }
