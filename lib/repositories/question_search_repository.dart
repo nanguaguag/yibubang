@@ -3,11 +3,20 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:sqflite/sqflite.dart';
+
 import '../db/database_helper.dart';
 import '../db/question_bank_manager.dart';
 import '../models/question.dart';
 import '../models/question_bank.dart';
 import 'question_bank_repository.dart';
+
+/// 用户题目聚合类型
+enum UserQuestionsType {
+  collection,
+  mistake,
+  cut,
+}
 
 /// 一次全库题目搜索命中的单条结果。
 class QuestionSearchResult {
@@ -25,6 +34,9 @@ class QuestionSearchResult {
   final String? year;
   String? subjectName;
   bool collection;
+  bool isCut;
+  int status;
+  int updatedAt;
 
   QuestionSearchResult({
     required this.questionId,
@@ -41,6 +53,9 @@ class QuestionSearchResult {
     this.year,
     this.subjectName,
     this.collection = false,
+    this.isCut = false,
+    this.status = 0,
+    this.updatedAt = 0,
   });
 
   factory QuestionSearchResult.fromMap(
@@ -328,5 +343,247 @@ class QuestionSearchRepository {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(historyKey);
     return <String>[];
+  }
+
+  /// 获取“我的页”各功能项统计数量
+  Future<Map<String, int>> getUserDataCounts() async {
+    final userDb = await UserDBHelper().database;
+    final colResult = Sqflite.firstIntValue(
+      await userDb.rawQuery('SELECT COUNT(*) FROM Question WHERE collection = 1'),
+    ) ?? 0;
+    final mistakeResult = Sqflite.firstIntValue(
+      await userDb.rawQuery('SELECT COUNT(*) FROM Question WHERE status = 2'),
+    ) ?? 0;
+    final cutResult = Sqflite.firstIntValue(
+      await userDb.rawQuery("SELECT COUNT(*) FROM Question WHERE cut_question = '1' OR cut_question = 'cutted'"),
+    ) ?? 0;
+    final notesResult = Sqflite.firstIntValue(
+      await userDb.rawQuery('SELECT COUNT(*) FROM Notes'),
+    ) ?? 0;
+    return {
+      'collection': colResult,
+      'mistake': mistakeResult,
+      'cut': cutResult,
+      'notes': notesResult,
+    };
+  }
+
+  /// 按类型加载用户的所有收藏 / 错题 / 已斩题目
+  Future<List<QuestionSearchResult>> loadUserQuestions(
+    UserQuestionsType type,
+  ) async {
+    final userDb = await UserDBHelper().database;
+    String whereClause;
+    switch (type) {
+      case UserQuestionsType.collection:
+        whereClause = 'collection = 1';
+        break;
+      case UserQuestionsType.mistake:
+        whereClause = 'status = 2';
+        break;
+      case UserQuestionsType.cut:
+        whereClause = "cut_question = '1' OR cut_question = 'cutted'";
+        break;
+    }
+
+    final userRows = await userDb.query(
+      'Question',
+      where: whereClause,
+      orderBy: 'updated_at DESC',
+    );
+
+    if (userRows.isEmpty) return <QuestionSearchResult>[];
+
+    final questionIds = userRows
+        .map((r) => r['id']?.toString())
+        .whereType<String>()
+        .toList();
+
+    final userMap = <String, Map<String, dynamic>>{
+      for (final r in userRows) (r['id']?.toString() ?? ''): r,
+    };
+
+    final banks = await listSearchBanks();
+    final prefs = await SharedPreferences.getInstance();
+    final activeBankId = prefs.getString('activeBankId');
+    if (activeBankId != null && activeBankId.isNotEmpty) {
+      final activeIdx = banks.indexWhere((b) => b.bankId == activeBankId);
+      if (activeIdx > 0) {
+        final b = banks.removeAt(activeIdx);
+        banks.insert(0, b);
+      }
+    }
+
+    final manager = QuestionBankDatabaseManager();
+    final foundMap = <String, QuestionSearchResult>{};
+    final remainingIds = Set<String>.from(questionIds);
+
+    for (final bank in banks) {
+      if (remainingIds.isEmpty) break;
+      try {
+        final db = await manager.openBank(bank.bankId);
+        final currentBankBatch = remainingIds.toList();
+        for (var i = 0; i < currentBankBatch.length; i += 200) {
+          final batchIds = currentBankBatch.sublist(
+            i,
+            i + 200 > currentBankBatch.length ? currentBankBatch.length : i + 200,
+          );
+          final placeholders = List.filled(batchIds.length, '?').join(',');
+          final rows = await db.rawQuery('''
+            SELECT id, public_title, title, type, type_str, option, restore,
+                   explain, chapter_parent_id, year
+              FROM Question
+             WHERE id IN ($placeholders)
+          ''', batchIds);
+
+          if (rows.isEmpty) continue;
+
+          final subjectIds = <String>{
+            for (final r in rows)
+              if ((r['chapter_parent_id'] as String?)?.isNotEmpty == true)
+                r['chapter_parent_id'] as String,
+          }.toList();
+
+          final subjectNames = <String, String>{};
+          if (subjectIds.isNotEmpty) {
+            final sPlaceholders = List.filled(subjectIds.length, '?').join(',');
+            final sRows = await db.query(
+              'Subject',
+              columns: ['id', 'name'],
+              where: 'id IN ($sPlaceholders)',
+              whereArgs: subjectIds,
+            );
+            for (final s in sRows) {
+              subjectNames[s['id'] as String] = s['name'] as String? ?? '';
+            }
+          }
+
+          for (final row in rows) {
+            final qid = row['id'] as String;
+            final userRow = userMap[qid];
+            final result = QuestionSearchResult.fromMap(
+              row,
+              bank.bankId,
+              bank.name,
+            );
+            if (result.subjectId != null) {
+              result.subjectName = subjectNames[result.subjectId];
+            }
+            if (userRow != null) {
+              result.collection = (userRow['collection'] as num? ?? 0) == 1;
+              final cut = userRow['cut_question']?.toString() ?? '0';
+              result.isCut = cut == '1' || cut == 'cutted';
+              result.status = (userRow['status'] as num? ?? 0).toInt();
+              result.updatedAt = (userRow['updated_at'] as num? ?? 0).toInt();
+            }
+            foundMap[qid] = result;
+            remainingIds.remove(qid);
+          }
+        }
+      } catch (e) {
+        debugPrint('题库 ${bank.bankId} 查询题目失败: $e');
+      }
+    }
+
+    final orderedResults = <QuestionSearchResult>[];
+    for (final qid in questionIds) {
+      final res = foundMap[qid];
+      if (res != null) {
+        orderedResults.add(res);
+      }
+    }
+    return orderedResults;
+  }
+
+  /// 根据题目 ID 全局查找单道题目及其所在题库
+  Future<QuestionSearchResult?> findQuestion(String questionId) async {
+    final banks = await listSearchBanks();
+    final prefs = await SharedPreferences.getInstance();
+    final activeBankId = prefs.getString('activeBankId');
+    if (activeBankId != null && activeBankId.isNotEmpty) {
+      final activeIdx = banks.indexWhere((b) => b.bankId == activeBankId);
+      if (activeIdx > 0) {
+        final b = banks.removeAt(activeIdx);
+        banks.insert(0, b);
+      }
+    }
+
+    final manager = QuestionBankDatabaseManager();
+    for (final bank in banks) {
+      try {
+        final db = await manager.openBank(bank.bankId);
+        final rows = await db.query(
+          'Question',
+          where: 'id = ?',
+          whereArgs: [questionId],
+          limit: 1,
+        );
+        if (rows.isNotEmpty) {
+          final result = QuestionSearchResult.fromMap(
+            rows.first,
+            bank.bankId,
+            bank.name,
+          );
+          if (result.subjectId != null && result.subjectId!.isNotEmpty) {
+            final sRows = await db.query(
+              'Subject',
+              columns: ['name'],
+              where: 'id = ?',
+              whereArgs: [result.subjectId],
+              limit: 1,
+            );
+            if (sRows.isNotEmpty) {
+              result.subjectName = sRows.first['name'] as String?;
+            }
+          }
+          final userQ = await getUserQuestionById(questionId);
+          result.collection = (userQ?.collection ?? 0) == 1;
+          result.isCut = userQ?.isCut ?? false;
+          result.status = userQ?.status ?? 0;
+          result.updatedAt = userQ?.updatedAt ?? 0;
+          return result;
+        }
+      } catch (e) {
+        debugPrint('在题库 ${bank.bankId} 查找题目失败: $e');
+      }
+    }
+    return null;
+  }
+
+  /// 切换某道题的斩题状态
+  Future<bool> setCutQuestion(String questionId, bool value) async {
+    final userDb = await UserDBHelper().database;
+    final cutVal = value ? '1' : '0';
+    final rows = await userDb.query(
+      'Question',
+      columns: ['id'],
+      where: 'id = ?',
+      whereArgs: [questionId],
+      limit: 1,
+    );
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (rows.isEmpty) {
+      await userDb.insert('Question', {
+        'id': questionId,
+        'chapter_id': '',
+        'chapter_parent_id': '',
+        'cut_question': cutVal,
+        'user_answer': '',
+        'status': 0,
+        'collection': 0,
+        'updated_at': now,
+      });
+    } else {
+      await userDb.update(
+        'Question',
+        {
+          'cut_question': cutVal,
+          'updated_at': now,
+        },
+        where: 'id = ?',
+        whereArgs: [questionId],
+      );
+    }
+    return value;
   }
 }

@@ -228,8 +228,12 @@ class QuestionDetailController extends ChangeNotifier {
     final UserQuestion userQuestion = userQuestions[_currentPage];
     final Question question = questions[_currentPage];
     userQuestion.isCut = !userQuestion.isCut;
+    if (!userQuestion.isCut && userQuestion.status == 3) {
+      userQuestion.status = 0;
+    }
     updateQuestionSimple(userQuestion, question);
     userQuestions[_currentPage].cutQuestion = userQuestion.cutQuestion;
+    userQuestions[_currentPage].status = userQuestion.status;
     onStateChanged?.call();
     notifyListeners();
 

@@ -113,6 +113,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
                       itemCount: _controller.questions.length,
                       itemBuilder: (context, index) {
                         return QuestionPageItem(
+                          key: ValueKey(_controller.questions[index].id),
                           question: _controller.questions[index],
                           userQuestion: _controller.userQuestions[index],
                           index: index,
@@ -149,9 +150,10 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
       builder: (context, _) {
         final uq = _controller.userQuestions[_controller.currentPage];
         return IconButton(
+          tooltip: uq.isCut ? '取消斩题' : '斩题',
           icon: !uq.isCut
-              ? const Icon(Icons.block)
-              : const Icon(Icons.block_outlined, color: Colors.redAccent),
+              ? const Icon(Icons.content_cut)
+              : const Icon(Icons.content_cut, color: Colors.redAccent),
           onPressed: () => _controller.toggleCut(context),
         );
       },

@@ -1,69 +1,20 @@
-import '../common/adaptive_route.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:yibubang/db/settings.dart';
+
+import '../common/adaptive_route.dart';
 import '../common/request.dart';
+import '../repositories/question_search_repository.dart';
 import '../services/note_service.dart';
 import '../services/ykb_sync_service.dart';
-import './settings_page.dart';
+import '../widgets/common/app_network_image.dart';
 import '../widgets/common/info_card.dart';
 import '../widgets/common/styled_tile.dart';
-import '../widgets/common/app_network_image.dart';
+import './my_notes_page.dart';
+import './settings_page.dart';
+import './user_questions_list_page.dart';
 
-/// **1. 入口页面：检查是否已登录**
-class AuthCheckPage extends StatefulWidget {
-  const AuthCheckPage({super.key});
-
-  @override
-  State<AuthCheckPage> createState() => _AuthCheckPageState();
-}
-
-class _AuthCheckPageState extends State<AuthCheckPage> {
-  bool _loggedIn = false;
-  bool _checked = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _refreshLoginStatus();
-  }
-
-  /// 读取本地登录状态，登录/退出后通过回调刷新整个页面
-  Future<void> _refreshLoginStatus() async {
-    final prefs = await SharedPreferences.getInstance();
-    final logged = prefs.getBool('loggedin') ?? false;
-    if (!mounted) return;
-    setState(() {
-      _loggedIn = logged;
-      _checked = true;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (!_checked) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (_loggedIn) {
-      return ProfilePage(onLoggedOut: _refreshLoginStatus);
-    }
-    return LoginPage(
-      onLoggedIn: () => setState(() => _loggedIn = true),
-    );
-  }
-}
-
-/// **2. 登录页面**
-class LoginPage extends StatefulWidget {
-  final VoidCallback? onLoggedIn;
-
-  const LoginPage({super.key, this.onLoggedIn});
-
-  @override
-  State<LoginPage> createState() => _LoginPageState();
-}
-
-/// 设置按钮，登录前/后共用
+/// 设置按钮，登录前/后及我的页共用
 Widget rebuildSettingsBtn(BuildContext context) {
   return IconButton(
     icon: const Icon(Icons.settings),
@@ -75,6 +26,340 @@ Widget rebuildSettingsBtn(BuildContext context) {
       );
     },
   );
+}
+
+/// **我的页**
+class MyPage extends StatefulWidget {
+  const MyPage({super.key});
+
+  @override
+  State<MyPage> createState() => _MyPageState();
+}
+
+class _MyPageState extends State<MyPage> {
+  final QuestionSearchRepository _repository = QuestionSearchRepository();
+
+  bool _loggedIn = false;
+  String _nickname = '';
+
+  int _collectionCount = 0;
+  int _mistakeCount = 0;
+  int _notesCount = 0;
+  int _cutCount = 0;
+  bool _loadingCounts = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+    NoteService.instance.noteSyncEventNotifier.addListener(_onNoteEvent);
+  }
+
+  @override
+  void dispose() {
+    NoteService.instance.noteSyncEventNotifier.removeListener(_onNoteEvent);
+    super.dispose();
+  }
+
+  void _onNoteEvent() {
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    final prefs = await SharedPreferences.getInstance();
+    final logged = prefs.getBool('loggedin') ?? false;
+    final nick = prefs.getString('nickname') ?? '';
+
+    final counts = await _repository.getUserDataCounts();
+
+    if (!mounted) return;
+    setState(() {
+      _loggedIn = logged;
+      _nickname = nick;
+      _collectionCount = counts['collection'] ?? 0;
+      _mistakeCount = counts['mistake'] ?? 0;
+      _notesCount = counts['notes'] ?? 0;
+      _cutCount = counts['cut'] ?? 0;
+      _loadingCounts = false;
+    });
+  }
+
+  Future<void> _onAccountTap() async {
+    if (_loggedIn) {
+      await Navigator.push(
+        context,
+        adaptivePageRoute(
+          builder: (context) => ProfilePage(onLoggedOut: _loadData),
+        ),
+      );
+    } else {
+      await Navigator.push(
+        context,
+        adaptivePageRoute(
+          builder: (context) => LoginPage(onLoggedIn: _loadData),
+        ),
+      );
+    }
+    _loadData();
+  }
+
+  Widget _buildModuleCard({
+    required BuildContext context,
+    required String title,
+    required String subtitle,
+    required int count,
+    required String unit,
+    required IconData icon,
+    required Color iconColor,
+    required Color iconBgColor,
+    required VoidCallback onTap,
+  }) {
+    final theme = Theme.of(context);
+
+    return Card(
+      elevation: 0,
+      margin: const EdgeInsets.only(bottom: 14),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: BorderSide(
+          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.4),
+        ),
+      ),
+      color: theme.colorScheme.surfaceContainerLow,
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(18),
+          child: Row(
+            children: [
+              Container(
+                width: 50,
+                height: 50,
+                decoration: BoxDecoration(
+                  color: iconBgColor,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(icon, color: iconColor, size: 26),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surfaceContainerHighest
+                      .withValues(alpha: 0.6),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  _loadingCounts ? '...' : '$count $unit',
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Scaffold(
+      appBar: AppBar(
+        leadingWidth: 220,
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 12),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(20),
+              onTap: _onAccountTap,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: _loggedIn
+                      ? theme.colorScheme.primaryContainer.withValues(alpha: 0.65)
+                      : theme.colorScheme.surfaceContainerHighest
+                          .withValues(alpha: 0.7),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      _loggedIn ? Icons.verified_user : Icons.login,
+                      size: 18,
+                      color: _loggedIn
+                          ? theme.colorScheme.primary
+                          : theme.colorScheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        _loggedIn
+                            ? (_nickname.isNotEmpty ? _nickname : '医考帮用户')
+                            : '登录医考帮',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: _loggedIn
+                              ? theme.colorScheme.onPrimaryContainer
+                              : theme.colorScheme.onSurfaceVariant,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+        actions: [
+          rebuildSettingsBtn(context),
+        ],
+      ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+        children: [
+          _buildModuleCard(
+            context: context,
+            title: '我的收藏',
+            subtitle: '常看常新，巩固重点考点',
+            count: _collectionCount,
+            unit: '道题',
+            icon: Icons.favorite_rounded,
+            iconColor: const Color(0xFFE53935),
+            iconBgColor: const Color(0xFFFFEBEE),
+            onTap: () async {
+              await Navigator.push(
+                context,
+                adaptivePageRoute(
+                  builder: (_) => const UserQuestionsListPage(
+                    type: UserQuestionsType.collection,
+                  ),
+                ),
+              );
+              _loadData();
+            },
+          ),
+          _buildModuleCard(
+            context: context,
+            title: '我的错题',
+            subtitle: '查漏补缺，攻破知识盲区',
+            count: _mistakeCount,
+            unit: '道题',
+            icon: Icons.cancel_rounded,
+            iconColor: const Color(0xFFF57C00),
+            iconBgColor: const Color(0xFFFFF3E0),
+            onTap: () async {
+              await Navigator.push(
+                context,
+                adaptivePageRoute(
+                  builder: (_) => const UserQuestionsListPage(
+                    type: UserQuestionsType.mistake,
+                  ),
+                ),
+              );
+              _loadData();
+            },
+          ),
+          _buildModuleCard(
+            context: context,
+            title: '我的笔记',
+            subtitle: '点滴积累，考点难点随笔',
+            count: _notesCount,
+            unit: '条笔记',
+            icon: Icons.edit_note_rounded,
+            iconColor: const Color(0xFF1E88E5),
+            iconBgColor: const Color(0xFFE3F2FD),
+            onTap: () async {
+              await Navigator.push(
+                context,
+                adaptivePageRoute(
+                  builder: (_) => const MyNotesPage(),
+                ),
+              );
+              _loadData();
+            },
+          ),
+          _buildModuleCard(
+            context: context,
+            title: '已斩的题',
+            subtitle: '熟练掌握，斩除考题拦路虎',
+            count: _cutCount,
+            unit: '道题',
+            icon: Icons.content_cut_rounded,
+            iconColor: const Color(0xFF7E57C2),
+            iconBgColor: const Color(0xFFEDE7F6),
+            onTap: () async {
+              await Navigator.push(
+                context,
+                adaptivePageRoute(
+                  builder: (_) => const UserQuestionsListPage(
+                    type: UserQuestionsType.cut,
+                  ),
+                ),
+              );
+              _loadData();
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 兼容旧代码路由的包装组件
+class AuthCheckPage extends StatelessWidget {
+  const AuthCheckPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const MyPage();
+  }
+}
+
+/// **登录页面**
+class LoginPage extends StatefulWidget {
+  final VoidCallback? onLoggedIn;
+
+  const LoginPage({super.key, this.onLoggedIn});
+
+  @override
+  State<LoginPage> createState() => _LoginPageState();
 }
 
 class _LoginPageState extends State<LoginPage> {
@@ -90,7 +375,7 @@ class _LoginPageState extends State<LoginPage> {
         _loading = true;
       });
       String mobile = _accountController.text.trim();
-      String password = _passwordController.text; // 假设此处需要加密
+      String password = _passwordController.text;
       try {
         Map<String, dynamic> resp = await login(mobile, password);
         if (resp['code'] == "200") {
@@ -124,8 +409,10 @@ class _LoginPageState extends State<LoginPage> {
           NoteService.instance.processQueue();
 
           if (!mounted) return;
-          // 登录成功后直接刷新为个人信息页，不再跳转到独立的“登录成功”页面
           widget.onLoggedIn?.call();
+          if (Navigator.canPop(context)) {
+            Navigator.pop(context);
+          }
         } else {
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
@@ -162,11 +449,11 @@ class _LoginPageState extends State<LoginPage> {
 
   @override
   Widget build(BuildContext context) {
-    // 设置最大宽度常量，比如 400
     const double maxWidth = 400;
 
     return Scaffold(
       appBar: AppBar(
+        leading: Navigator.canPop(context) ? const BackButton() : null,
         actions: <Widget>[
           rebuildSettingsBtn(context),
         ],
@@ -180,7 +467,6 @@ class _LoginPageState extends State<LoginPage> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // 使用 ConstrainedBox 限制账号文本框的最大宽度
                 ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: maxWidth),
                   child: TextFormField(
@@ -200,7 +486,6 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                 ),
                 const SizedBox(height: 20),
-                // 密码输入框同样添加最大宽度限制
                 ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: maxWidth),
                   child: TextFormField(
@@ -220,7 +505,6 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                 ),
                 const SizedBox(height: 20),
-                // 添加 info 提示区域
                 ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: maxWidth),
                   child: Row(
@@ -238,7 +522,6 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                 ),
                 const SizedBox(height: 20),
-                // 登录按钮添加最大宽度限制
                 ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: maxWidth),
                   child: SizedBox(
@@ -268,7 +551,7 @@ class _LoginPageState extends State<LoginPage> {
   }
 }
 
-/// **3. 个人中心页面**
+/// **个人中心页面**
 class ProfilePage extends StatefulWidget {
   final VoidCallback? onLoggedOut;
 
@@ -334,8 +617,11 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Future<void> logout() async {
-    await clearUserInfo(); // 清除登录数据
+    await clearUserInfo();
     widget.onLoggedOut?.call();
+    if (mounted && Navigator.canPop(context)) {
+      Navigator.pop(context);
+    }
   }
 
   @override
@@ -367,7 +653,6 @@ class _ProfilePageState extends State<ProfilePage> {
         avatar.startsWith('http://') || avatar.startsWith('https://');
 
     if (!hasValidUrl) {
-      // 头像未加载完或地址无效时，显示昵称首字作为占位
       return CircleAvatar(
         radius: 48,
         backgroundColor: colorScheme.primary,
@@ -381,7 +666,6 @@ class _ProfilePageState extends State<ProfilePage> {
     return CircleAvatar(
       radius: 48,
       backgroundColor: colorScheme.primaryContainer,
-      // 使用 AppNetworkImage 提供磁盘与内存缓存，离线可用且异常兜底
       child: ClipOval(
         child: AppNetworkImage(
           imageUrl: avatar,

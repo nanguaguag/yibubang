@@ -77,7 +77,7 @@ class _HomePageState extends State<HomePage> {
   final List<Widget> _screens = [
     ChoosedSubjectsPage(),
     StatisticsPage(),
-    AuthCheckPage(),
+    MyPage(),
   ];
 
   void _onItemTapped(int index) {

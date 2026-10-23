@@ -47,6 +47,16 @@ class NoteService {
     return rows.map((e) => QuestionNote.fromMap(e)).toList();
   }
 
+  /// 获取所有本地笔记（按时间倒序）
+  Future<List<QuestionNote>> getAllNotes() async {
+    final db = await UserDBHelper().database;
+    final rows = await db.query(
+      'Notes',
+      orderBy: 'timestamp DESC',
+    );
+    return rows.map((e) => QuestionNote.fromMap(e)).toList();
+  }
+
   /// 保存或更新笔记（先落本地 SQLite，若开启同步则入队并触发同步）
   Future<void> saveNote(QuestionNote note, {Question? question}) async {
     final db = await UserDBHelper().database;
