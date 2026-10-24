@@ -615,6 +615,10 @@ Future<void> updateQuestion(
   final int recordedDuration =
       (uq.status == 1 || uq.status == 2) ? durationMs : 0;
   final int recordedDurationSec = (recordedDuration / 1000).round();
+  final resolvedAppId = (q.nativeAppId?.isNotEmpty == true)
+      ? q.nativeAppId!
+      : (q.appId?.isNotEmpty == true ? q.appId! : '12');
+
   batch.insert(
     'Activities',
     {
@@ -622,17 +626,17 @@ Future<void> updateQuestion(
       'title': 'NewAnswer',
       'description': '''{
         "paper_id": "0",
-        "identity_id": "${resolvedIdentityId ?? q.identityId}",
-        "chapter_id": "${resolvedChapterId ?? q.chapterId}",
+        "identity_id": "${resolvedIdentityId ?? q.identityId ?? ''}",
+        "chapter_id": "${resolvedChapterId ?? q.chapterId ?? ''}",
         "collection_id": "",
         "category_id": "",
-        "chapter_parent_id": "${q.chapterParentId}",
+        "chapter_parent_id": "${q.chapterParentId ?? resolvedSubjectId ?? ''}",
         "answer": "${getLastAnswer(uq.userAnswer)}",
         "question_id": ${q.id},
         "is_right": "$isCorrect",
-        "app_id": "${q.nativeAppId}",
+        "app_id": "$resolvedAppId",
         "duration": "$recordedDurationSec",
-        "subject_id": "${resolvedSubjectId ?? q.chapterParentId}"
+        "subject_id": "${resolvedSubjectId ?? q.chapterParentId ?? ''}"
       }''',
       'bank_id': resolvedBankId,
       'question_id': q.id,
