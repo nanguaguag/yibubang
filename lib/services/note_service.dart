@@ -75,12 +75,18 @@ class NoteService {
     debugPrint('[NoteService] saveNote locally: ${note.id}, syncEnabled: $syncEnabled');
 
     if (syncEnabled) {
+      final queuePayload = {
+        ...noteToSave.toMap(),
+        'subject_id': question?.chapterParentId ?? '',
+        'identity_id': question?.identityId ?? '',
+        'app_id': question?.nativeAppId ?? question?.appId ?? '12',
+      };
       await _enqueue(NoteSyncQueueItem(
         id: 'upload_${note.id}_${DateTime.now().millisecondsSinceEpoch}',
         action: 'upload',
         noteId: note.id,
         questionId: note.questionId,
-        payload: jsonEncode(noteToSave.toMap()),
+        payload: jsonEncode(queuePayload),
         createdAt: DateTime.now().millisecondsSinceEpoch,
       ));
       // 触发后台处理
@@ -102,11 +108,17 @@ class NoteService {
     debugPrint('[NoteService] deleteNote locally: ${note.id}, remoteId: ${note.remoteId}');
 
     if (syncEnabled && note.remoteId != null && note.remoteId!.isNotEmpty) {
+      final queuePayload = {
+        'subject_id': question?.chapterParentId ?? '',
+        'identity_id': question?.identityId ?? '',
+        'app_id': question?.nativeAppId ?? question?.appId ?? '12',
+      };
       await _enqueue(NoteSyncQueueItem(
         id: 'del_${note.remoteId}_${DateTime.now().millisecondsSinceEpoch}',
         action: 'delete',
         noteId: note.remoteId,
         questionId: note.questionId,
+        payload: jsonEncode(queuePayload),
         createdAt: DateTime.now().millisecondsSinceEpoch,
       ));
       processQueue(question: question);
@@ -210,7 +222,9 @@ class NoteService {
           ? question.identityId!
           : (prefs.getString('identityId') ?? '');
       final subjectId = question.chapterParentId ?? '';
-      final appId = question.appId?.isNotEmpty == true ? question.appId! : '1';
+      final appId = question.nativeAppId?.isNotEmpty == true
+          ? question.nativeAppId!
+          : (question.appId?.isNotEmpty == true ? question.appId! : '12');
 
       final resp = await basicReq(
         '/allQuestion/Note/getNote',
@@ -435,13 +449,54 @@ class NoteService {
 
     QuestionNote note = QuestionNote.fromMap(noteRows.first);
     final prefs = await SharedPreferences.getInstance();
-    final identityId = fallbackQuestion?.identityId?.isNotEmpty == true
-        ? fallbackQuestion!.identityId!
-        : (prefs.getString('identityId') ?? '');
-    final subjectId = fallbackQuestion?.chapterParentId ?? '';
-    final appId = fallbackQuestion?.appId?.isNotEmpty == true
-        ? fallbackQuestion!.appId!
-        : '1';
+
+    // 优先从 payload 中提取已序列化的参数，避免后台队列无 fallbackQuestion 导致 subject_id 为空
+    Map<String, dynamic> itemPayload = {};
+    if (item.payload != null && item.payload!.isNotEmpty) {
+      try {
+        itemPayload = jsonDecode(item.payload!) as Map<String, dynamic>;
+      } catch (_) {}
+    }
+
+    String subjectId = itemPayload['subject_id']?.toString() ?? '';
+    String identityId = itemPayload['identity_id']?.toString() ?? '';
+    String appId = itemPayload['app_id']?.toString() ?? '';
+
+    if (subjectId.isEmpty && fallbackQuestion != null) {
+      subjectId = fallbackQuestion.chapterParentId ?? '';
+    }
+    if (identityId.isEmpty && fallbackQuestion != null) {
+      identityId = fallbackQuestion.identityId ?? '';
+    }
+    if (appId.isEmpty && fallbackQuestion != null) {
+      appId = fallbackQuestion.nativeAppId ?? fallbackQuestion.appId ?? '';
+    }
+
+    // 若依然缺失，从本地数据库反查题目的 chapter_parent_id
+    if (subjectId.isEmpty) {
+      try {
+        final qRows = await db.query(
+          'Question',
+          columns: ['chapter_parent_id'],
+          where: 'id = ?',
+          whereArgs: [item.questionId],
+          limit: 1,
+        );
+        if (qRows.isNotEmpty) {
+          final parentId = qRows.first['chapter_parent_id']?.toString();
+          if (parentId != null && parentId.isNotEmpty) {
+            subjectId = parentId;
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (identityId.isEmpty) {
+      identityId = prefs.getString('identityId') ?? '';
+    }
+    if (appId.isEmpty) {
+      appId = '12';
+    }
 
     // 云端优先保存第一张图片：检查第一张图片是否需要上传
     final List<NoteImage> updatedImages = List.from(note.images);
@@ -565,14 +620,54 @@ class NoteService {
   ) async {
     if (item.noteId == null || item.noteId!.isEmpty) return true;
 
+    final db = await UserDBHelper().database;
     final prefs = await SharedPreferences.getInstance();
-    final identityId = fallbackQuestion?.identityId?.isNotEmpty == true
-        ? fallbackQuestion!.identityId!
-        : (prefs.getString('identityId') ?? '');
-    final subjectId = fallbackQuestion?.chapterParentId ?? '';
-    final appId = fallbackQuestion?.appId?.isNotEmpty == true
-        ? fallbackQuestion!.appId!
-        : '1';
+
+    Map<String, dynamic> itemPayload = {};
+    if (item.payload != null && item.payload!.isNotEmpty) {
+      try {
+        itemPayload = jsonDecode(item.payload!) as Map<String, dynamic>;
+      } catch (_) {}
+    }
+
+    String subjectId = itemPayload['subject_id']?.toString() ?? '';
+    String identityId = itemPayload['identity_id']?.toString() ?? '';
+    String appId = itemPayload['app_id']?.toString() ?? '';
+
+    if (subjectId.isEmpty && fallbackQuestion != null) {
+      subjectId = fallbackQuestion.chapterParentId ?? '';
+    }
+    if (identityId.isEmpty && fallbackQuestion != null) {
+      identityId = fallbackQuestion.identityId ?? '';
+    }
+    if (appId.isEmpty && fallbackQuestion != null) {
+      appId = fallbackQuestion.nativeAppId ?? fallbackQuestion.appId ?? '';
+    }
+
+    if (subjectId.isEmpty) {
+      try {
+        final qRows = await db.query(
+          'Question',
+          columns: ['chapter_parent_id'],
+          where: 'id = ?',
+          whereArgs: [item.questionId],
+          limit: 1,
+        );
+        if (qRows.isNotEmpty) {
+          final parentId = qRows.first['chapter_parent_id']?.toString();
+          if (parentId != null && parentId.isNotEmpty) {
+            subjectId = parentId;
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (identityId.isEmpty) {
+      identityId = prefs.getString('identityId') ?? '';
+    }
+    if (appId.isEmpty) {
+      appId = '12';
+    }
 
     final resp = await basicReq(
       '/allQuestion/Note/cleanNote',
