@@ -111,8 +111,10 @@ class SyncResponseCache {
     _history.insert(0, item);
     if (_history.length > 200) {
       final removed = _history.removeLast();
-      _byQueueId.remove(removed.queueId);
-      if (removed.itemId != null) {
+      if (_byQueueId[removed.queueId] == removed) {
+        _byQueueId.remove(removed.queueId);
+      }
+      if (removed.itemId != null && _byItemId[removed.itemId] == removed) {
         _byItemId.remove(removed.itemId);
       }
     }
