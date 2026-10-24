@@ -40,6 +40,7 @@ Future main() async {
   ));
 
   await initSettings();
+  await ThemeController.instance.recoverTheme();
   debugPrint('[startup] initSettings 完成(${swStartup.elapsedMilliseconds}ms)');
   runApp(const Yibubang());
   debugPrint('[startup] runApp 完成(${swStartup.elapsedMilliseconds}ms)');
@@ -71,10 +72,11 @@ Future<void> _initializeQuestionBank() async {
   }
 }
 
-/// 参照 cgfkr 设计系统构建主题：MD3 种子色 + 统一的形状令牌。
+/// 参照 cgfkr 设计系统构建主题：MD3 种子色 + 统一的形状令牌 + 全局动画控制。
 ThemeData _buildTheme(Brightness brightness) {
+  final seedColor = ThemeController.instance.effectiveSeedColor;
   final colorScheme = ColorScheme.fromSeed(
-    seedColor: Colors.blue,
+    seedColor: seedColor,
     brightness: brightness,
   );
   return ThemeData(
@@ -136,18 +138,17 @@ ThemeData _buildTheme(Brightness brightness) {
 class Yibubang extends StatelessWidget {
   const Yibubang({super.key});
 
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<ThemeMode>(
-      valueListenable: ThemeController.instance,
-      builder: (context, themeMode, _) {
+    return ListenableBuilder(
+      listenable: ThemeController.instance,
+      builder: (context, _) {
         return MaterialApp(
           debugShowCheckedModeBanner: false,
           title: AppStrings.appTitle,
           theme: _buildTheme(Brightness.light),
           darkTheme: _buildTheme(Brightness.dark),
-          themeMode: themeMode,
+          themeMode: ThemeController.instance.themeMode,
           home: const HomePage(),
         );
       },

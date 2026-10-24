@@ -21,6 +21,8 @@ import 'about_page.dart';
 import 'cloud_sync_page.dart';
 import 'developer_page.dart';
 import 'question_sections_page.dart';
+import 'set_duration_page.dart';
+import 'set_theme_color_page.dart';
 
 enum _UpdateCheckState { idle, checking, hasUpdate, latest }
 
@@ -503,23 +505,61 @@ class _SettingsPageState extends State<SettingsPage> {
             child: _buildThemeSelector(),
           ),
           const SizedBox(height: 10),
-          InfoCard(
-            children: [
-              IconTile(
-                icon: Icons.view_quilt_outlined,
-                label: '题目页板块设置',
-                value: '排序与显隐',
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    adaptivePageRoute(
-                      builder: (context) => const QuestionSectionsPage(),
-                    ),
-                  );
-                },
-              ),
-            ],
+          ListenableBuilder(
+            listenable: ThemeController.instance,
+            builder: (context, _) {
+              final tc = ThemeController.instance;
+              final colorValue = tc.themeColorMode == ThemeColorMode.system
+                  ? '跟随系统'
+                  : '自定义';
+              final durationValue = '${tc.animationDuration.inMilliseconds} ms';
+              return InfoCard(
+                children: [
+                  IconTile(
+                    icon: Icons.palette_outlined,
+                    label: '主题颜色',
+                    value: colorValue,
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        adaptivePageRoute(
+                          builder: (context) => const SetThemeColorPage(),
+                        ),
+                      );
+                    },
+                  ),
+                  IconTile(
+                    icon: Icons.speed_outlined,
+                    label: '动画时长',
+                    value: durationValue,
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        adaptivePageRoute(
+                          builder: (context) => const SetDurationPage(),
+                        ),
+                      );
+                    },
+                  ),
+                  IconTile(
+                    icon: Icons.view_quilt_outlined,
+                    label: '题目页板块设置',
+                    value: '排序与显隐',
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        adaptivePageRoute(
+                          builder: (context) => const QuestionSectionsPage(),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              );
+            },
           ),
           const SizedBox(height: 14),
           const _SectionTitle(title: '通用'),

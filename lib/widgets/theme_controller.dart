@@ -1,10 +1,30 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:system_theme/system_theme.dart';
+
+enum ThemeColorMode { system, custom }
 
 class ThemeController extends ValueNotifier<ThemeMode> {
   ThemeController._() : super(ThemeMode.system);
 
   static final ThemeController instance = ThemeController._();
+
+  Color _themeColor = Colors.blue;
+  ThemeColorMode _themeColorMode = ThemeColorMode.system;
+  Duration _animationDuration = const Duration(milliseconds: 300);
+  Color? _systemAccentColor;
+
+  ThemeMode get themeMode => value;
+  Color get themeColor => _themeColor;
+  ThemeColorMode get themeColorMode => _themeColorMode;
+  Duration get animationDuration => _animationDuration;
+
+  Color get effectiveSeedColor {
+    if (_themeColorMode == ThemeColorMode.system && _systemAccentColor != null) {
+      return _systemAccentColor!;
+    }
+    return _themeColor;
+  }
 
   // 切换主题模式
   void toggleTheme() async {
@@ -32,7 +52,16 @@ class ThemeController extends ValueNotifier<ThemeMode> {
     await prefs.setString('themeMode', _themeModeToString(value));
   }
 
-  void recoverTheme() async {
+  Future<void> initSystemTheme() async {
+    try {
+      await SystemTheme.accentColor.load();
+      _systemAccentColor = SystemTheme.accentColor.accent;
+    } catch (e) {
+      debugPrint('加载系统主题色失败: $e');
+    }
+  }
+
+  Future<void> recoverTheme() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     String? savedTheme = prefs.getString('themeMode');
     debugPrint('Recovered theme from prefs: $savedTheme');
@@ -40,6 +69,48 @@ class ThemeController extends ValueNotifier<ThemeMode> {
     if (savedTheme != null) {
       value = _themeModeFromString(savedTheme);
     }
+
+    int? savedDuration = prefs.getInt('animationDuration');
+    if (savedDuration != null) {
+      _animationDuration = Duration(milliseconds: savedDuration);
+    }
+
+    int? savedColorMode = prefs.getInt('themeColorMode');
+    if (savedColorMode != null && savedColorMode < ThemeColorMode.values.length) {
+      _themeColorMode = ThemeColorMode.values[savedColorMode];
+    }
+
+    int? savedColor = prefs.getInt('themeColor');
+    if (savedColor != null) {
+      _themeColor = Color(savedColor);
+    }
+
+    await initSystemTheme();
+    notifyListeners();
+  }
+
+  Future<void> setAnimationDuration(Duration duration) async {
+    _animationDuration = duration;
+    notifyListeners();
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('animationDuration', duration.inMilliseconds);
+  }
+
+  Future<void> setThemeColor(Color color) async {
+    _themeColor = color;
+    notifyListeners();
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('themeColor', color.toARGB32());
+  }
+
+  Future<void> setThemeColorMode(ThemeColorMode mode) async {
+    _themeColorMode = mode;
+    if (mode == ThemeColorMode.system) {
+      await initSystemTheme();
+    }
+    notifyListeners();
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('themeColorMode', mode.index);
   }
 
   IconData getIcon() {

@@ -7,6 +7,15 @@ Future<void> initSettings() async {
   if (!prefs.containsKey('themeMode')) {
     await prefs.setString('themeMode', 'system'); // 默认暗黑模式为自动(系统)
   }
+  if (!prefs.containsKey('animationDuration')) {
+    await prefs.setInt('animationDuration', 300); // 默认动画时长300ms
+  }
+  if (!prefs.containsKey('themeColorMode')) {
+    await prefs.setInt('themeColorMode', 0); // 默认跟随系统
+  }
+  if (!prefs.containsKey('themeColor')) {
+    await prefs.setInt('themeColor', 0xFF2196F3); // 默认蓝色
+  }
   if (!prefs.containsKey('cutType')) {
     await prefs.setInt('cutType', 0); // 斩题: 全部
   }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../common/animation.dart';
 import '../common/app_strings.dart';
 import '../db/data_transfer.dart';
 import '../repositories/question_bank_repository.dart';
@@ -13,11 +14,12 @@ class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
   @override
-  _HomePageState createState() => _HomePageState();
+  State<HomePage> createState() => _HomePageState();
 }
 
 class _HomePageState extends State<HomePage> {
   int _selectedIndex = 0; // 默认主页为“我的课程”
+  late final PageController _pageController;
   Map<String, dynamic> updateData = {}; // 更新信息
 
   // 当前应用版本号
@@ -26,10 +28,17 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
+    _pageController = PageController(initialPage: _selectedIndex);
     // 先给个默认值，避免 late 未初始化被读到
     currentVersion = "0.0.0";
     // 异步初始化放到单独方法里
     _initAsync();
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
   }
 
   Future<void> _initAsync() async {
@@ -73,17 +82,29 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  // 三个页面对应底部导航栏
-  final List<Widget> _screens = [
-    ChoosedSubjectsPage(),
-    StatisticsPage(),
-    MyPage(),
-  ];
-
   void _onItemTapped(int index) {
+    if (_selectedIndex == index) return;
     setState(() {
       _selectedIndex = index;
     });
+    final duration = AppAnimation.duration;
+    if (duration == Duration.zero) {
+      _pageController.jumpToPage(index);
+    } else {
+      _pageController.animateToPage(
+        index,
+        duration: duration,
+        curve: AppAnimation.curve,
+      );
+    }
+  }
+
+  void _onPageChanged(int index) {
+    if (_selectedIndex != index) {
+      setState(() {
+        _selectedIndex = index;
+      });
+    }
   }
 
   void showRestartDialog(BuildContext context) {
@@ -131,23 +152,14 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 300),
-        switchInCurve: Curves.easeOutCubic,
-        switchOutCurve: Curves.easeInCubic,
-        layoutBuilder: (currentChild, previousChildren) => Stack(
-          fit: StackFit.expand,
-          children: [
-            ...previousChildren,
-            if (currentChild != null) currentChild,
-          ],
-        ),
-        transitionBuilder: (child, animation) =>
-            FadeTransition(opacity: animation, child: child),
-        child: KeyedSubtree(
-          key: ValueKey<int>(_selectedIndex),
-          child: _screens[_selectedIndex],
-        ),
+      body: PageView(
+        controller: _pageController,
+        onPageChanged: _onPageChanged,
+        children: const [
+          _KeepAliveTab(child: ChoosedSubjectsPage()),
+          _KeepAliveTab(child: StatisticsPage()),
+          _KeepAliveTab(child: MyPage()),
+        ],
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
@@ -171,5 +183,25 @@ class _HomePageState extends State<HomePage> {
         ],
       ),
     );
+  }
+}
+
+class _KeepAliveTab extends StatefulWidget {
+  final Widget child;
+  const _KeepAliveTab({required this.child});
+
+  @override
+  State<_KeepAliveTab> createState() => _KeepAliveTabState();
+}
+
+class _KeepAliveTabState extends State<_KeepAliveTab>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return widget.child;
   }
 }

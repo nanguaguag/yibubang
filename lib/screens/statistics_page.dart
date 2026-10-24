@@ -954,170 +954,212 @@ void _showDayStatsBottomSheet(BuildContext context, DateTime date) {
       borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
     ),
     builder: (ctx) {
-      final theme = Theme.of(ctx);
-      final scheme = theme.colorScheme;
-      return FutureBuilder<PeriodStats>(
-        future: getDayStats(date),
-        builder: (context, snapshot) {
-          final stats = snapshot.data;
-          final isLoading = snapshot.connectionState != ConnectionState.done;
-          final count = stats?.answeredCount ?? 0;
-          final duration = stats?.totalDuration ?? Duration.zero;
-          final accuracy = stats?.accuracy ?? 0.0;
-          final correctCount = stats?.correctCount ?? 0;
+      return _DayDetailSheet(
+        date: date,
+        dateStr: dateStr,
+        isToday: isToday,
+        startMs: startMs,
+        endMs: endMs,
+      );
+    },
+  );
+}
 
-          return SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // 标题行：0. 日期
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: scheme.primaryContainer,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Icon(
-                          Icons.calendar_month_rounded,
-                          color: scheme.onPrimaryContainer,
-                          size: 22,
-                        ),
+class _DayDetailSheet extends StatefulWidget {
+  final DateTime date;
+  final String dateStr;
+  final bool isToday;
+  final int startMs;
+  final int endMs;
+
+  const _DayDetailSheet({
+    required this.date,
+    required this.dateStr,
+    required this.isToday,
+    required this.startMs,
+    required this.endMs,
+  });
+
+  @override
+  State<_DayDetailSheet> createState() => _DayDetailSheetState();
+}
+
+class _DayDetailSheetState extends State<_DayDetailSheet> {
+  late final Future<PeriodStats> _statsFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    // 缓存 Future，避免底部弹窗在拖动把手悬浮 (hover) 触发重绘时重新创建 Future 导致尺寸抖动与闪烁
+    _statsFuture = getDayStats(widget.date);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
+    return FutureBuilder<PeriodStats>(
+      future: _statsFuture,
+      builder: (context, snapshot) {
+        final stats = snapshot.data;
+        final isLoading = snapshot.connectionState != ConnectionState.done;
+        final count = stats?.answeredCount ?? 0;
+        final duration = stats?.totalDuration ?? Duration.zero;
+        final accuracy = stats?.accuracy ?? 0.0;
+        final correctCount = stats?.correctCount ?? 0;
+
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // 标题行：0. 日期
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: scheme.primaryContainer,
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Text(
-                                  dateStr,
-                                  style: theme.textTheme.titleMedium?.copyWith(
-                                    fontWeight: FontWeight.bold,
+                      child: Icon(
+                        Icons.calendar_month_rounded,
+                        color: scheme.onPrimaryContainer,
+                        size: 22,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Text(
+                                widget.dateStr,
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              if (widget.isToday) ...[
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: scheme.primary,
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(
+                                    '今日',
+                                    style: theme.textTheme.labelSmall?.copyWith(
+                                      color: scheme.onPrimary,
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
                                 ),
-                                if (isToday) ...[
-                                  const SizedBox(width: 8),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: scheme.primary,
-                                      borderRadius: BorderRadius.circular(6),
-                                    ),
-                                    child: Text(
-                                      '今日',
-                                      style: theme.textTheme.labelSmall?.copyWith(
-                                        color: scheme.onPrimary,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ),
-                                ],
                               ],
+                            ],
+                          ),
+                          Text(
+                            '单日做题统计',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: scheme.onSurfaceVariant,
                             ),
-                            Text(
-                              '单日做题统计',
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: scheme.onSurfaceVariant,
-                              ),
-                            ),
-                          ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+
+                if (isLoading)
+                  const SizedBox(
+                    height: 140,
+                    child: Center(child: CircularProgressIndicator()),
+                  )
+                else ...[
+                  // 1. 刷题量、2. 用时、3. 正确率 三指标卡
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _DayDetailMetricTile(
+                          icon: Icons.rate_review_outlined,
+                          iconColor: scheme.primary,
+                          title: '刷题量',
+                          value: '$count 题',
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _DayDetailMetricTile(
+                          icon: Icons.timer_outlined,
+                          iconColor: Colors.orange,
+                          title: '用时',
+                          value: _fmtDuration(duration.inMilliseconds),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _DayDetailMetricTile(
+                          icon: Icons.check_circle_outline,
+                          iconColor: Colors.green,
+                          title: '正确率',
+                          value: count > 0 ? '${(accuracy * 100).round()}%' : '--',
+                          subValue: count > 0 ? '$correctCount对 / ${count - correctCount}错' : null,
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 20),
-
-                  if (isLoading)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 36),
-                      child: Center(child: CircularProgressIndicator()),
-                    )
-                  else ...[
-                    // 1. 刷题量、2. 用时、3. 正确率 三指标卡
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _DayDetailMetricTile(
-                            icon: Icons.rate_review_outlined,
-                            iconColor: scheme.primary,
-                            title: '刷题量',
-                            value: '$count 题',
-                          ),
+                  const SizedBox(height: 24),
+                  // 操作按钮
+                  if (count > 0)
+                    FilledButton.icon(
+                      icon: const Icon(Icons.menu_book_rounded),
+                      label: const Text('查看全部题目'),
+                      style: FilledButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
                         ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: _DayDetailMetricTile(
-                            icon: Icons.timer_outlined,
-                            iconColor: Colors.orange,
-                            title: '用时',
-                            value: _fmtDuration(duration.inMilliseconds),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: _DayDetailMetricTile(
-                            icon: Icons.check_circle_outline,
-                            iconColor: Colors.green,
-                            title: '正确率',
-                            value: count > 0 ? '${(accuracy * 100).round()}%' : '--',
-                            subValue: count > 0 ? '$correctCount对 / ${count - correctCount}错' : null,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 24),
-                    // 操作按钮
-                    if (count > 0)
-                      FilledButton.icon(
-                        icon: const Icon(Icons.menu_book_rounded),
-                        label: const Text('查看全部题目'),
-                        style: FilledButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                        ),
-                        onPressed: () {
-                          Navigator.pop(ctx);
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => AnsweredRecordsPage(
-                                title: '${date.year}年${date.month}月${date.day}日 刷题记录',
-                                startMs: startMs,
-                                endMs: endMs,
-                              ),
-                            ),
-                          );
-                        },
-                      )
-                    else
-                      OutlinedButton.icon(
-                        icon: const Icon(Icons.close_rounded),
-                        label: const Text('关闭 (当天无作答记录)'),
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                        ),
-                        onPressed: () => Navigator.pop(ctx),
                       ),
-                  ],
+                      onPressed: () {
+                        Navigator.pop(context);
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => AnsweredRecordsPage(
+                              title: '${widget.date.year}年${widget.date.month}月${widget.date.day}日 刷题记录',
+                              startMs: widget.startMs,
+                              endMs: widget.endMs,
+                            ),
+                          ),
+                        );
+                      },
+                    )
+                  else
+                    OutlinedButton.icon(
+                      icon: const Icon(Icons.close_rounded),
+                      label: const Text('关闭 (当天无作答记录)'),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      onPressed: () => Navigator.pop(context),
+                    ),
                 ],
-              ),
+              ],
             ),
-          );
-        },
-      );
-    },
-  );
+          ),
+        );
+      },
+    );
+  }
 }
 
 class _DayDetailMetricTile extends StatelessWidget {
