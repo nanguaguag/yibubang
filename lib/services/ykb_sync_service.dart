@@ -18,6 +18,7 @@ class YkbSyncQueueItem {
   final int retryCount;
   final int createdAt;
   final String? lastError;
+  final String? lastResponse;
 
   YkbSyncQueueItem({
     required this.id,
@@ -27,6 +28,7 @@ class YkbSyncQueueItem {
     this.retryCount = 0,
     required this.createdAt,
     this.lastError,
+    this.lastResponse,
   });
 
   Map<String, dynamic> toMap() => {
@@ -37,6 +39,7 @@ class YkbSyncQueueItem {
         'retry_count': retryCount,
         'created_at': createdAt,
         'last_error': lastError,
+        'last_response': lastResponse,
       };
 
   factory YkbSyncQueueItem.fromMap(Map<String, dynamic> map) =>
@@ -48,6 +51,7 @@ class YkbSyncQueueItem {
         retryCount: (map['retry_count'] as num?)?.toInt() ?? 0,
         createdAt: (map['created_at'] as num?)?.toInt() ?? 0,
         lastError: map['last_error'] as String?,
+        lastResponse: map['last_response'] as String?,
       );
 
   YkbSyncQueueItem copyWith({
@@ -58,6 +62,7 @@ class YkbSyncQueueItem {
     int? retryCount,
     int? createdAt,
     String? lastError,
+    String? lastResponse,
   }) =>
       YkbSyncQueueItem(
         id: id ?? this.id,
@@ -67,6 +72,7 @@ class YkbSyncQueueItem {
         retryCount: retryCount ?? this.retryCount,
         createdAt: createdAt ?? this.createdAt,
         lastError: lastError ?? this.lastError,
+        lastResponse: lastResponse ?? this.lastResponse,
       );
 }
 
@@ -412,6 +418,7 @@ class YkbSyncService {
 
     debugPrint('[YkbSyncService] ${item.type} 同步响应: $resp');
     responseCode = resp['code']?.toString() ?? '200';
+    final rawResp = const JsonEncoder.withIndent('  ').convert(resp);
     SyncResponseCache.instance.record(
       queueId: item.id,
       itemId: item.itemId,
@@ -419,7 +426,7 @@ class YkbSyncService {
       code: responseCode,
       payload: item.payload,
       response: resp,
-      rawResponse: const JsonEncoder.withIndent('  ').convert(resp),
+      rawResponse: rawResp,
     );
 
     if (responseCode == '200') {
@@ -428,6 +435,7 @@ class YkbSyncService {
       await _markError(
         item,
         resp['message']?.toString() ?? 'Code ${resp['code']}',
+        lastResponse: rawResp,
       );
       if (responseCode == '309') {
         throw const FormatException('309_TOKEN_EXPIRED');
@@ -537,6 +545,8 @@ class YkbSyncService {
         } catch (e, stack) {
           debugPrint('[YkbSyncService] 网络或异常中断 ${item.type}: $e');
           debugPrint('$stack');
+          final errStr = const JsonEncoder.withIndent('  ')
+              .convert({'error': e.toString()});
           SyncResponseCache.instance.record(
             queueId: item.id,
             itemId: item.itemId,
@@ -544,10 +554,9 @@ class YkbSyncService {
             code: 'ERR',
             payload: item.payload,
             response: {'error': e.toString()},
-            rawResponse: const JsonEncoder.withIndent('  ')
-                .convert({'error': e.toString()}),
+            rawResponse: errStr,
           );
-          await _markError(item, e.toString());
+          await _markError(item, e.toString(), lastResponse: errStr);
           if (item.retryCount + 1 >= 5) {
             debugPrint('[YkbSyncService] 任务 ${item.id} 异常重试达到上限(5次)，移出队列');
             await _dequeue(item.id);
@@ -589,14 +598,19 @@ class YkbSyncService {
     return rows.map((r) => YkbSyncQueueItem.fromMap(r)).toList();
   }
 
-  Future<void> _markError(YkbSyncQueueItem item, String error) async {
+  Future<void> _markError(YkbSyncQueueItem item, String error,
+      {String? lastResponse}) async {
     final db = await UserDBHelper().database;
+    final values = <String, dynamic>{
+      'retry_count': item.retryCount + 1,
+      'last_error': error,
+    };
+    if (lastResponse != null) {
+      values['last_response'] = lastResponse;
+    }
     await db.update(
       'YkbSyncQueue',
-      {
-        'retry_count': item.retryCount + 1,
-        'last_error': error,
-      },
+      values,
       where: 'id = ?',
       whereArgs: [item.id],
     );

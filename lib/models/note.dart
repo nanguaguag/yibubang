@@ -128,6 +128,7 @@ class NoteSyncQueueItem {
   final int retryCount;
   final int createdAt;
   final String? lastError;
+  final String? lastResponse;
 
   NoteSyncQueueItem({
     required this.id,
@@ -138,6 +139,7 @@ class NoteSyncQueueItem {
     this.retryCount = 0,
     required this.createdAt,
     this.lastError,
+    this.lastResponse,
   });
 
   Map<String, dynamic> toMap() {
@@ -150,6 +152,7 @@ class NoteSyncQueueItem {
       'retry_count': retryCount,
       'created_at': createdAt,
       'last_error': lastError,
+      'last_response': lastResponse,
     };
   }
 
@@ -163,6 +166,7 @@ class NoteSyncQueueItem {
       retryCount: (map['retry_count'] as num?)?.toInt() ?? 0,
       createdAt: (map['created_at'] as num?)?.toInt() ?? 0,
       lastError: map['last_error']?.toString(),
+      lastResponse: map['last_response']?.toString(),
     );
   }
 }

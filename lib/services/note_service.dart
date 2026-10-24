@@ -477,11 +477,14 @@ class NoteService {
           }
         } catch (e, stack) {
           debugPrint('[NoteService] process queue item error: $e\n$stack');
+          final errJson = const JsonEncoder.withIndent('  ')
+              .convert({'error': e.toString()});
           await db.update(
             'NoteSyncQueue',
             {
               'retry_count': item.retryCount + 1,
               'last_error': e.toString(),
+              'last_response': errJson,
             },
             where: 'id = ?',
             whereArgs: [item.id],
@@ -659,6 +662,7 @@ class NoteService {
     );
     debugPrint('[NoteService] pushNote result: $resp');
     final code = resp['code']?.toString() ?? '200';
+    final rawResp = const JsonEncoder.withIndent('  ').convert(resp);
     SyncResponseCache.instance.record(
       queueId: item.id,
       itemId: note.questionId,
@@ -666,7 +670,7 @@ class NoteService {
       code: code,
       payload: params,
       response: resp,
-      rawResponse: const JsonEncoder.withIndent('  ').convert(resp),
+      rawResponse: rawResp,
     );
 
     if (resp['code'] == '200' || resp['code'] == 200) {
@@ -710,6 +714,16 @@ class NoteService {
       notifyNoteChanged();
       return true;
     }
+
+    await db.update(
+      'NoteSyncQueue',
+      {
+        'last_error': resp['message']?.toString() ?? 'Code ${resp['code']}',
+        'last_response': rawResp,
+      },
+      where: 'id = ?',
+      whereArgs: [item.id],
+    );
 
     return false;
   }
@@ -785,6 +799,7 @@ class NoteService {
     );
 
     final code = resp['code']?.toString() ?? '200';
+    final rawResp = const JsonEncoder.withIndent('  ').convert(resp);
     SyncResponseCache.instance.record(
       queueId: item.id,
       itemId: item.questionId,
@@ -795,12 +810,23 @@ class NoteService {
         'question_id': item.questionId,
       },
       response: resp,
-      rawResponse: const JsonEncoder.withIndent('  ').convert(resp),
+      rawResponse: rawResp,
     );
 
     if (resp['code'] == '200' || resp['code'] == 200) {
       return true;
     }
+
+    await db.update(
+      'NoteSyncQueue',
+      {
+        'last_error': resp['message']?.toString() ?? 'Code ${resp['code']}',
+        'last_response': rawResp,
+      },
+      where: 'id = ?',
+      whereArgs: [item.id],
+    );
+
     return false;
   }
 }

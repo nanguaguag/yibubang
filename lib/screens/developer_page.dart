@@ -966,9 +966,10 @@ class _DeveloperPageState extends State<DeveloperPage>
             tooltip: '查看 respond',
             onPressed: () {
               final respJson = cached?.rawResponse ??
+                  item['last_response']?.toString() ??
                   const JsonEncoder.withIndent('  ').convert({
                     'status': 'pending',
-                    'message': '队列项尚未向服务器请求或响应缓存已清理',
+                    'message': '队列项尚未向服务器请求或未生成响应',
                     'retry_count': retry,
                     'last_error': lastError,
                   });
@@ -1108,9 +1109,10 @@ class _DeveloperPageState extends State<DeveloperPage>
           tooltip: '查看 respond',
           onPressed: () {
             final respJson = cached?.rawResponse ??
+                item['last_response']?.toString() ??
                 const JsonEncoder.withIndent('  ').convert({
                   'status': 'pending',
-                  'message': '笔记队列项尚未向服务器请求或响应缓存已清理',
+                  'message': '笔记队列项尚未向服务器请求或未生成响应',
                   'retry_count': retry,
                   'last_error': lastError,
                 });

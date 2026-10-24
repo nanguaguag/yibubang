@@ -227,9 +227,21 @@ class UserDBHelper {
     String path = join(await getDatabasesPath(), 'user_data.sqlite');
     return await openDatabase(
       path,
-      version: 9,
+      version: 10,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
+      onOpen: (db) async {
+        try {
+          final noteCols = await _columns(db, 'NoteSyncQueue');
+          if (noteCols.isNotEmpty && !noteCols.contains('last_response')) {
+            await db.execute('ALTER TABLE NoteSyncQueue ADD COLUMN last_response TEXT');
+          }
+          final ykbCols = await _columns(db, 'YkbSyncQueue');
+          if (ykbCols.isNotEmpty && !ykbCols.contains('last_response')) {
+            await db.execute('ALTER TABLE YkbSyncQueue ADD COLUMN last_response TEXT');
+          }
+        } catch (_) {}
+      },
     );
   }
 
@@ -251,7 +263,17 @@ class UserDBHelper {
       if (oldVersion < 2) {
         await _migrateStatisticsTables(txn);
         await _createQuestionBankTable(txn);
-        await _createMigrationStateTable(txn);
+        if (oldVersion < 10) {
+        final noteCols = await _columns(txn, 'NoteSyncQueue');
+        if (!noteCols.contains('last_response')) {
+          await txn.execute('ALTER TABLE NoteSyncQueue ADD COLUMN last_response TEXT');
+        }
+        final ykbCols = await _columns(txn, 'YkbSyncQueue');
+        if (!ykbCols.contains('last_response')) {
+          await txn.execute('ALTER TABLE YkbSyncQueue ADD COLUMN last_response TEXT');
+        }
+      }
+      await _createMigrationStateTable(txn);
       }
       if (oldVersion < 3) {
         final columns = await _columns(txn, 'Activities');
@@ -355,6 +377,16 @@ class UserDBHelper {
             last_error TEXT
           )
         ''');
+      }
+      if (oldVersion < 10) {
+        final noteCols = await _columns(txn, 'NoteSyncQueue');
+        if (!noteCols.contains('last_response')) {
+          await txn.execute('ALTER TABLE NoteSyncQueue ADD COLUMN last_response TEXT');
+        }
+        final ykbCols = await _columns(txn, 'YkbSyncQueue');
+        if (!ykbCols.contains('last_response')) {
+          await txn.execute('ALTER TABLE YkbSyncQueue ADD COLUMN last_response TEXT');
+        }
       }
       await _createMigrationStateTable(txn);
     });
@@ -558,7 +590,8 @@ class UserDBHelper {
         payload TEXT,
         retry_count INTEGER NOT NULL DEFAULT 0,
         created_at INTEGER NOT NULL,
-        last_error TEXT
+        last_error TEXT,
+        last_response TEXT
       )
     ''');
 
@@ -570,7 +603,8 @@ class UserDBHelper {
         payload TEXT NOT NULL,
         retry_count INTEGER NOT NULL DEFAULT 0,
         created_at INTEGER NOT NULL,
-        last_error TEXT
+        last_error TEXT,
+        last_response TEXT
       )
     ''');
 
