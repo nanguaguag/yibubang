@@ -372,6 +372,14 @@ class NoteService {
             where: 'id = ?',
             whereArgs: [item.id],
           );
+          if (item.retryCount + 1 >= 5) {
+            debugPrint('[NoteService] 任务 ${item.id} 异常重试达到上限(5次)，移出队列');
+            await db.delete(
+              'NoteSyncQueue',
+              where: 'id = ?',
+              whereArgs: [item.id],
+            );
+          }
           // 网络异常时暂停后续重试，等待下一次触发
           break;
         }
@@ -385,15 +393,23 @@ class NoteService {
           );
         } else {
           debugPrint('[NoteService] queue item failed: ${item.id}');
-          await db.update(
-            'NoteSyncQueue',
-            {
-              'retry_count': item.retryCount + 1,
-            },
-            where: 'id = ?',
-            whereArgs: [item.id],
-          );
-          break;
+          if (item.retryCount + 1 >= 5) {
+            debugPrint('[NoteService] 任务 ${item.id} 达到最大重试次数上限(5次)，移出活跃队列以防队头阻塞');
+            await db.delete(
+              'NoteSyncQueue',
+              where: 'id = ?',
+              whereArgs: [item.id],
+            );
+          } else {
+            await db.update(
+              'NoteSyncQueue',
+              {
+                'retry_count': item.retryCount + 1,
+              },
+              where: 'id = ?',
+              whereArgs: [item.id],
+            );
+          }
         }
       }
     } finally {

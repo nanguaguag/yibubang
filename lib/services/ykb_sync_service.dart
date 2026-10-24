@@ -386,23 +386,24 @@ class YkbSyncService {
           debugPrint(
               '[YkbSyncService] 执行队列任务: id=${item.id}, type=${item.type}, retry=${item.retryCount}');
           bool success = false;
+          String? responseCode;
           if (item.type == 'cut') {
             final resp = await basicReq(
               '/allQuestion/cutQuestion/cut',
               Map<String, dynamic>.from(item.payload),
             );
             debugPrint('[YkbSyncService] 斩题同步响应: $resp');
-            final code = resp['code']?.toString() ?? '200';
+            responseCode = resp['code']?.toString() ?? '200';
             SyncResponseCache.instance.record(
               queueId: item.id,
               itemId: item.itemId,
               type: item.type,
-              code: code,
+              code: responseCode,
               payload: item.payload,
               response: resp,
               rawResponse: const JsonEncoder.withIndent('  ').convert(resp),
             );
-            if (code == '200') {
+            if (responseCode == '200') {
               success = true;
             } else {
               await _markError(
@@ -414,17 +415,17 @@ class YkbSyncService {
               Map<String, dynamic>.from(item.payload),
             );
             debugPrint('[YkbSyncService] 作答同步响应: $resp');
-            final code = resp['code']?.toString() ?? '200';
+            responseCode = resp['code']?.toString() ?? '200';
             SyncResponseCache.instance.record(
               queueId: item.id,
               itemId: item.itemId,
               type: item.type,
-              code: code,
+              code: responseCode,
               payload: item.payload,
               response: resp,
               rawResponse: const JsonEncoder.withIndent('  ').convert(resp),
             );
-            if (code == '200') {
+            if (responseCode == '200') {
               success = true;
             } else {
               await _markError(
@@ -436,17 +437,17 @@ class YkbSyncService {
               Map<String, dynamic>.from(item.payload),
             );
             debugPrint('[YkbSyncService] 重做章节同步响应: $resp');
-            final code = resp['code']?.toString() ?? '200';
+            responseCode = resp['code']?.toString() ?? '200';
             SyncResponseCache.instance.record(
               queueId: item.id,
               itemId: item.itemId,
               type: item.type,
-              code: code,
+              code: responseCode,
               payload: item.payload,
               response: resp,
               rawResponse: const JsonEncoder.withIndent('  ').convert(resp),
             );
-            if (code == '200') {
+            if (responseCode == '200') {
               success = true;
             } else {
               await _markError(
@@ -458,8 +459,18 @@ class YkbSyncService {
             await _dequeue(item.id);
             debugPrint('[YkbSyncService] 同步任务成功并已移出队列: ${item.id}');
           } else {
-            debugPrint('[YkbSyncService] 服务端业务错误，暂停队列后续执行，等待下一次触发');
-            break;
+            // 如果是登录凭据失效 (code 309)，必须暂停队列等待用户重新登录
+            if (responseCode == '309') {
+              debugPrint('[YkbSyncService] 登录态已失效 (309)，暂停队列执行');
+              break;
+            }
+            // 针对非网络中断的业务错误：如果已重试达到上限(5次)，出队放弃以防永久队头阻塞
+            if (item.retryCount + 1 >= 5) {
+              debugPrint('[YkbSyncService] 任务 ${item.id} 达到最大重试次数上限(5次)，移出活跃队列');
+              await _dequeue(item.id);
+            } else {
+              debugPrint('[YkbSyncService] 任务 ${item.id} 业务失败 (重试 ${item.retryCount + 1}/5)，继续执行队列下一项');
+            }
           }
         } catch (e, stack) {
           debugPrint('[YkbSyncService] 网络或异常中断 ${item.type}: $e');
@@ -474,6 +485,10 @@ class YkbSyncService {
             rawResponse: const JsonEncoder.withIndent('  ').convert({'error': e.toString()}),
           );
           await _markError(item, e.toString());
+          if (item.retryCount + 1 >= 5) {
+            debugPrint('[YkbSyncService] 任务 ${item.id} 异常重试达到上限(5次)，移出队列');
+            await _dequeue(item.id);
+          }
           break; // 网络断开，保留在队列中等待下次重试
         }
       }
