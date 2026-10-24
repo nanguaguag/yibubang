@@ -8,6 +8,7 @@ import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
 
+import '../common/request.dart';
 import '../common/ykb_encrypt.dart';
 import '../db/database_helper.dart';
 import '../services/cloud_sync_service.dart';
@@ -193,11 +194,34 @@ class _DeveloperPageState extends State<DeveloperPage>
     });
     final sw = Stopwatch()..start();
     try {
-      final uri = Uri.parse('$rootUrl/allQuestion/cutQuestion/cut');
-      final resp = await http.get(uri).timeout(const Duration(seconds: 5));
+      final prefs = await SharedPreferences.getInstance();
+      final userId = prefs.getString('user_id') ?? '';
+      final params = <String, dynamic>{
+        'app_id': '83',
+        'is_vip': '0',
+        'is_svip': '0',
+      };
+      if (userId.isNotEmpty) {
+        params['target_user_id'] = userId;
+      }
+      final resp = await basicReq(
+        '/User/Main/getUserInfo',
+        params,
+        method: 'GET',
+      );
       sw.stop();
+      final code = resp['code']?.toString() ?? 'unknown';
+      final msg = resp['message']?.toString() ?? '';
+      String extra = '';
+      if (code == '200') {
+        final data = resp['data'];
+        final nickname = (data is Map) ? data['nickname'] : '';
+        extra = (nickname != null && nickname.toString().isNotEmpty)
+            ? ' (用户: $nickname)'
+            : ' (成功)';
+      }
       setState(() {
-        _ykbPingResult = 'HTTP ${resp.statusCode} (${sw.elapsedMilliseconds}ms)';
+        _ykbPingResult = '[$code] $msg$extra (${sw.elapsedMilliseconds}ms)';
         _isPingingYkb = false;
       });
     } catch (e) {
@@ -1183,8 +1207,9 @@ class _DeveloperPageState extends State<DeveloperPage>
                 const SizedBox(height: 12),
                 ListTile(
                   contentPadding: EdgeInsets.zero,
-                  title: const Text('医考帮 API 服务器'),
-                  subtitle: Text(_ykbPingResult ?? rootUrl,
+                  title: const Text('医考帮 API 服务器 (getUserInfo 诊断)'),
+                  subtitle: Text(
+                      _ykbPingResult ?? '$rootUrl/User/Main/getUserInfo',
                       style: const TextStyle(fontSize: 12)),
                   trailing: ElevatedButton(
                     onPressed: _isPingingYkb ? null : _pingYkb,
