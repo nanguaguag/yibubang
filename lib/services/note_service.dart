@@ -288,9 +288,13 @@ class NoteService {
               conflictAlgorithm: ConflictAlgorithm.replace,
             );
           } else {
-            // 本地已存在，如果内容有差异且本地没有未上传改动，覆盖为云端内容
-            if (matchedLocal.syncStatus == 0) {
-              final contentDiff = matchedLocal.content != rContent;
+            // 本地已存在：确保关联上 remoteId，并遵循 LWW (以最新时间戳为准) 避免旧版本回退覆盖
+            final bool needLinkRemoteId =
+                matchedLocal.remoteId == null || matchedLocal.remoteId!.isEmpty;
+            final bool isRemoteNewer = rTimestamp > matchedLocal.updatedAt;
+            final bool contentDiff = matchedLocal.content != rContent;
+
+            if (matchedLocal.syncStatus == 0 && isRemoteNewer && contentDiff) {
               // 云端只有第1张图片，保留本地后续图片
               final List<NoteImage> mergedImages = [
                 if (rImages.isNotEmpty)
@@ -300,21 +304,26 @@ class NoteService {
                 if (matchedLocal.images.length > 1)
                   ...matchedLocal.images.sublist(1),
               ];
-              if (contentDiff || matchedLocal.remoteId == null) {
-                final updated = matchedLocal.copyWith(
-                  remoteId: rId,
-                  content: rContent,
-                  images: mergedImages,
-                  updatedAt: rTimestamp,
-                  syncStatus: 0,
-                );
-                await db.update(
-                  'Notes',
-                  updated.toMap(),
-                  where: 'id = ?',
-                  whereArgs: [matchedLocal.id],
-                );
-              }
+              final updated = matchedLocal.copyWith(
+                remoteId: rId,
+                content: rContent,
+                images: mergedImages,
+                updatedAt: rTimestamp,
+                syncStatus: 0,
+              );
+              await db.update(
+                'Notes',
+                updated.toMap(),
+                where: 'id = ?',
+                whereArgs: [matchedLocal.id],
+              );
+            } else if (needLinkRemoteId) {
+              await db.update(
+                'Notes',
+                {'remote_id': rId},
+                where: 'id = ?',
+                whereArgs: [matchedLocal.id],
+              );
             }
           }
         }
