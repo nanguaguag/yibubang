@@ -95,28 +95,56 @@ class NoteService {
     notifyNoteChanged();
   }
 
-  /// 删除笔记（先从本地 SQLite 移除，若开启同步且有 remoteId 则入删除队列）
+  /// 删除笔记（先从本地 SQLite 移除，取消未决上传，若开启同步且有 remoteId 则入删除队列）
   Future<void> deleteNote(QuestionNote note, {Question? question}) async {
     final db = await UserDBHelper().database;
     final syncEnabled = await isSyncEnabled();
 
+    // 1. 查找是否存在已关联的 remoteId（防止内存中对象未带 remoteId 但本地库中已有）
+    String? effectiveRemoteId = note.remoteId;
+    if (effectiveRemoteId == null || effectiveRemoteId.isEmpty) {
+      final existing = await db.query(
+        'Notes',
+        columns: ['remote_id'],
+        where: 'id = ?',
+        whereArgs: [note.id],
+        limit: 1,
+      );
+      if (existing.isNotEmpty) {
+        effectiveRemoteId = existing.first['remote_id'] as String?;
+      }
+    }
+    // 若 id 本身不是 local_ 开头，说明其本身就是服务端笔记 ID
+    if ((effectiveRemoteId == null || effectiveRemoteId.isEmpty) && !note.id.startsWith('local_')) {
+      effectiveRemoteId = note.id;
+    }
+
+    // 2. 从本地 SQLite 删除该笔记
     await db.delete(
       'Notes',
       where: 'id = ?',
       whereArgs: [note.id],
     );
-    debugPrint('[NoteService] deleteNote locally: ${note.id}, remoteId: ${note.remoteId}');
+    debugPrint('[NoteService] deleteNote locally: ${note.id}, remoteId: $effectiveRemoteId');
 
-    if (syncEnabled && note.remoteId != null && note.remoteId!.isNotEmpty) {
+    // 3. 取消并清除队列中该笔记所有待上传任务（避免后续冗余发包）
+    await db.delete(
+      'NoteSyncQueue',
+      where: 'note_id = ? AND action = ?',
+      whereArgs: [note.id, 'upload'],
+    );
+
+    // 4. 若开启同步且存在有效远端 ID，入队 delete 任务同步至云端
+    if (syncEnabled && effectiveRemoteId != null && effectiveRemoteId.isNotEmpty) {
       final queuePayload = {
         'subject_id': question?.chapterParentId ?? '',
         'identity_id': question?.identityId ?? '',
         'app_id': question?.nativeAppId ?? question?.appId ?? '12',
       };
       await _enqueue(NoteSyncQueueItem(
-        id: 'del_${note.remoteId}_${DateTime.now().millisecondsSinceEpoch}',
+        id: 'del_${effectiveRemoteId}_${DateTime.now().millisecondsSinceEpoch}',
         action: 'delete',
-        noteId: note.remoteId,
+        noteId: effectiveRemoteId,
         questionId: note.questionId,
         payload: jsonEncode(queuePayload),
         createdAt: DateTime.now().millisecondsSinceEpoch,
