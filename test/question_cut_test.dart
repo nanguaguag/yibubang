@@ -83,4 +83,59 @@ void main() {
     expect(find.text('该题目已斩'), findsNothing);
     expect(find.textContaining('牙釉质'), findsOneWidget);
   });
+
+  testWidgets('QuestionPageItem defaults to revealing content when defaultShowCutContent is true', (tester) async {
+    final chapter = Chapter(
+      id: 'c1',
+      name: '测试章节',
+      subjectId: 's1',
+      correct: 0,
+      incorrect: 0,
+      total: 1,
+    );
+    final question = Question(
+      id: 'q1',
+      title: '下列哪项属于牙体硬组织？',
+      type: '1',
+      typeStr: '单选题',
+      answer: 'A',
+      userAnswer: '',
+      option: '[{"key":"A","title":"牙釉质"},{"key":"B","title":"牙髓"}]',
+    );
+    final userQuestion = UserQuestion(
+      id: 'q1',
+      chapterId: 'c1',
+      chapterParentId: 's1',
+      cutQuestion: '1', // 已斩
+      userAnswer: '',
+      status: 0,
+      collection: 0,
+    );
+
+    final controller = QuestionDetailController(
+      chapter: chapter,
+      questions: [question],
+      userQuestions: [userQuestion],
+      initialIndex: 0,
+      defaultShowCutContent: true, // 从“已斩的题”入口进入
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: QuestionPageItem(
+            question: question,
+            userQuestion: userQuestion,
+            index: 0,
+            controller: controller,
+          ),
+        ),
+      ),
+    );
+
+    // 验证已斩题目默认直接展示题目内容和“隐藏题目内容”提示条
+    expect(find.textContaining('牙釉质'), findsOneWidget);
+    expect(find.text('隐藏题目内容'), findsOneWidget);
+    expect(find.text('显示题目内容'), findsNothing);
+  });
 }

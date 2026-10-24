@@ -9,8 +9,9 @@ import '../screens/question_detail_page.dart';
 /// 统一跳转到题目详情页的通用路由方法
 Future<bool> openQuestionDetailPage(
   BuildContext context,
-  QuestionSearchResult result,
-) async {
+  QuestionSearchResult result, {
+  bool defaultShowCutContent = false,
+}) async {
   final repository = QuestionSearchRepository();
   try {
     final question = await repository.getQuestionById(
@@ -56,6 +57,7 @@ Future<bool> openQuestionDetailPage(
           userQuestions: [userQuestion],
           questionIndex: 0,
           bankId: result.bankId,
+          defaultShowCutContent: defaultShowCutContent,
         ),
       ),
     );

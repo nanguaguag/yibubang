@@ -18,6 +18,7 @@ class QuestionDetailController extends ChangeNotifier {
   final List<Question> questions;
   final List<UserQuestion> userQuestions;
   final String? bankId;
+  final bool defaultShowCutContent;
 
   late final PageController pageController;
 
@@ -51,6 +52,7 @@ class QuestionDetailController extends ChangeNotifier {
     required this.userQuestions,
     required int initialIndex,
     this.bankId,
+    this.defaultShowCutContent = false,
   }) {
     _currentPage = initialIndex;
     currentPageNotifier.value = initialIndex;

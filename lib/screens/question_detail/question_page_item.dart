@@ -37,6 +37,7 @@ class _QuestionPageItemState extends State<QuestionPageItem> {
     super.initState();
     final uq = widget.controller.userQuestions[widget.index];
     _lastIsCut = uq.isCut || uq.status == 3;
+    _showContentAnyway = widget.controller.defaultShowCutContent;
     widget.controller.addListener(_onControllerChanged);
   }
 

@@ -599,6 +599,7 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
                   questions: questions,
                   userQuestions: userQuestions,
                   questionIndex: index,
+                  defaultShowCutContent: cutType == 1,
                 ),
               ),
             );

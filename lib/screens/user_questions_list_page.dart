@@ -318,7 +318,11 @@ class _UserQuestionsListPageState extends State<UserQuestionsListPage> {
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: () async {
-          await openQuestionDetailPage(context, result);
+          await openQuestionDetailPage(
+            context,
+            result,
+            defaultShowCutContent: widget.type == UserQuestionsType.cut,
+          );
           if (mounted) {
             _loadQuestions();
           }

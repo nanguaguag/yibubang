@@ -19,6 +19,7 @@ class MyNotesPage extends StatefulWidget {
 
 class _MyNotesPageState extends State<MyNotesPage> {
   final TextEditingController _searchController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
   final QuestionSearchRepository _questionRepo = QuestionSearchRepository();
 
   List<QuestionNote> _allNotes = [];
@@ -26,18 +27,41 @@ class _MyNotesPageState extends State<MyNotesPage> {
   bool _isSearching = false;
   String _keyword = '';
 
+  // 右侧时间轴拖动与当前滚动进度 (0.0 ~ 1.0)
+  double _scrollProgress = 0.0;
+  bool _isDraggingTimeline = false;
+  String _draggedDateText = '';
+
   @override
   void initState() {
     super.initState();
     _loadNotes();
+    _scrollController.addListener(_onScroll);
     NoteService.instance.noteSyncEventNotifier.addListener(_onSyncEvent);
   }
 
   @override
   void dispose() {
     _searchController.dispose();
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
     NoteService.instance.noteSyncEventNotifier.removeListener(_onSyncEvent);
     super.dispose();
+  }
+
+  void _onScroll() {
+    if (!_isDraggingTimeline && _scrollController.hasClients) {
+      final maxScroll = _scrollController.position.maxScrollExtent;
+      if (maxScroll > 0) {
+        final progress =
+            (_scrollController.offset / maxScroll).clamp(0.0, 1.0);
+        if ((progress - _scrollProgress).abs() > 0.005) {
+          setState(() {
+            _scrollProgress = progress;
+          });
+        }
+      }
+    }
   }
 
   void _onSyncEvent() {
@@ -328,24 +352,24 @@ class _MyNotesPageState extends State<MyNotesPage> {
               ],
               const SizedBox(height: 6),
               const Divider(height: 12),
-              // 操作项：修改、复制、删除
+              // 操作项：修改、复制、删除（左侧）与 查看原题（靠右同行）
               Row(
                 children: [
                   TextButton.icon(
                     style: TextButton.styleFrom(
                       visualDensity: VisualDensity.compact,
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
                     ),
-                    icon: const Icon(Icons.edit_outlined, size: 16),
+                    icon: const Icon(Icons.edit_outlined, size: 15),
                     label: const Text('修改', style: TextStyle(fontSize: 12)),
                     onPressed: () => _handleEdit(note),
                   ),
                   TextButton.icon(
                     style: TextButton.styleFrom(
                       visualDensity: VisualDensity.compact,
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
                     ),
-                    icon: const Icon(Icons.copy_outlined, size: 16),
+                    icon: const Icon(Icons.copy_outlined, size: 15),
                     label: const Text('复制', style: TextStyle(fontSize: 12)),
                     onPressed: () => _handleCopy(note),
                   ),
@@ -353,34 +377,71 @@ class _MyNotesPageState extends State<MyNotesPage> {
                     style: TextButton.styleFrom(
                       foregroundColor: theme.colorScheme.error,
                       visualDensity: VisualDensity.compact,
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
                     ),
-                    icon: const Icon(Icons.delete_outline, size: 16),
+                    icon: const Icon(Icons.delete_outline, size: 15),
                     label: const Text('删除', style: TextStyle(fontSize: 12)),
                     onPressed: () => _handleDelete(note),
                   ),
-                ],
-              ),
-              // 底部：查看原题
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.tonalIcon(
-                  style: FilledButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
+                  const Spacer(),
+                  FilledButton.tonalIcon(
+                    style: FilledButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
                     ),
+                    icon: const Icon(Icons.menu_book_outlined, size: 15),
+                    label: const Text('查看原题', style: TextStyle(fontSize: 12)),
+                    onPressed: () => _jumpToQuestion(note.questionId),
                   ),
-                  icon: const Icon(Icons.menu_book_outlined, size: 16),
-                  label: const Text('查看原题', style: TextStyle(fontSize: 13)),
-                  onPressed: () => _jumpToQuestion(note.questionId),
-                ),
+                ],
               ),
             ],
           ),
         ),
       ),
     );
+  }
+
+  void _onDragUpdate(double localY, double trackHeight, double trackTop) {
+    final filtered = _filteredNotes;
+    if (trackHeight <= 0 || filtered.isEmpty) return;
+
+    final dy = (localY - trackTop).clamp(0.0, trackHeight);
+    final progress = dy / trackHeight;
+    final noteIndex =
+        ((progress * (filtered.length - 1)).round()).clamp(0, filtered.length - 1);
+    final note = filtered[noteIndex];
+    final dt = DateTime.fromMillisecondsSinceEpoch(note.timestamp);
+    final y = dt.year;
+    final m = dt.month.toString().padLeft(2, '0');
+    final d = dt.day.toString().padLeft(2, '0');
+    final dateText = '$y年$m月$d日';
+
+    setState(() {
+      _isDraggingTimeline = true;
+      _scrollProgress = progress;
+      _draggedDateText = dateText;
+    });
+
+    if (_scrollController.hasClients) {
+      final maxScroll = _scrollController.position.maxScrollExtent;
+      if (maxScroll > 0) {
+        _scrollController.jumpTo(progress * maxScroll);
+      }
+    }
+  }
+
+  void _onDragEnd() {
+    Future.delayed(const Duration(milliseconds: 800), () {
+      if (mounted && _isDraggingTimeline) {
+        setState(() {
+          _isDraggingTimeline = false;
+        });
+      }
+    });
   }
 
   @override
@@ -439,132 +500,151 @@ class _MyNotesPageState extends State<MyNotesPage> {
                         ),
                       ),
                     )
-                  : ListView.builder(
-                      padding: const EdgeInsets.fromLTRB(14, 8, 14, 24),
-                      itemCount: filtered.length,
-                      itemBuilder: (context, index) {
-                        final note = filtered[index];
-                        final isFirst = index == 0;
-                        final isLast = index == filtered.length - 1;
+                  : LayoutBuilder(
+                      builder: (context, constraints) {
+                        final maxHeight = constraints.maxHeight;
+                        const trackTop = 24.0;
+                        const trackBottom = 24.0;
+                        final trackHeight = maxHeight - trackTop - trackBottom;
 
-                        return IntrinsicHeight(
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              // 左侧：笔记卡片
-                              Expanded(
-                                child: _buildNoteCard(note),
+                        return Stack(
+                          children: [
+                            // 笔记列表（右侧预留 28 像素防遮挡时间轴）
+                            ListView.builder(
+                              controller: _scrollController,
+                              padding: const EdgeInsets.fromLTRB(14, 8, 28, 24),
+                              itemCount: filtered.length,
+                              itemBuilder: (context, index) {
+                                return _buildNoteCard(filtered[index]);
+                              },
+                            ),
+                            // 右侧长轴与小圆点
+                            Positioned(
+                              top: 0,
+                              bottom: 0,
+                              right: 0,
+                              width: 26,
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onVerticalDragStart: (details) => _onDragUpdate(
+                                  details.localPosition.dy,
+                                  trackHeight,
+                                  trackTop,
+                                ),
+                                onVerticalDragUpdate: (details) => _onDragUpdate(
+                                  details.localPosition.dy,
+                                  trackHeight,
+                                  trackTop,
+                                ),
+                                onVerticalDragEnd: (_) => _onDragEnd(),
+                                onVerticalDragCancel: () => _onDragEnd(),
+                                onTapDown: (details) {
+                                  _onDragUpdate(
+                                    details.localPosition.dy,
+                                    trackHeight,
+                                    trackTop,
+                                  );
+                                  _onDragEnd();
+                                },
+                                child: Stack(
+                                  children: [
+                                    // 垂直长轴
+                                    Positioned(
+                                      top: trackTop,
+                                      bottom: trackBottom,
+                                      left: 12,
+                                      child: Container(
+                                        width: 2,
+                                        decoration: BoxDecoration(
+                                          color: theme.colorScheme.outlineVariant
+                                              .withValues(alpha: 0.6),
+                                          borderRadius:
+                                              BorderRadius.circular(1),
+                                        ),
+                                      ),
+                                    ),
+                                    // 轴上的小圆点
+                                    Positioned(
+                                      top: (trackTop +
+                                              _scrollProgress * trackHeight -
+                                              7.0)
+                                          .clamp(
+                                        trackTop - 7.0,
+                                        maxHeight - trackBottom - 7.0,
+                                      ),
+                                      left: 6,
+                                      child: Container(
+                                        width: 14,
+                                        height: 14,
+                                        decoration: BoxDecoration(
+                                          color: theme.colorScheme.primary,
+                                          shape: BoxShape.circle,
+                                          border: Border.all(
+                                            color: theme.colorScheme.surface,
+                                            width: 2,
+                                          ),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: theme.colorScheme.primary
+                                                  .withValues(alpha: 0.4),
+                                              blurRadius: 4,
+                                              offset: const Offset(0, 1),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
-                              const SizedBox(width: 8),
-                              // 右侧：时间轴
-                              _RightTimelineNode(
-                                isFirst: isFirst,
-                                isLast: isLast,
-                                syncStatus: note.syncStatus,
+                            ),
+                            // 拖动时浮现的日期气泡
+                            if (_isDraggingTimeline &&
+                                _draggedDateText.isNotEmpty)
+                              Positioned(
+                                top: (trackTop +
+                                        _scrollProgress * trackHeight -
+                                        16.0)
+                                    .clamp(8.0, maxHeight - 40.0),
+                                right: 28,
+                                child: Material(
+                                  elevation: 4,
+                                  shadowColor: Colors.black26,
+                                  borderRadius: BorderRadius.circular(16),
+                                  color: theme.colorScheme.primaryContainer,
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 5,
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          Icons.event_note_rounded,
+                                          size: 14,
+                                          color: theme
+                                              .colorScheme.onPrimaryContainer,
+                                        ),
+                                        const SizedBox(width: 5),
+                                        Text(
+                                          _draggedDateText,
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.bold,
+                                            color: theme
+                                                .colorScheme.onPrimaryContainer,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
                               ),
-                            ],
-                          ),
+                          ],
                         );
                       },
                     ),
     );
-  }
-}
-
-/// 右侧时间轴指示器组件
-class _RightTimelineNode extends StatelessWidget {
-  final bool isFirst;
-  final bool isLast;
-  final int syncStatus;
-
-  const _RightTimelineNode({
-    required this.isFirst,
-    required this.isLast,
-    required this.syncStatus,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final lineColor = theme.colorScheme.outlineVariant.withValues(alpha: 0.6);
-    final dotColor = syncStatus == 0
-        ? Colors.green
-        : (syncStatus == 1 ? Colors.orange : theme.colorScheme.primary);
-
-    return SizedBox(
-      width: 22,
-      child: CustomPaint(
-        painter: _TimelinePainter(
-          isFirst: isFirst,
-          isLast: isLast,
-          lineColor: lineColor,
-          dotColor: dotColor,
-        ),
-      ),
-    );
-  }
-}
-
-class _TimelinePainter extends CustomPainter {
-  final bool isFirst;
-  final bool isLast;
-  final Color lineColor;
-  final Color dotColor;
-
-  _TimelinePainter({
-    required this.isFirst,
-    required this.isLast,
-    required this.lineColor,
-    required this.dotColor,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final centerX = size.width / 2;
-    const dotCenterY = 24.0; // 与卡片日期行居中对齐
-    const dotRadius = 4.5;
-
-    final linePaint = Paint()
-      ..color = lineColor
-      ..strokeWidth = 2.0
-      ..style = PaintingStyle.stroke;
-
-    final dotPaint = Paint()
-      ..color = dotColor
-      ..style = PaintingStyle.fill;
-
-    final dotOuterPaint = Paint()
-      ..color = dotColor.withValues(alpha: 0.22)
-      ..style = PaintingStyle.fill;
-
-    // 上半截连接线
-    if (!isFirst) {
-      canvas.drawLine(
-        Offset(centerX, 0),
-        Offset(centerX, dotCenterY - dotRadius - 2),
-        linePaint,
-      );
-    }
-
-    // 下半截连接线
-    if (!isLast) {
-      canvas.drawLine(
-        Offset(centerX, dotCenterY + dotRadius + 2),
-        Offset(centerX, size.height),
-        linePaint,
-      );
-    }
-
-    // 节点外光晕与中心圆点
-    canvas.drawCircle(Offset(centerX, dotCenterY), dotRadius + 3, dotOuterPaint);
-    canvas.drawCircle(Offset(centerX, dotCenterY), dotRadius, dotPaint);
-  }
-
-  @override
-  bool shouldRepaint(covariant _TimelinePainter oldDelegate) {
-    return oldDelegate.isFirst != isFirst ||
-        oldDelegate.isLast != isLast ||
-        oldDelegate.lineColor != lineColor ||
-        oldDelegate.dotColor != dotColor;
   }
 }

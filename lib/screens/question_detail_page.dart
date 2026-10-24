@@ -29,6 +29,7 @@ class QuestionDetailPage extends StatefulWidget {
   final List<UserQuestion> userQuestions;
   final int questionIndex;
   final String? bankId;
+  final bool defaultShowCutContent;
 
   const QuestionDetailPage({
     super.key,
@@ -37,6 +38,7 @@ class QuestionDetailPage extends StatefulWidget {
     required this.userQuestions,
     required this.questionIndex,
     this.bankId,
+    this.defaultShowCutContent = false,
   });
 
   @override
@@ -55,6 +57,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
       userQuestions: widget.userQuestions,
       initialIndex: widget.questionIndex,
       bankId: widget.bankId,
+      defaultShowCutContent: widget.defaultShowCutContent,
     );
     _controller.init();
   }
