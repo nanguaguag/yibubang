@@ -355,6 +355,24 @@ class NoteService {
             }
           }
         }
+
+        // 记录从医考帮拉取笔记流水到 Activities
+        try {
+          await db.insert('Activities', {
+            'id': generateSimpleId(),
+            'title': 'NotePull',
+            'description': jsonEncode({
+              'question_id': question.id,
+              'pulled_count': remoteList.length,
+              'subject_id': subjectId,
+            }),
+            'question_id': int.tryParse(question.id) ?? 0,
+            'subject_id': subjectId,
+            'is_right': 'pull',
+            'duration': 0,
+            'timestamp': DateTime.now().millisecondsSinceEpoch,
+          });
+        } catch (_) {}
       }
     } catch (e) {
       debugPrint('[NoteService] pull remote notes error: $e');
@@ -711,6 +729,21 @@ class NoteService {
         where: 'id = ?',
         whereArgs: [note.id],
       );
+
+      // 记录笔记上传流水到 Activities
+      try {
+        await db.insert('Activities', {
+          'id': generateSimpleId(),
+          'title': 'NoteUpload',
+          'description': jsonEncode(params),
+          'question_id': int.tryParse(note.questionId) ?? 0,
+          'subject_id': subjectId,
+          'is_right': 'upload',
+          'duration': 0,
+          'timestamp': DateTime.now().millisecondsSinceEpoch,
+        });
+      } catch (_) {}
+
       notifyNoteChanged();
       return true;
     }
@@ -814,6 +847,24 @@ class NoteService {
     );
 
     if (resp['code'] == '200' || resp['code'] == 200) {
+      // 记录笔记删除流水到 Activities
+      try {
+        await db.insert('Activities', {
+          'id': generateSimpleId(),
+          'title': 'NoteDelete',
+          'description': jsonEncode({
+            'note_id': item.noteId,
+            'question_id': item.questionId,
+            'subject_id': subjectId,
+          }),
+          'question_id': int.tryParse(item.questionId) ?? 0,
+          'subject_id': subjectId,
+          'is_right': 'delete',
+          'duration': 0,
+          'timestamp': DateTime.now().millisecondsSinceEpoch,
+        });
+      } catch (_) {}
+
       return true;
     }
 

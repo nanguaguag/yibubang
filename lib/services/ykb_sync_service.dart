@@ -254,6 +254,22 @@ class YkbSyncService {
       createdAt: DateTime.now().millisecondsSinceEpoch,
     ));
 
+    // 记录斩题同步流水到 Activities
+    try {
+      final db = await UserDBHelper().database;
+      await db.insert('Activities', {
+        'id': generateSimpleId(),
+        'title': 'CutQuestion',
+        'description': jsonEncode(payload),
+        'question_id': int.tryParse(question.id) ?? 0,
+        'subject_id': subjectId,
+        'chapter_id': chapterId,
+        'is_right': isCut ? 'cut' : 'uncut',
+        'duration': 0,
+        'timestamp': DateTime.now().millisecondsSinceEpoch,
+      });
+    } catch (_) {}
+
     debugPrint(
         '[YkbSyncService] 已入队斩题同步: questionId=${question.id}, operate=${payload['operate']}, subjectId=$subjectId, chapterId=$chapterId');
     unawaited(processQueue());
@@ -385,6 +401,21 @@ class YkbSyncService {
       payload: payload,
       createdAt: DateTime.now().millisecondsSinceEpoch,
     ));
+
+    // 记录章节重做同步流水到 Activities
+    try {
+      final db = await UserDBHelper().database;
+      await db.insert('Activities', {
+        'id': generateSimpleId(),
+        'title': 'RedoChapter',
+        'description': jsonEncode(payload),
+        'subject_id': chapter.subjectId,
+        'chapter_id': chapter.id,
+        'is_right': 'redo',
+        'duration': 0,
+        'timestamp': DateTime.now().millisecondsSinceEpoch,
+      });
+    } catch (_) {}
 
     debugPrint(
         '[YkbSyncService] 已入队章节重做同步: chapterId=${chapter.id}, subjectId=${chapter.subjectId}');

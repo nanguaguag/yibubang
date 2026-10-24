@@ -3,7 +3,6 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
@@ -781,26 +780,63 @@ class _DeveloperPageState extends State<DeveloperPage>
                       const Divider(height: 1, indent: 16, endIndent: 16),
                   itemBuilder: (ctx, index) {
                     final act = _recentActivities[index];
+                    final title = act['title']?.toString() ?? 'NewAnswer';
                     final qId = act['question_id']?.toString() ?? '';
                     final isRight = act['is_right']?.toString();
                     final duration = (act['duration'] as num?)?.toInt() ?? 0;
                     final ts = (act['timestamp'] as num?)?.toInt() ?? 0;
 
                     final cached = SyncResponseCache.instance.getByItemId(qId);
-                    final String displayCode = cached?.code ??
-                        (isRight == '1'
-                            ? '200'
-                            : (isRight == '0' ? '错题' : '--'));
+
+                    String mainTitle;
+                    String subTitle;
+                    if (title == 'CutQuestion') {
+                      mainTitle =
+                          '斩题操作: 题目 $qId (${isRight == 'cut' ? '斩掉' : '恢复斩题'})';
+                      subTitle =
+                          '科目: ${act['subject_id'] ?? '-'}  |  时间: ${_formatTime(ts)}';
+                    } else if (title == 'RedoChapter') {
+                      mainTitle = '重做章节: ${act['chapter_id'] ?? '-'}';
+                      subTitle =
+                          '科目: ${act['subject_id'] ?? '-'}  |  时间: ${_formatTime(ts)}';
+                    } else if (title == 'NoteUpload') {
+                      mainTitle = '上传笔记: 题目 $qId';
+                      subTitle =
+                          '科目: ${act['subject_id'] ?? '-'}  |  时间: ${_formatTime(ts)}';
+                    } else if (title == 'NoteDelete') {
+                      mainTitle = '删除笔记: 题目 $qId';
+                      subTitle =
+                          '科目: ${act['subject_id'] ?? '-'}  |  时间: ${_formatTime(ts)}';
+                    } else if (title == 'NotePull') {
+                      mainTitle = '从医考帮拉取笔记: 题目 $qId';
+                      subTitle =
+                          '科目: ${act['subject_id'] ?? '-'}  |  时间: ${_formatTime(ts)}';
+                    } else {
+                      mainTitle =
+                          '做题提交: 题目 $qId  |  用时 ${(duration / 1000).toStringAsFixed(1)}s';
+                      subTitle =
+                          '题库: ${act['bank_id'] ?? '-'}  |  时间: ${_formatTime(ts)}';
+                    }
 
                     return ListTile(
                       dense: true,
-                      leading: _buildStatusBadge(displayCode),
-                      title: Text(
-                        '题目 $qId  |  用时 ${(duration / 1000).toStringAsFixed(1)}s',
-                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      leading: _buildActivityTypeBadge(title, isRight),
+                      title: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              mainTitle,
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w600),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          _buildHttpCodeBadge(cached?.code),
+                        ],
                       ),
                       subtitle: Text(
-                        '题库: ${act['bank_id'] ?? '-'}  |  时间: ${_formatTime(ts)}',
+                        subTitle,
                         style: const TextStyle(fontSize: 11),
                       ),
                       trailing: Row(
@@ -810,7 +846,7 @@ class _DeveloperPageState extends State<DeveloperPage>
                             icon: const Icon(Icons.data_object, size: 18),
                             tooltip: '查看 Payload',
                             onPressed: () => _showRawJsonDialog(
-                              '作答 Payload (题目 $qId)',
+                              '流水 Payload ($title)',
                               act['description']?.toString() ?? '{}',
                             ),
                           ),
@@ -820,13 +856,14 @@ class _DeveloperPageState extends State<DeveloperPage>
                             onPressed: () {
                               final respJson = cached?.rawResponse ??
                                   const JsonEncoder.withIndent('  ').convert({
-                                    'status': isRight == '1' ? 200 : 400,
-                                    'msg': '本地流水记录（未命中响应缓存或已清理）',
+                                    'title': title,
                                     'question_id': qId,
+                                    'status': '本地流水记录',
                                     'is_right': isRight,
+                                    'timestamp': ts,
                                   });
                               _showRawJsonDialog(
-                                '同步 Respond (题目 $qId)',
+                                '同步 Respond ($title)',
                                 respJson,
                               );
                             },
@@ -920,16 +957,142 @@ class _DeveloperPageState extends State<DeveloperPage>
     );
   }
 
+  /// 流水业务类型徽章（独立一列：表达业务动作及本地做题对错）
+  Widget _buildActivityTypeBadge(String title, String? isRight) {
+    String text;
+    Color bg;
+    Color fg;
+
+    if (title == 'CutQuestion') {
+      text = isRight == 'cut' ? '斩题' : '恢复';
+      bg = Colors.purple.withValues(alpha: 0.15);
+      fg = Colors.purple.shade700;
+    } else if (title == 'RedoChapter') {
+      text = '重做';
+      bg = Colors.teal.withValues(alpha: 0.15);
+      fg = Colors.teal.shade700;
+    } else if (title == 'NoteUpload') {
+      text = '笔记上传';
+      bg = Colors.blue.withValues(alpha: 0.15);
+      fg = Colors.blue.shade700;
+    } else if (title == 'NoteDelete') {
+      text = '笔记删除';
+      bg = Colors.red.withValues(alpha: 0.15);
+      fg = Colors.red.shade700;
+    } else if (title == 'NotePull') {
+      text = '笔记拉取';
+      bg = Colors.indigo.withValues(alpha: 0.15);
+      fg = Colors.indigo.shade700;
+    } else if (title == 'Backfill') {
+      text = '补记';
+      bg = Colors.brown.withValues(alpha: 0.15);
+      fg = Colors.brown.shade700;
+    } else {
+      // NewAnswer
+      if (isRight == '1') {
+        text = '做题·对';
+        bg = Colors.green.withValues(alpha: 0.15);
+        fg = Colors.green.shade700;
+      } else if (isRight == '0') {
+        text = '做题·错';
+        bg = Colors.orange.withValues(alpha: 0.15);
+        fg = Colors.deepOrange;
+      } else {
+        text = '做题';
+        bg = Colors.grey.withValues(alpha: 0.15);
+        fg = Colors.grey.shade700;
+      }
+    }
+
+    return Container(
+      constraints: const BoxConstraints(minWidth: 46),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: fg.withValues(alpha: 0.3)),
+      ),
+      child: Text(
+        text,
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.bold,
+          color: fg,
+        ),
+      ),
+    );
+  }
+
+  /// 接口返回 Code 徽章（独立一列：真实展示网络返回码，绝不与做题对错混淆）
+  Widget _buildHttpCodeBadge(String? code) {
+    final effectiveCode = code?.trim();
+    final bool hasCode = effectiveCode != null && effectiveCode.isNotEmpty;
+
+    Color bg;
+    Color fg;
+    String display;
+
+    if (!hasCode) {
+      display = 'Code: --';
+      bg = Colors.grey.withValues(alpha: 0.1);
+      fg = Colors.grey.shade600;
+    } else if (effectiveCode == '200') {
+      display = 'Code 200';
+      bg = Colors.green.withValues(alpha: 0.15);
+      fg = Colors.green.shade700;
+    } else if (effectiveCode == '309') {
+      display = 'Code 309';
+      bg = Colors.amber.withValues(alpha: 0.15);
+      fg = Colors.brown;
+    } else if (effectiveCode.startsWith('4')) {
+      display = 'Code $effectiveCode';
+      bg = Colors.orange.withValues(alpha: 0.15);
+      fg = Colors.deepOrange;
+    } else {
+      display = 'Code $effectiveCode';
+      bg = Colors.red.withValues(alpha: 0.15);
+      fg = Colors.red.shade700;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: fg.withValues(alpha: 0.3)),
+      ),
+      child: Text(
+        display,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
+          fontFamily: 'monospace',
+          color: fg,
+        ),
+      ),
+    );
+  }
+
   Widget _buildStatusBadge(String code, {double fontSize = 11}) {
     Color bg;
     Color fg;
     if (code == '200') {
       bg = Colors.green.withValues(alpha: 0.15);
       fg = Colors.green.shade700;
-    } else if (code.startsWith('4')) {
+    } else if (code.contains('斩') || code == 'cut') {
+      bg = Colors.purple.withValues(alpha: 0.15);
+      fg = Colors.purple.shade700;
+    } else if (code.contains('重做') || code == 'redo') {
+      bg = Colors.teal.withValues(alpha: 0.15);
+      fg = Colors.teal.shade700;
+    } else if (code.contains('笔记') || code.contains('上传') || code.contains('拉取')) {
+      bg = Colors.blue.withValues(alpha: 0.15);
+      fg = Colors.blue.shade700;
+    } else if (code.startsWith('4') || code == '错题') {
       bg = Colors.orange.withValues(alpha: 0.15);
       fg = Colors.deepOrange;
-    } else if (code.startsWith('5') || code == 'ERR') {
+    } else if (code.startsWith('5') || code == 'ERR' || code.contains('删除')) {
       bg = Colors.red.withValues(alpha: 0.15);
       fg = Colors.red;
     } else {
