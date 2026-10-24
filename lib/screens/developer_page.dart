@@ -10,6 +10,7 @@ import 'package:sqflite/sqflite.dart';
 
 import '../common/request.dart';
 import '../common/ykb_encrypt.dart';
+import 'api_playground_page.dart';
 import '../db/database_helper.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/note_service.dart';
@@ -1361,6 +1362,38 @@ class _DeveloperPageState extends State<DeveloperPage>
                 ),
               ],
             ),
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // API 调试台入口
+        Card(
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+            side: BorderSide(
+              color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
+            ),
+          ),
+          child: ListTile(
+            leading: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primaryContainer,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(Icons.science_outlined,
+                  color: theme.colorScheme.onPrimaryContainer),
+            ),
+            title: const Text('API 调试台 (Playground)',
+                style: TextStyle(fontWeight: FontWeight.bold)),
+            subtitle: const Text('发送任意医考帮请求，自动生成加密签名与完整请求头'),
+            trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const ApiPlaygroundPage()),
+              );
+            },
           ),
         ),
         const SizedBox(height: 16),
