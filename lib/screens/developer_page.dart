@@ -10,7 +10,9 @@ import 'package:sqflite/sqflite.dart';
 
 import '../common/request.dart';
 import '../common/ykb_encrypt.dart';
+import '../services/auth_service.dart';
 import 'api_playground_page.dart';
+import 'my_page.dart';
 import '../db/database_helper.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/note_service.dart';
@@ -60,6 +62,23 @@ class _DeveloperPageState extends State<DeveloperPage>
   bool _isPingingYkb = false;
   String? _cfPingResult;
   bool _isPingingCf = false;
+
+  // 账号自检状态
+  AuthCheckResult? _authCheckResult;
+  bool _isCheckingAuth = false;
+
+  Future<void> _checkAuthStatus() async {
+    setState(() => _isCheckingAuth = true);
+    final res =
+        await AuthService.instance.checkTokenValidity(promptRelogin: false);
+    await _loadCredentials();
+    if (mounted) {
+      setState(() {
+        _authCheckResult = res;
+        _isCheckingAuth = false;
+      });
+    }
+  }
 
   bool _loading = true;
 
@@ -430,6 +449,101 @@ class _DeveloperPageState extends State<DeveloperPage>
                 label: Text(allObscured ? '全部显示' : '全部隐藏'),
               ),
             ],
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // 账号状态自检与一键重新登录
+        Card(
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+            side: BorderSide(
+              color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.verified_user_outlined, size: 20),
+                    const SizedBox(width: 8),
+                    const Text('账号状态自检 (Token 诊断)',
+                        style: TextStyle(fontWeight: FontWeight.bold)),
+                    const Spacer(),
+                    if (_authCheckResult != null)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: _authCheckResult!.isValid
+                              ? Colors.green.withValues(alpha: 0.15)
+                              : Colors.red.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          _authCheckResult!.isValid ? 'Token 有效' : 'Token 已失效/异常',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: _authCheckResult!.isValid
+                                ? Colors.green.shade700
+                                : Colors.red.shade700,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  _authCheckResult != null
+                      ? '结果: ${_authCheckResult!.message} (${_authCheckResult!.elapsedMs}ms)'
+                      : '通过请求医考帮 getUserInfo 接口，自动验证当前本地 Token 是否有效或已在远端过期',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: _authCheckResult?.isValid == false
+                        ? theme.colorScheme.error
+                        : theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    FilledButton.tonalIcon(
+                      onPressed: _isCheckingAuth ? null : _checkAuthStatus,
+                      icon: _isCheckingAuth
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.sync_lock, size: 16),
+                      label: Text(_isCheckingAuth ? '正在检测...' : '立即自检 Token'),
+                    ),
+                    const SizedBox(width: 8),
+                    OutlinedButton.icon(
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => LoginPage(
+                              onLoggedIn: () {
+                                _loadCredentials();
+                                _checkAuthStatus();
+                              },
+                            ),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.login, size: 16),
+                      label: const Text('重新登录'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
         const SizedBox(height: 16),

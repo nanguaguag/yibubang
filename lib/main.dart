@@ -8,6 +8,7 @@ import 'common/app_shapes.dart';
 import 'common/app_strings.dart';
 import 'db/settings.dart';
 import 'repositories/question_bank_repository.dart';
+import 'services/auth_service.dart';
 import 'services/cloud_sync_service.dart';
 import 'services/note_service.dart';
 import 'services/ykb_sync_service.dart';
@@ -15,6 +16,8 @@ import 'widgets/theme_controller.dart';
 import 'package:flutter/foundation.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:sqflite_common_ffi_web/sqflite_ffi_web.dart';
+
+final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 
 Future main() async {
   final swStartup = Stopwatch()..start();
@@ -66,6 +69,9 @@ Future<void> _initializeQuestionBank() async {
     // 后台静默处理医考帮离线同步队列
     unawaited(YkbSyncService.instance.processQueue());
     unawaited(NoteService.instance.processQueue());
+
+    // 检查账号 Token 有效性，若已失效则提示用户重新登录
+    unawaited(AuthService.instance.checkTokenValidity(promptRelogin: true));
   } catch (error) {
     // 目录迁移失败时仍启动应用，让用户可以通过题库管理或备份恢复继续处理。
     debugPrint('题库目录初始化失败：$error');
@@ -144,6 +150,7 @@ class Yibubang extends StatelessWidget {
       listenable: ThemeController.instance,
       builder: (context, _) {
         return MaterialApp(
+          navigatorKey: rootNavigatorKey,
           debugShowCheckedModeBanner: false,
           title: AppStrings.appTitle,
           theme: _buildTheme(Brightness.light),

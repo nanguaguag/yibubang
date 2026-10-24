@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'ykb_encrypt.dart';
 
 import '../db/settings.dart';
+import '../services/auth_service.dart';
 
 /// 发起请求的基础函数，整合了请求头设置及全局登录状态的处理
 Future<Map<String, dynamic>> basicReq(
@@ -78,10 +79,11 @@ Future<Map<String, dynamic>> basicReq(
     return {'code': response.statusCode.toString(), 'message': response.body};
   }
 
-  if (resp['code'] == '309') {
+  if (resp['code'] == '309' || resp['code'] == 309) {
     // 会话过期，请重新登录
     debugPrint('[API-RESP] Session expired (code 309), clearing user info');
     clearUserInfo();
+    AuthService.instance.notifyTokenExpired();
   }
 
   return resp;
