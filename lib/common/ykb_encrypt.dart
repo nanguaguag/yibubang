@@ -5,6 +5,7 @@ import 'package:crypto/crypto.dart';
 const String imei = '4f07ccb6e858592c'; // uuid
 const String rootUrl = 'https://api.yikaobang.com.cn/index.php';
 const String channelDefault = '10000';
+const String appVersionDefault = '2801';
 
 /// 获取当前秒级时间戳
 String getTimestamp() {

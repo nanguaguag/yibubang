@@ -35,7 +35,7 @@ Future<Map<String, dynamic>> basicReq(
     'timestamp': timestamp,
     'signature': getSignature(timestamp, params, loggedin),
     'client-type': 'android',
-    'app-version': '2630',
+    'app-version': appVersionDefault,
     'uuid': imei,
     'channel': channel,
     'app-type': 'ykb',

@@ -193,7 +193,7 @@ class NoteService {
         'timestamp': timestamp,
         'signature': getSignature(timestamp, fields, loggedIn),
         'client-type': 'android',
-        'app-version': '2801',
+        'app-version': appVersionDefault,
         'uuid': imei,
         'channel': channelDefault,
         'app-type': 'ykb',
