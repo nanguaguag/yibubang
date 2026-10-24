@@ -49,6 +49,25 @@ class YkbSyncQueueItem {
         createdAt: (map['created_at'] as num?)?.toInt() ?? 0,
         lastError: map['last_error'] as String?,
       );
+
+  YkbSyncQueueItem copyWith({
+    String? id,
+    String? type,
+    String? itemId,
+    Map<String, dynamic>? payload,
+    int? retryCount,
+    int? createdAt,
+    String? lastError,
+  }) =>
+      YkbSyncQueueItem(
+        id: id ?? this.id,
+        type: type ?? this.type,
+        itemId: itemId ?? this.itemId,
+        payload: payload ?? this.payload,
+        retryCount: retryCount ?? this.retryCount,
+        createdAt: createdAt ?? this.createdAt,
+        lastError: lastError ?? this.lastError,
+      );
 }
 
 /// 内存中的同步响应记录（不写入数据库，可随时清理）
@@ -366,6 +385,113 @@ class YkbSyncService {
     unawaited(processQueue());
   }
 
+  /// 执行单个队列项目的网络请求，返回 true 表示成功 (200)，false 表示返回非 200，抛出异常表示网络中断
+  Future<bool> _executeItemRequest(YkbSyncQueueItem item) async {
+    String? responseCode;
+    bool success = false;
+    Map<String, dynamic> resp = {};
+
+    if (item.type == 'cut') {
+      resp = await basicReq(
+        '/allQuestion/cutQuestion/cut',
+        Map<String, dynamic>.from(item.payload),
+      );
+    } else if (item.type == 'answer') {
+      resp = await basicReq(
+        '/Question/Answer/postBatchForAll',
+        Map<String, dynamic>.from(item.payload),
+      );
+    } else if (item.type == 'redo_chapter') {
+      resp = await basicReq(
+        '/allquestion/main/redoAnswerWithWrong',
+        Map<String, dynamic>.from(item.payload),
+      );
+    } else {
+      return true;
+    }
+
+    debugPrint('[YkbSyncService] ${item.type} 同步响应: $resp');
+    responseCode = resp['code']?.toString() ?? '200';
+    SyncResponseCache.instance.record(
+      queueId: item.id,
+      itemId: item.itemId,
+      type: item.type,
+      code: responseCode,
+      payload: item.payload,
+      response: resp,
+      rawResponse: const JsonEncoder.withIndent('  ').convert(resp),
+    );
+
+    if (responseCode == '200') {
+      success = true;
+    } else {
+      await _markError(
+        item,
+        resp['message']?.toString() ?? 'Code ${resp['code']}',
+      );
+      if (responseCode == '309') {
+        throw const FormatException('309_TOKEN_EXPIRED');
+      }
+    }
+    return success;
+  }
+
+  /// 单项手动重试（重置重试计数为 0 并立即尝试发包）
+  Future<bool> retryItem(String id) async {
+    final db = await UserDBHelper().database;
+    final rows =
+        await db.query('YkbSyncQueue', where: 'id = ?', whereArgs: [id]);
+    if (rows.isEmpty) return false;
+
+    await resetItemRetry(id);
+    final rawItem = YkbSyncQueueItem.fromMap(rows.first);
+    final item = rawItem.copyWith(retryCount: 0);
+
+    try {
+      final success = await _executeItemRequest(item);
+      if (success) {
+        await _dequeue(item.id);
+        return true;
+      }
+      return false;
+    } catch (e) {
+      if (e is! FormatException || e.message != '309_TOKEN_EXPIRED') {
+        SyncResponseCache.instance.record(
+          queueId: item.id,
+          itemId: item.itemId,
+          type: item.type,
+          code: 'ERR',
+          payload: item.payload,
+          response: {'error': e.toString()},
+          rawResponse: const JsonEncoder.withIndent('  ')
+              .convert({'error': e.toString()}),
+        );
+        await _markError(item, e.toString());
+      }
+      return false;
+    }
+  }
+
+  /// 单项重置重试计数
+  Future<void> resetItemRetry(String id) async {
+    final db = await UserDBHelper().database;
+    await db.update(
+      'YkbSyncQueue',
+      {'retry_count': 0, 'last_error': null},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  /// 一键重置该队列所有任务的重试计数
+  Future<void> resetAllRetries() async {
+    final db = await UserDBHelper().database;
+    await db.update(
+      'YkbSyncQueue',
+      {'retry_count': 0, 'last_error': null},
+    );
+  }
+
   /// 后台处理同步队列
   Future<void> processQueue() async {
     if (_isProcessingQueue) return;
@@ -387,92 +513,26 @@ class YkbSyncService {
         try {
           debugPrint(
               '[YkbSyncService] 执行队列任务: id=${item.id}, type=${item.type}, retry=${item.retryCount}');
-          bool success = false;
-          String? responseCode;
-          if (item.type == 'cut') {
-            final resp = await basicReq(
-              '/allQuestion/cutQuestion/cut',
-              Map<String, dynamic>.from(item.payload),
-            );
-            debugPrint('[YkbSyncService] 斩题同步响应: $resp');
-            responseCode = resp['code']?.toString() ?? '200';
-            SyncResponseCache.instance.record(
-              queueId: item.id,
-              itemId: item.itemId,
-              type: item.type,
-              code: responseCode,
-              payload: item.payload,
-              response: resp,
-              rawResponse: const JsonEncoder.withIndent('  ').convert(resp),
-            );
-            if (responseCode == '200') {
-              success = true;
-            } else {
-              await _markError(
-                  item, resp['message']?.toString() ?? 'Code ${resp['code']}');
-            }
-          } else if (item.type == 'answer') {
-            final resp = await basicReq(
-              '/Question/Answer/postBatchForAll',
-              Map<String, dynamic>.from(item.payload),
-            );
-            debugPrint('[YkbSyncService] 作答同步响应: $resp');
-            responseCode = resp['code']?.toString() ?? '200';
-            SyncResponseCache.instance.record(
-              queueId: item.id,
-              itemId: item.itemId,
-              type: item.type,
-              code: responseCode,
-              payload: item.payload,
-              response: resp,
-              rawResponse: const JsonEncoder.withIndent('  ').convert(resp),
-            );
-            if (responseCode == '200') {
-              success = true;
-            } else {
-              await _markError(
-                  item, resp['message']?.toString() ?? 'Code ${resp['code']}');
-            }
-          } else if (item.type == 'redo_chapter') {
-            final resp = await basicReq(
-              '/allquestion/main/redoAnswerWithWrong',
-              Map<String, dynamic>.from(item.payload),
-            );
-            debugPrint('[YkbSyncService] 重做章节同步响应: $resp');
-            responseCode = resp['code']?.toString() ?? '200';
-            SyncResponseCache.instance.record(
-              queueId: item.id,
-              itemId: item.itemId,
-              type: item.type,
-              code: responseCode,
-              payload: item.payload,
-              response: resp,
-              rawResponse: const JsonEncoder.withIndent('  ').convert(resp),
-            );
-            if (responseCode == '200') {
-              success = true;
-            } else {
-              await _markError(
-                  item, resp['message']?.toString() ?? 'Code ${resp['code']}');
-            }
-          }
+          final success = await _executeItemRequest(item);
 
           if (success) {
             await _dequeue(item.id);
             debugPrint('[YkbSyncService] 同步任务成功并已移出队列: ${item.id}');
           } else {
-            // 如果是登录凭据失效 (code 309)，必须暂停队列等待用户重新登录
-            if (responseCode == '309') {
-              debugPrint('[YkbSyncService] 登录态已失效 (309)，暂停队列执行');
-              break;
-            }
             // 针对非网络中断的业务错误：如果已重试达到上限(5次)，出队放弃以防永久队头阻塞
             if (item.retryCount + 1 >= 5) {
-              debugPrint('[YkbSyncService] 任务 ${item.id} 达到最大重试次数上限(5次)，移出活跃队列');
+              debugPrint(
+                  '[YkbSyncService] 任务 ${item.id} 达到最大重试次数上限(5次)，移出活跃队列');
               await _dequeue(item.id);
             } else {
-              debugPrint('[YkbSyncService] 任务 ${item.id} 业务失败 (重试 ${item.retryCount + 1}/5)，继续执行队列下一项');
+              debugPrint(
+                  '[YkbSyncService] 任务 ${item.id} 业务失败 (重试 ${item.retryCount + 1}/5)，继续执行队列下一项');
             }
+          }
+        } on FormatException catch (fe) {
+          if (fe.message == '309_TOKEN_EXPIRED') {
+            debugPrint('[YkbSyncService] 登录态已失效 (309)，暂停队列执行');
+            break;
           }
         } catch (e, stack) {
           debugPrint('[YkbSyncService] 网络或异常中断 ${item.type}: $e');
@@ -484,7 +544,8 @@ class YkbSyncService {
             code: 'ERR',
             payload: item.payload,
             response: {'error': e.toString()},
-            rawResponse: const JsonEncoder.withIndent('  ').convert({'error': e.toString()}),
+            rawResponse: const JsonEncoder.withIndent('  ')
+                .convert({'error': e.toString()}),
           );
           await _markError(item, e.toString());
           if (item.retryCount + 1 >= 5) {

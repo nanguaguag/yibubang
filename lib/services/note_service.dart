@@ -373,6 +373,69 @@ class NoteService {
     );
   }
 
+  /// 单项手动重试笔记任务（重置重试计数为 0 并立即尝试发包）
+  Future<bool> retryItem(String id, {Question? question}) async {
+    final db = await UserDBHelper().database;
+    final rows =
+        await db.query('NoteSyncQueue', where: 'id = ?', whereArgs: [id]);
+    if (rows.isEmpty) return false;
+
+    await resetItemRetry(id);
+    final item = NoteSyncQueueItem.fromMap(rows.first);
+
+    bool success = false;
+    try {
+      if (item.action == 'upload') {
+        success = await _processUploadItem(item, question);
+      } else if (item.action == 'delete') {
+        success = await _processDeleteItem(item, question);
+      } else {
+        success = true;
+      }
+    } catch (e) {
+      await db.update(
+        'NoteSyncQueue',
+        {'retry_count': 1, 'last_error': e.toString()},
+        where: 'id = ?',
+        whereArgs: [item.id],
+      );
+      return false;
+    }
+
+    if (success) {
+      await db.delete('NoteSyncQueue', where: 'id = ?', whereArgs: [item.id]);
+      return true;
+    } else {
+      await db.update(
+        'NoteSyncQueue',
+        {'retry_count': 1},
+        where: 'id = ?',
+        whereArgs: [item.id],
+      );
+      return false;
+    }
+  }
+
+  /// 单项重置重试计数
+  Future<void> resetItemRetry(String id) async {
+    final db = await UserDBHelper().database;
+    await db.update(
+      'NoteSyncQueue',
+      {'retry_count': 0, 'last_error': null},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  /// 一键重置笔记队列所有任务的重试计数
+  Future<void> resetAllRetries() async {
+    final db = await UserDBHelper().database;
+    await db.update(
+      'NoteSyncQueue',
+      {'retry_count': 0, 'last_error': null},
+    );
+  }
+
   /// 执行同步队列（断网重试）
   Future<void> processQueue({Question? question}) async {
     if (_isProcessingQueue) return;

@@ -527,6 +527,19 @@ class _DeveloperPageState extends State<DeveloperPage>
             await _loadQueuesAndActivities();
             if (mounted) setState(() {});
           },
+          onResetAllRetries: () async {
+            await YkbSyncService.instance.resetAllRetries();
+            await _loadQueuesAndActivities();
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('已重置所有综合同步任务的重试计数为 0'),
+                  duration: Duration(milliseconds: 800),
+                ),
+              );
+              setState(() {});
+            }
+          },
           onClear: () => _confirmClearQueue('YkbSyncQueue'),
           children: [
             if (_ykbQueueItems.isEmpty)
@@ -557,6 +570,19 @@ class _DeveloperPageState extends State<DeveloperPage>
             await NoteService.instance.processQueue();
             await _loadQueuesAndActivities();
             if (mounted) setState(() {});
+          },
+          onResetAllRetries: () async {
+            await NoteService.instance.resetAllRetries();
+            await _loadQueuesAndActivities();
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('已重置所有笔记同步任务的重试计数为 0'),
+                  duration: Duration(milliseconds: 800),
+                ),
+              );
+              setState(() {});
+            }
           },
           onClear: () => _confirmClearQueue('NoteSyncQueue'),
           children: [
@@ -708,6 +734,7 @@ class _DeveloperPageState extends State<DeveloperPage>
     required String badgeText,
     required Color badgeColor,
     required VoidCallback onProcess,
+    VoidCallback? onResetAllRetries,
     required VoidCallback onClear,
     required List<Widget> children,
   }) {
@@ -757,6 +784,12 @@ class _DeveloperPageState extends State<DeveloperPage>
                   icon: const Icon(Icons.play_arrow, size: 18),
                   label: const Text('立即同步'),
                 ),
+                if (onResetAllRetries != null)
+                  IconButton(
+                    icon: const Icon(Icons.restart_alt, size: 20),
+                    tooltip: '重置所有任务的重试计数为 0',
+                    onPressed: onResetAllRetries,
+                  ),
                 IconButton(
                   icon: const Icon(Icons.delete_sweep, size: 20),
                   tooltip: '清空队列',
@@ -881,6 +914,46 @@ class _DeveloperPageState extends State<DeveloperPage>
         mainAxisSize: MainAxisSize.min,
         children: [
           IconButton(
+            icon: const Icon(Icons.refresh, size: 18),
+            tooltip: '单项手动重试 (重置计数并立即执行)',
+            onPressed: () async {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('正在单项重试...'),
+                  duration: Duration(milliseconds: 600),
+                ),
+              );
+              final ok = await YkbSyncService.instance.retryItem(queueId);
+              await _loadQueuesAndActivities();
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(ok ? '单项重试成功并已移出队列' : '单项重试未成功，请查看最新报错'),
+                    backgroundColor: ok ? Colors.green : Colors.red,
+                  ),
+                );
+                setState(() {});
+              }
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.history, size: 18),
+            tooltip: '仅重置重试计数为 0',
+            onPressed: () async {
+              await YkbSyncService.instance.resetItemRetry(queueId);
+              await _loadQueuesAndActivities();
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('已重置该项重试计数为 0'),
+                    duration: Duration(milliseconds: 600),
+                  ),
+                );
+                setState(() {});
+              }
+            },
+          ),
+          IconButton(
             icon: const Icon(Icons.code, size: 18),
             tooltip: '查看 Payload',
             onPressed: () => _showRawJsonDialog(
@@ -982,9 +1055,49 @@ class _DeveloperPageState extends State<DeveloperPage>
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-        IconButton(
-          icon: const Icon(Icons.code, size: 18),
-          tooltip: '查看 Payload',
+          IconButton(
+            icon: const Icon(Icons.refresh, size: 18),
+            tooltip: '单项手动重试 (重置计数并立即执行)',
+            onPressed: () async {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('正在单项重试笔记任务...'),
+                  duration: Duration(milliseconds: 600),
+                ),
+              );
+              final ok = await NoteService.instance.retryItem(queueId);
+              await _loadQueuesAndActivities();
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(ok ? '单项重试成功并已移出队列' : '单项重试未成功，请查看最新报错'),
+                    backgroundColor: ok ? Colors.green : Colors.red,
+                  ),
+                );
+                setState(() {});
+              }
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.history, size: 18),
+            tooltip: '仅重置重试计数为 0',
+            onPressed: () async {
+              await NoteService.instance.resetItemRetry(queueId);
+              await _loadQueuesAndActivities();
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('已重置该项重试计数为 0'),
+                    duration: Duration(milliseconds: 600),
+                  ),
+                );
+                setState(() {});
+              }
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.code, size: 18),
+            tooltip: '查看 Payload',
           onPressed: () => _showRawJsonDialog(
             'NoteSyncQueue Payload',
             item['payload']?.toString() ?? '{}',
