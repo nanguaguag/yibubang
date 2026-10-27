@@ -4,8 +4,8 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../common/adaptive_route.dart';
 import '../common/app_strings.dart';
+import '../common/platform_adaptive.dart';
 import '../common/github_proxy.dart';
 import '../db/data_transfer.dart';
 import '../db/record_sync_service.dart';
@@ -521,11 +521,10 @@ class _SettingsPageState extends State<SettingsPage> {
                     value: colorValue,
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () {
-                      Navigator.push(
+                      pushAdaptiveModalPage(
                         context,
-                        adaptivePageRoute(
-                          builder: (context) => const SetThemeColorPage(),
-                        ),
+                        desktopConstraints: const BoxConstraints(maxWidth: 580, maxHeight: 680),
+                        builder: (context) => const SetThemeColorPage(),
                       );
                     },
                   ),
@@ -535,11 +534,10 @@ class _SettingsPageState extends State<SettingsPage> {
                     value: durationValue,
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () {
-                      Navigator.push(
+                      pushAdaptiveModalPage(
                         context,
-                        adaptivePageRoute(
-                          builder: (context) => const SetDurationPage(),
-                        ),
+                        desktopConstraints: const BoxConstraints(maxWidth: 580, maxHeight: 600),
+                        builder: (context) => const SetDurationPage(),
                       );
                     },
                   ),
@@ -549,11 +547,9 @@ class _SettingsPageState extends State<SettingsPage> {
                     value: '排序与显隐',
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () {
-                      Navigator.push(
+                      pushAdaptiveModalPage(
                         context,
-                        adaptivePageRoute(
-                          builder: (context) => const QuestionSectionsPage(),
-                        ),
+                        builder: (context) => const QuestionSectionsPage(),
                       );
                     },
                   ),
@@ -750,11 +746,9 @@ class _SettingsPageState extends State<SettingsPage> {
                 label: '关于医不帮',
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () async {
-                  await Navigator.push(
+                  await pushAdaptiveModalPage(
                     context,
-                    adaptivePageRoute(
-                      builder: (context) => const AboutPage(),
-                    ),
+                    builder: (context) => const AboutPage(),
                   );
                   if (mounted) {
                     setState(() {
@@ -771,11 +765,10 @@ class _SettingsPageState extends State<SettingsPage> {
                   label: '开发者模式',
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () {
-                    Navigator.push(
+                    pushAdaptiveModalPage(
                       context,
-                      adaptivePageRoute(
-                        builder: (context) => const DeveloperPage(),
-                      ),
+                      desktopConstraints: const BoxConstraints(maxWidth: 780, maxHeight: 850),
+                      builder: (context) => const DeveloperPage(),
                     );
                   },
                 ),

@@ -1,4 +1,5 @@
 import '../common/adaptive_route.dart';
+import '../common/platform_adaptive.dart';
 import 'package:flutter/material.dart';
 import 'package:yibubang/screens/question_grid_page.dart';
 import '../common/app_strings.dart';
@@ -188,10 +189,7 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
               const Text('当前还没有可用题库，请先导入或下载题库'),
               const SizedBox(height: 16),
               FilledButton.icon(
-                onPressed: () async {
-                  await Navigator.push(context, _openBankManagement());
-                  _refreshData();
-                },
+                onPressed: _navigateToBankManagement,
                 icon: const Icon(Icons.storage_outlined),
                 label: const Text('打开题库管理'),
               ),
@@ -208,6 +206,19 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
           ),
         ),
       );
+
+  /// 打开题库管理页（桌面端居中模态弹窗，移动端左侧滑入）
+  Future<void> _navigateToBankManagement() async {
+    if (isDesktopLayout(context)) {
+      await pushAdaptiveModalPage(
+        context,
+        builder: (_) => const QuestionBankPage(),
+      );
+    } else {
+      await Navigator.push(context, _openBankManagement());
+    }
+    _refreshData();
+  }
 
   /// 题库管理页：从左侧滑入，更符合抽屉/侧边栏的直觉
   Route<void> _openBankManagement() {
@@ -383,10 +394,7 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
         leading: IconButton(
           tooltip: '题库管理',
           icon: const Icon(Icons.storage_outlined),
-          onPressed: () async {
-            await Navigator.push(context, _openBankManagement());
-            _refreshData();
-          },
+          onPressed: _navigateToBankManagement,
         ),
         title: const Text(AppStrings.selectedSubjectsTitle),
         actions: [
@@ -394,9 +402,9 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
             tooltip: '搜索题目',
             icon: const Icon(Icons.search),
             onPressed: () async {
-              await Navigator.push(
+              await pushAdaptiveModalPage(
                 context,
-                adaptivePageRoute(builder: (_) => const QuestionSearchPage()),
+                builder: (_) => const QuestionSearchPage(),
               );
             },
           ),
@@ -461,11 +469,9 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
           FloatingActionButton(
             heroTag: 'add',
             onPressed: () async {
-              await Navigator.push(
+              await pushAdaptiveModalPage(
                 context,
-                adaptivePageRoute(
-                  builder: (context) => SubjectsListPage(),
-                ),
+                builder: (context) => const SubjectsListPage(),
               );
               _refreshData();
             },

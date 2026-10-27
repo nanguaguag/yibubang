@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../common/app_strings.dart';
+import '../common/platform_adaptive.dart';
 import '../models/subject.dart';
 
 class SubjectsListPage extends StatefulWidget {
@@ -198,7 +199,8 @@ class _SubjectsListPageState extends State<SubjectsListPage>
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
+          icon: Icon(isDesktopLayout(context) ? Icons.close : Icons.arrow_back),
+          tooltip: isDesktopLayout(context) ? '关闭' : '返回',
           onPressed: () => Navigator.pop(context),
         ),
         title: Stack(

@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:yibubang/db/settings.dart';
 
-import '../common/adaptive_route.dart';
 import '../common/request.dart';
 import '../repositories/question_search_repository.dart';
 import '../services/note_service.dart';
@@ -12,6 +11,7 @@ import '../services/ykb_sync_service.dart';
 import '../widgets/common/app_network_image.dart';
 import '../widgets/common/info_card.dart';
 import '../widgets/common/styled_tile.dart';
+import '../common/platform_adaptive.dart';
 import './my_notes_page.dart';
 import './settings_page.dart';
 import './user_questions_list_page.dart';
@@ -22,9 +22,9 @@ Widget rebuildSettingsBtn(BuildContext context) {
     icon: const Icon(Icons.settings),
     tooltip: '设置',
     onPressed: () {
-      Navigator.push(
+      pushAdaptiveModalPage(
         context,
-        adaptivePageRoute(builder: (context) => const SettingsPage()),
+        builder: (context) => const SettingsPage(),
       );
     },
   );
@@ -88,18 +88,16 @@ class _MyPageState extends State<MyPage> {
 
   Future<void> _onAccountTap() async {
     if (_loggedIn) {
-      await Navigator.push(
+      await pushAdaptiveModalPage(
         context,
-        adaptivePageRoute(
-          builder: (context) => ProfilePage(onLoggedOut: _loadData),
-        ),
+        desktopConstraints: const BoxConstraints(maxWidth: 600, maxHeight: 720),
+        builder: (context) => ProfilePage(onLoggedOut: _loadData),
       );
     } else {
-      await Navigator.push(
+      await pushAdaptiveModalPage(
         context,
-        adaptivePageRoute(
-          builder: (context) => LoginPage(onLoggedIn: _loadData),
-        ),
+        desktopConstraints: const BoxConstraints(maxWidth: 480, maxHeight: 560),
+        builder: (context) => LoginPage(onLoggedIn: _loadData),
       );
     }
     _loadData();
@@ -266,12 +264,10 @@ class _MyPageState extends State<MyPage> {
             iconColor: const Color(0xFFE53935),
             iconBgColor: const Color(0xFFFFEBEE),
             onTap: () async {
-              await Navigator.push(
+              await pushAdaptiveModalPage(
                 context,
-                adaptivePageRoute(
-                  builder: (_) => const UserQuestionsListPage(
-                    type: UserQuestionsType.collection,
-                  ),
+                builder: (_) => const UserQuestionsListPage(
+                  type: UserQuestionsType.collection,
                 ),
               );
               _loadData();
@@ -287,12 +283,10 @@ class _MyPageState extends State<MyPage> {
             iconColor: const Color(0xFFF57C00),
             iconBgColor: const Color(0xFFFFF3E0),
             onTap: () async {
-              await Navigator.push(
+              await pushAdaptiveModalPage(
                 context,
-                adaptivePageRoute(
-                  builder: (_) => const UserQuestionsListPage(
-                    type: UserQuestionsType.mistake,
-                  ),
+                builder: (_) => const UserQuestionsListPage(
+                  type: UserQuestionsType.mistake,
                 ),
               );
               _loadData();
@@ -308,11 +302,9 @@ class _MyPageState extends State<MyPage> {
             iconColor: const Color(0xFF1E88E5),
             iconBgColor: const Color(0xFFE3F2FD),
             onTap: () async {
-              await Navigator.push(
+              await pushAdaptiveModalPage(
                 context,
-                adaptivePageRoute(
-                  builder: (_) => const MyNotesPage(),
-                ),
+                builder: (_) => const MyNotesPage(),
               );
               _loadData();
             },
@@ -327,12 +319,10 @@ class _MyPageState extends State<MyPage> {
             iconColor: const Color(0xFF7E57C2),
             iconBgColor: const Color(0xFFEDE7F6),
             onTap: () async {
-              await Navigator.push(
+              await pushAdaptiveModalPage(
                 context,
-                adaptivePageRoute(
-                  builder: (_) => const UserQuestionsListPage(
-                    type: UserQuestionsType.cut,
-                  ),
+                builder: (_) => const UserQuestionsListPage(
+                  type: UserQuestionsType.cut,
                 ),
               );
               _loadData();
@@ -498,7 +488,9 @@ class _LoginPageState extends State<LoginPage> {
 
     return Scaffold(
       appBar: AppBar(
-        leading: Navigator.canPop(context) ? const BackButton() : null,
+        leading: Navigator.canPop(context)
+            ? (isDesktopLayout(context) ? const CloseButton() : const BackButton())
+            : null,
         actions: <Widget>[
           rebuildSettingsBtn(context),
         ],

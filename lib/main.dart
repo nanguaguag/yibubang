@@ -122,7 +122,7 @@ ThemeData _buildTheme(Brightness brightness) {
     ),
     navigationRailTheme: const NavigationRailThemeData(
       labelType: NavigationRailLabelType.all,
-      groupAlignment: -0.6,
+      groupAlignment: -1.0,
     ),
     chipTheme: const ChipThemeData(shape: StadiumBorder()),
     filledButtonTheme: const FilledButtonThemeData(

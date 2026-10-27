@@ -234,14 +234,12 @@ class _StatisticsPageState extends State<StatisticsPage> {
             period: '今日',
             stats: data.today,
             onTap: () {
-              Navigator.push(
+              pushAdaptiveModalPage(
                 context,
-                MaterialPageRoute(
-                  builder: (_) => AnsweredRecordsPage(
-                    title: '今日刷题记录',
-                    startMs: todayStartMs(now),
-                    endMs: tomorrowStartMs(now),
-                  ),
+                builder: (_) => AnsweredRecordsPage(
+                  title: '今日刷题记录',
+                  startMs: todayStartMs(now),
+                  endMs: tomorrowStartMs(now),
                 ),
               );
             },
@@ -253,14 +251,12 @@ class _StatisticsPageState extends State<StatisticsPage> {
             period: '本周',
             stats: data.week,
             onTap: () {
-              Navigator.push(
+              pushAdaptiveModalPage(
                 context,
-                MaterialPageRoute(
-                  builder: (_) => AnsweredRecordsPage(
-                    title: '本周刷题记录',
-                    startMs: weekStartMs(now),
-                    endMs: nextWeekStartMs(now),
-                  ),
+                builder: (_) => AnsweredRecordsPage(
+                  title: '本周刷题记录',
+                  startMs: weekStartMs(now),
+                  endMs: nextWeekStartMs(now),
                 ),
               );
             },
@@ -272,14 +268,12 @@ class _StatisticsPageState extends State<StatisticsPage> {
             period: '本月',
             stats: data.month,
             onTap: () {
-              Navigator.push(
+              pushAdaptiveModalPage(
                 context,
-                MaterialPageRoute(
-                  builder: (_) => AnsweredRecordsPage(
-                    title: '本月刷题记录',
-                    startMs: monthStartMs(now),
-                    endMs: nextMonthStartMs(now),
-                  ),
+                builder: (_) => AnsweredRecordsPage(
+                  title: '本月刷题记录',
+                  startMs: monthStartMs(now),
+                  endMs: nextMonthStartMs(now),
                 ),
               );
             },
@@ -1125,14 +1119,12 @@ class _DayDetailSheetState extends State<_DayDetailSheet> {
                       ),
                       onPressed: () {
                         Navigator.pop(context);
-                        Navigator.push(
+                        pushAdaptiveModalPage(
                           context,
-                          MaterialPageRoute(
-                            builder: (_) => AnsweredRecordsPage(
-                              title: '${widget.date.year}年${widget.date.month}月${widget.date.day}日 刷题记录',
-                              startMs: widget.startMs,
-                              endMs: widget.endMs,
-                            ),
+                          builder: (_) => AnsweredRecordsPage(
+                            title: '${widget.date.year}年${widget.date.month}月${widget.date.day}日 刷题记录',
+                            startMs: widget.startMs,
+                            endMs: widget.endMs,
                           ),
                         );
                       },

@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
 
+import '../common/platform_adaptive.dart';
 import '../common/request.dart';
 import '../common/ykb_encrypt.dart';
 import '../services/auth_service.dart';
@@ -525,14 +526,14 @@ class _DeveloperPageState extends State<DeveloperPage>
                     const SizedBox(width: 8),
                     OutlinedButton.icon(
                       onPressed: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => LoginPage(
-                              onLoggedIn: () {
-                                _loadCredentials();
-                                _checkAuthStatus();
-                              },
-                            ),
+                        pushAdaptiveModalPage(
+                          context,
+                          desktopConstraints: const BoxConstraints(maxWidth: 480, maxHeight: 560),
+                          builder: (_) => LoginPage(
+                            onLoggedIn: () {
+                              _loadCredentials();
+                              _checkAuthStatus();
+                            },
                           ),
                         );
                       },
@@ -1667,8 +1668,10 @@ class _DeveloperPageState extends State<DeveloperPage>
             subtitle: const Text('发送任意医考帮请求，自动生成加密签名与完整请求头'),
             trailing: const Icon(Icons.arrow_forward_ios, size: 16),
             onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const ApiPlaygroundPage()),
+              pushAdaptiveModalPage(
+                context,
+                desktopConstraints: const BoxConstraints(maxWidth: 860, maxHeight: 850),
+                builder: (_) => const ApiPlaygroundPage(),
               );
             },
           ),

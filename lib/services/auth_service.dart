@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../common/platform_adaptive.dart';
 import '../common/request.dart';
 import '../main.dart';
 import '../screens/my_page.dart';
@@ -159,14 +160,14 @@ class AuthService {
               onPressed: () {
                 _isPromptingRelogin = false;
                 Navigator.of(ctx).pop();
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => LoginPage(
-                      onLoggedIn: () {
-                        // 登录成功后重新触发自检与队列
-                        checkTokenValidity(promptRelogin: false);
-                      },
-                    ),
+                pushAdaptiveModalPage(
+                  context,
+                  desktopConstraints: const BoxConstraints(maxWidth: 480, maxHeight: 560),
+                  builder: (_) => LoginPage(
+                    onLoggedIn: () {
+                      // 登录成功后重新触发自检与队列
+                      checkTokenValidity(promptRelogin: false);
+                    },
                   ),
                 );
               },

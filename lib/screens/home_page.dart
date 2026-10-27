@@ -88,6 +88,14 @@ class _HomePageState extends State<HomePage> {
     setState(() {
       _selectedIndex = index;
     });
+
+    if (isDesktopLayout(context)) {
+      if (_pageController.hasClients) {
+        _pageController.jumpToPage(index);
+      }
+      return;
+    }
+
     final duration = AppAnimation.duration;
     if (duration == Duration.zero) {
       _pageController.jumpToPage(index);
@@ -153,7 +161,6 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     final isDesktop = isDesktopLayout(context);
-    final theme = Theme.of(context);
 
     final pageView = PageView(
       controller: _pageController,
@@ -172,36 +179,8 @@ class _HomePageState extends State<HomePage> {
             NavigationRail(
               selectedIndex: _selectedIndex,
               onDestinationSelected: _onItemTapped,
+              groupAlignment: -1.0,
               labelType: NavigationRailLabelType.all,
-              leading: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 20),
-                child: Column(
-                  children: [
-                    Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.primaryContainer,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Icon(
-                        Icons.local_hospital_rounded,
-                        color: theme.colorScheme.onPrimaryContainer,
-                        size: 24,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      '医不帮',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: theme.colorScheme.primary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
               destinations: const <NavigationRailDestination>[
                 NavigationRailDestination(
                   icon: Icon(Icons.book_outlined),
@@ -221,7 +200,16 @@ class _HomePageState extends State<HomePage> {
               ],
             ),
             const VerticalDivider(width: 1, thickness: 1),
-            Expanded(child: pageView),
+            Expanded(
+              child: IndexedStack(
+                index: _selectedIndex,
+                children: const [
+                  ChoosedSubjectsPage(),
+                  StatisticsPage(),
+                  MyPage(),
+                ],
+              ),
+            ),
           ],
         ),
       );
