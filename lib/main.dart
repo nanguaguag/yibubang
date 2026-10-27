@@ -113,11 +113,16 @@ ThemeData _buildTheme(Brightness brightness) {
       ),
     ),
     bottomSheetTheme: const BottomSheetThemeData(
+      constraints: BoxConstraints(maxWidth: 640),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(
           top: Radius.circular(AppShapes.extraLarge),
         ),
       ),
+    ),
+    navigationRailTheme: const NavigationRailThemeData(
+      labelType: NavigationRailLabelType.all,
+      groupAlignment: -0.6,
     ),
     chipTheme: const ChipThemeData(shape: StadiumBorder()),
     filledButtonTheme: const FilledButtonThemeData(

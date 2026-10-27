@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../common/platform_adaptive.dart';
 import '../common/question_navigation.dart';
 import '../repositories/question_search_repository.dart';
 
@@ -129,12 +130,9 @@ class _UserQuestionsListPageState extends State<UserQuestionsListPage> {
   }
 
   void _showFilterSheet() {
-    showModalBottomSheet(
+    showAdaptiveModalSheet(
       context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
+      title: '筛选题目',
       builder: (sheetContext) {
         return StatefulBuilder(
           builder: (context, setModalState) {

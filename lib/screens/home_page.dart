@@ -3,6 +3,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../common/animation.dart';
 import '../common/app_strings.dart';
+import '../common/platform_adaptive.dart';
 import '../db/data_transfer.dart';
 import '../repositories/question_bank_repository.dart';
 import '../screens/choosed_subjects_page.dart';
@@ -151,16 +152,83 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
+    final isDesktop = isDesktopLayout(context);
+    final theme = Theme.of(context);
+
+    final pageView = PageView(
+      controller: _pageController,
+      onPageChanged: _onPageChanged,
+      children: const [
+        _KeepAliveTab(child: ChoosedSubjectsPage()),
+        _KeepAliveTab(child: StatisticsPage()),
+        _KeepAliveTab(child: MyPage()),
+      ],
+    );
+
+    if (isDesktop) {
+      return Scaffold(
+        body: Row(
+          children: [
+            NavigationRail(
+              selectedIndex: _selectedIndex,
+              onDestinationSelected: _onItemTapped,
+              labelType: NavigationRailLabelType.all,
+              leading: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 20),
+                child: Column(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primaryContainer,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        Icons.local_hospital_rounded,
+                        color: theme.colorScheme.onPrimaryContainer,
+                        size: 24,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      '医不帮',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              destinations: const <NavigationRailDestination>[
+                NavigationRailDestination(
+                  icon: Icon(Icons.book_outlined),
+                  selectedIcon: Icon(Icons.book),
+                  label: Text(AppStrings.selectedSubjectsTitle),
+                ),
+                NavigationRailDestination(
+                  icon: Icon(Icons.insights_outlined),
+                  selectedIcon: Icon(Icons.insights),
+                  label: Text(AppStrings.statisticsTitle),
+                ),
+                NavigationRailDestination(
+                  icon: Icon(Icons.person_outline),
+                  selectedIcon: Icon(Icons.person),
+                  label: Text(AppStrings.myPageTitle),
+                ),
+              ],
+            ),
+            const VerticalDivider(width: 1, thickness: 1),
+            Expanded(child: pageView),
+          ],
+        ),
+      );
+    }
+
     return Scaffold(
-      body: PageView(
-        controller: _pageController,
-        onPageChanged: _onPageChanged,
-        children: const [
-          _KeepAliveTab(child: ChoosedSubjectsPage()),
-          _KeepAliveTab(child: StatisticsPage()),
-          _KeepAliveTab(child: MyPage()),
-        ],
-      ),
+      body: pageView,
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
         onDestinationSelected: _onItemTapped,

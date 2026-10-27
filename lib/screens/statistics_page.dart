@@ -1,6 +1,7 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
+import '../common/platform_adaptive.dart';
 import '../models/answer_statistics.dart';
 import '../services/cloud_sync_service.dart';
 import 'answered_records_page.dart';
@@ -946,13 +947,9 @@ void _showDayStatsBottomSheet(BuildContext context, DateTime date) {
   final now = DateTime.now();
   final isToday = date.year == now.year && date.month == now.month && date.day == now.day;
 
-  showModalBottomSheet<void>(
+  showAdaptiveModalSheet<void>(
     context: context,
-    showDragHandle: true,
-    isScrollControlled: true,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-    ),
+    title: dateStr,
     builder: (ctx) {
       return _DayDetailSheet(
         date: date,

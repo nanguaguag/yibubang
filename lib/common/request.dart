@@ -107,8 +107,10 @@ Future<Map<String, dynamic>> login(
     'app_id': appId,
   });
 
-  // 假设接口返回数据格式如下：{ "data": { "token": "...", "secret": "...", "user_id": "...", "user_uuid": "..." } }
-  if (loginResp['data'] != null) {
+  // 只有服务端明确返回成功且包含有效 token 时才持久化凭据并标记已登录
+  if ((loginResp['code'] == '200' || loginResp['code'] == 200) &&
+      loginResp['data'] is Map &&
+      loginResp['data']['token'] != null) {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.setString('token', loginResp['data']['token']);
     await prefs.setString('secret', loginResp['data']['secret']);

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import '../common/platform_adaptive.dart';
 import '../models/note.dart';
 import '../models/question.dart';
 import '../services/note_service.dart';
@@ -58,12 +59,9 @@ Future<void> showNoteEditorSheet(
   );
   final List<NoteImage> images = List.from(existingNote?.images ?? []);
 
-  await showModalBottomSheet<void>(
+  await showAdaptiveModalSheet<void>(
     context: context,
-    isScrollControlled: true,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-    ),
+    title: existingNote == null ? '写笔记' : '编辑笔记',
     builder: (bottomSheetContext) {
       return StatefulBuilder(
         builder: (ctx, setSheetState) {

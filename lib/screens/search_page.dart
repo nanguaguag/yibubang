@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../common/adaptive_route.dart';
+import '../common/platform_adaptive.dart';
 import '../models/chapter.dart';
 import '../models/question.dart';
 import '../repositories/question_search_repository.dart';
@@ -126,11 +127,11 @@ class _QuestionSearchPageState extends State<QuestionSearchPage> {
       if (!mounted) return;
       setState(() {
         int added = 0;
-        pending.forEach((bankId) {
+        for (final bankId in pending) {
           final results = page[bankId];
           if (results == null) {
             _exhaustedBanks.add(bankId);
-            return;
+            continue;
           }
           _offsets[bankId] = (_offsets[bankId] ?? 0) + results.length;
           added += results.length;
@@ -138,7 +139,7 @@ class _QuestionSearchPageState extends State<QuestionSearchPage> {
           if (results.length < QuestionSearchRepository.pageSize) {
             _exhaustedBanks.add(bankId);
           }
-        });
+        }
         _loading = false;
         _loadingMore = false;
         if (added == 0) {
@@ -424,9 +425,9 @@ class _QuestionSearchPageState extends State<QuestionSearchPage> {
       }).toList();
 
   void _showFilterSheet() {
-    showModalBottomSheet(
+    showAdaptiveModalSheet(
       context: context,
-      isScrollControlled: true,
+      title: '搜索高级筛选',
       builder: (sheetContext) {
         return StatefulBuilder(
           builder: (context, setModalState) {

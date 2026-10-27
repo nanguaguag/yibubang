@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:yibubang/db/settings.dart';
@@ -409,27 +411,18 @@ class _LoginPageState extends State<LoginPage> {
           NoteService.instance.processQueue();
 
           if (!mounted) return;
+          ScaffoldMessenger.of(context).hideCurrentMaterialBanner();
           widget.onLoggedIn?.call();
           if (Navigator.canPop(context)) {
             Navigator.pop(context);
           }
         } else {
           if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(resp['message'] ?? '登录失败'),
-              duration: const Duration(seconds: 1),
-            ),
-          );
+          _showLoginBanner(resp);
         }
       } catch (e) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('登录异常: $e'),
-            duration: const Duration(seconds: 1),
-          ),
-        );
+        _showLoginBanner({'error': '登录异常: $e'});
       } finally {
         if (mounted) {
           setState(() {
@@ -440,8 +433,60 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
+  /// 弹出登录返回结果的横幅提示
+  /// 提取其中的 message 展示，若 JSON 结构不符合则显示完整 JSON
+  void _showLoginBanner(dynamic resp) {
+    String displayContent = '';
+    if (resp is Map &&
+        resp['message'] != null &&
+        resp['message'].toString().trim().isNotEmpty) {
+      displayContent = resp['message'].toString().trim();
+    } else {
+      try {
+        displayContent = JsonEncoder.withIndent('  ').convert(resp);
+      } catch (_) {
+        displayContent = resp?.toString() ?? '未知错误';
+      }
+    }
+
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentMaterialBanner();
+    messenger.showMaterialBanner(
+      MaterialBanner(
+        elevation: 2,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        leading: const Icon(Icons.info_outline, color: Colors.orange),
+        backgroundColor:
+            Theme.of(context).colorScheme.errorContainer.withValues(alpha: 0.95),
+        content: SelectableText(
+          displayContent,
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            color: Theme.of(context).colorScheme.onErrorContainer,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              messenger.hideCurrentMaterialBanner();
+            },
+            child: const Text('关闭'),
+          ),
+        ],
+      ),
+    );
+
+    // 5秒后自动收起横幅
+    Future.delayed(const Duration(seconds: 5), () {
+      if (mounted) {
+        messenger.hideCurrentMaterialBanner();
+      }
+    });
+  }
+
   @override
   void dispose() {
+    ScaffoldMessenger.of(context).hideCurrentMaterialBanner();
     _accountController.dispose();
     _passwordController.dispose();
     super.dispose();
