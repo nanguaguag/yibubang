@@ -29,15 +29,9 @@ class QuestionPageItem extends StatefulWidget {
 }
 
 class _QuestionPageItemState extends State<QuestionPageItem> {
-  bool _showContentAnyway = false;
-  bool _lastIsCut = false;
-
   @override
   void initState() {
     super.initState();
-    final uq = widget.controller.userQuestions[widget.index];
-    _lastIsCut = uq.isCut || uq.status == 3;
-    _showContentAnyway = widget.controller.defaultShowCutContent;
     widget.controller.addListener(_onControllerChanged);
   }
 
@@ -48,12 +42,6 @@ class _QuestionPageItemState extends State<QuestionPageItem> {
       oldWidget.controller.removeListener(_onControllerChanged);
       widget.controller.addListener(_onControllerChanged);
     }
-    final uq = widget.controller.userQuestions[widget.index];
-    final currentIsCut = uq.isCut || uq.status == 3;
-    if (currentIsCut != _lastIsCut) {
-      _lastIsCut = currentIsCut;
-      _showContentAnyway = false;
-    }
   }
 
   @override
@@ -63,15 +51,7 @@ class _QuestionPageItemState extends State<QuestionPageItem> {
   }
 
   void _onControllerChanged() {
-    if (!mounted) return;
-    final uq = widget.controller.userQuestions[widget.index];
-    final currentIsCut = uq.isCut || uq.status == 3;
-    if (currentIsCut != _lastIsCut) {
-      _lastIsCut = currentIsCut;
-      // 斩题状态发生改变时（如斩题或取消斩题），重置临时显示标记
-      _showContentAnyway = false;
-    }
-    setState(() {});
+    if (mounted) setState(() {});
   }
 
   void _onStateChanged() {
@@ -86,9 +66,10 @@ class _QuestionPageItemState extends State<QuestionPageItem> {
     final uq = widget.controller.userQuestions[widget.index];
     final q = widget.controller.questions[widget.index];
     final isCut = uq.isCut || uq.status == 3;
+    final showCutContent = widget.controller.isCutContentRevealed(widget.index);
 
-    // 斩题状态且未点击“显示题目内容”：100% 展示斩题占位并提供查看内容按钮
-    if (isCut && !_showContentAnyway) {
+    // 斩题状态且未主动显示内容：100% 展示斩题占位并提供查看内容按钮
+    if (isCut && !showCutContent) {
       return _buildCutView(context);
     }
 
@@ -112,7 +93,9 @@ class _QuestionPageItemState extends State<QuestionPageItem> {
         case 1: // 正确
         case 2: // 错误
         case 3: // 历史已斩状态
-          content = (uq.userAnswer.isNotEmpty || (q.answer != null && q.answer!.isNotEmpty))
+          content =
+              (uq.userAnswer.isNotEmpty ||
+                  (q.answer != null && q.answer!.isNotEmpty))
               ? QuestionExplainView(
                   question: q,
                   userQuestion: uq,
@@ -127,7 +110,7 @@ class _QuestionPageItemState extends State<QuestionPageItem> {
       }
     }
 
-    if (isCut && _showContentAnyway) {
+    if (isCut && showCutContent) {
       return _buildRevealedView(context, content);
     }
 
@@ -180,14 +163,15 @@ class _QuestionPageItemState extends State<QuestionPageItem> {
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
-                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 11),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 18,
+                  vertical: 11,
+                ),
               ),
               icon: const Icon(Icons.visibility_outlined, size: 18),
               label: const Text('显示题目内容'),
               onPressed: () {
-                setState(() {
-                  _showContentAnyway = true;
-                });
+                widget.controller.toggleCutContentReveal(widget.index);
               },
             ),
           ],
@@ -232,9 +216,7 @@ class _QuestionPageItemState extends State<QuestionPageItem> {
                 icon: const Icon(Icons.visibility_off_outlined, size: 15),
                 label: const Text('隐藏题目内容', style: TextStyle(fontSize: 12)),
                 onPressed: () {
-                  setState(() {
-                    _showContentAnyway = false;
-                  });
+                  widget.controller.toggleCutContentReveal(widget.index);
                 },
               ),
             ],
