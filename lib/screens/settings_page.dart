@@ -10,10 +10,13 @@ import '../common/github_proxy.dart';
 import '../common/shortcut_config.dart';
 import '../db/data_transfer.dart';
 import '../db/record_sync_service.dart';
+import '../repositories/question_bank_repository.dart';
 import '../repositories/question_search_repository.dart';
 import '../services/app_update_service.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/note_service.dart';
+import '../services/ykb_bank_smart_sync_service.dart';
+import '../services/ykb_bank_sync_service.dart';
 import '../services/ykb_pull_service.dart';
 import '../services/ykb_sync_service.dart';
 import '../widgets/common/info_card.dart';
@@ -57,7 +60,15 @@ class _SettingsPageState extends State<SettingsPage> {
   bool syncCutToYkb = true;
   bool syncNotesToYkb = true;
   bool syncRedoToYkb = true;
-  bool syncProgressFromYkb = true;
+
+  // 医考帮拉取同步设置
+  bool syncYkbProgressEnabled = true;
+  bool syncYkbSilent = false;
+  bool syncYkbJitter = false;
+  bool syncYkbPacing = false;
+
+  // 题库智能增量同步
+  bool smartBankSyncEnabled = true;
 
   static const String keyAcceptUpdate = 'accept_update';
   static const String keySyncQuestionBank = 'sync_question_bank';
@@ -66,7 +77,142 @@ class _SettingsPageState extends State<SettingsPage> {
   static const String keySyncCutToYkb = 'sync_cut_to_ykb';
   static const String keySyncNotesToYkb = 'sync_notes_to_ykb';
   static const String keySyncRedoToYkb = 'sync_redo_to_ykb';
-  static const String keySyncProgressToYkb = 'sync_ykb_progress_enabled';
+  static const String keySyncYkbProgressEnabled = 'sync_ykb_progress_enabled';
+  static const String keySyncYkbSilent = 'sync_ykb_silent';
+  static const String keySyncYkbJitter = 'sync_ykb_jitter_enabled';
+  static const String keySyncYkbPacing = 'sync_ykb_pacing_enabled';
+  static const String keySmartBankSync = 'sync_bank_smart_enabled';
+
+  bool _syncingBank = false;
+
+  /// 从医考帮官方 API 全量同步题库到本地（带进度对话框）。
+  Future<void> _syncBankFromYkb() async {
+    if (_syncingBank) return;
+    final bank = await QuestionBankRepository().find(
+      await QuestionBankRepository().activeBankId(),
+    );
+    if (bank == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('当前题库未初始化，请先在题库管理中启用题库')));
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _syncingBank = true);
+
+    final progress = ValueNotifier<(String, int, int)>(('准备同步…', 0, 1));
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => ValueListenableBuilder(
+        valueListenable: progress,
+        builder: (context, value, _) {
+          final (stage, done, total) = value;
+          return AlertDialog(
+            title: Text('同步题库 ${bank.name}'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                LinearProgressIndicator(
+                  value: total > 0 ? (done / total).clamp(0.0, 1.0) : null,
+                ),
+                const SizedBox(height: 12),
+                Text('$stage（$done/$total）'),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+
+    try {
+      await YkbBankSyncService.syncBank(
+        bank,
+        pacing: SyncPacing(
+          jitterEnabled: syncYkbJitter,
+          pacingEnabled: syncYkbPacing,
+        ),
+        onProgress: (s, d, t) => progress.value = (s, d, t),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('题库「${bank.name}」同步完成')));
+    } catch (e) {
+      debugPrint('[ykb-bank-sync] 失败: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('题库同步失败：$e')));
+    } finally {
+      if (mounted) {
+        setState(() => _syncingBank = false);
+        if (Navigator.of(context, rootNavigator: true).canPop()) {
+          Navigator.of(context, rootNavigator: true).pop();
+        }
+      }
+    }
+  }
+
+  /// 智能增量同步：只拉远端有变化的章节，staging + 原子替换。
+  Future<void> _smartSyncBank() async {
+    if (_syncingBank) return;
+    final bank = await QuestionBankRepository().find(
+      await QuestionBankRepository().activeBankId(),
+    );
+    if (!mounted) return;
+    if (bank == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('当前题库未初始化，请先在题库管理中启用题库')));
+      return;
+    }
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context, rootNavigator: true);
+    setState(() => _syncingBank = true);
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        title: Text('智能同步 ${bank.name}'),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            LinearProgressIndicator(),
+            SizedBox(height: 12),
+            Text('正在检查远端章节，只处理有变化的章节…', style: TextStyle(fontSize: 13)),
+            SizedBox(height: 6),
+            Text(
+              '未完成部分会静默续传，不阻塞刷题。',
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+          ],
+        ),
+      ),
+    );
+    try {
+      final result = await YkbBankSmartSyncService.instance.run(
+        bank: bank,
+        manual: true,
+        forceManifest: true,
+        maxChapters: 16,
+      );
+      if (mounted && navigator.canPop()) navigator.pop();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(result.summary),
+          duration: const Duration(seconds: 6),
+        ),
+      );
+    } catch (e) {
+      if (mounted && navigator.canPop()) navigator.pop();
+      messenger.showSnackBar(SnackBar(content: Text('智能同步失败：$e')));
+    } finally {
+      if (mounted) setState(() => _syncingBank = false);
+    }
+  }
 
   static const List<double> _fontScales = [0.85, 1.0, 1.15, 1.3];
   static const List<String> _fontScaleLabels = ['小', '标准', '大', '特大'];
@@ -85,10 +231,17 @@ class _SettingsPageState extends State<SettingsPage> {
     syncNotesToYkb = _prefs.getBool(keySyncNotesToYkb) ?? true;
     syncCutToYkb = _prefs.getBool(keySyncCutToYkb) ?? true;
     syncRedoToYkb = _prefs.getBool(keySyncRedoToYkb) ?? true;
-    syncProgressFromYkb = _prefs.getBool(keySyncProgressToYkb) ?? true;
     syncAnswersToYkb =
         _prefs.getBool(keySyncAnswersToYkb) ??
         _prefs.getBool('questionUpload') ??
+        _prefs.getBool(keySyncQuestionBank) ??
+        true;
+    syncYkbProgressEnabled = _prefs.getBool(keySyncYkbProgressEnabled) ?? true;
+    syncYkbSilent = _prefs.getBool(keySyncYkbSilent) ?? false;
+    syncYkbJitter = _prefs.getBool(keySyncYkbJitter) ?? false;
+    syncYkbPacing = _prefs.getBool(keySyncYkbPacing) ?? false;
+    smartBankSyncEnabled =
+        _prefs.getBool(keySmartBankSync) ??
         _prefs.getBool(keySyncQuestionBank) ??
         true;
     mode = _prefs.getInt('mode') ?? 0;
@@ -715,31 +868,98 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
               IconTile(
                 icon: Icons.cloud_download_outlined,
-                label: '自动拉取医考帮做题记录',
+                label: '拉取医考帮做题记录',
                 trailing: Switch(
-                  value: syncProgressFromYkb,
+                  value: syncYkbProgressEnabled,
                   onChanged: (v) {
-                    setState(() => syncProgressFromYkb = v);
-                    _setBool(keySyncProgressToYkb, v);
-                    if (v) {
-                      YkbPullService.instance.pullForActiveBank(force: true);
-                    }
+                    setState(() => syncYkbProgressEnabled = v);
+                    _setBool(keySyncYkbProgressEnabled, v);
                   },
                 ),
               ),
               IconTile(
-                icon: Icons.download_for_offline_outlined,
+                icon: Icons.visibility_off_outlined,
+                label: '静默同步（启动后后台拉取做题记录）',
+                trailing: Switch(
+                  value: syncYkbSilent,
+                  onChanged: (v) {
+                    setState(() => syncYkbSilent = v);
+                    _setBool(keySyncYkbSilent, v);
+                  },
+                ),
+              ),
+              IconTile(
+                icon: Icons.timer_outlined,
+                label: '模拟延迟抖动（拉取时随机加延迟）',
+                trailing: Switch(
+                  value: syncYkbJitter,
+                  onChanged: (v) {
+                    setState(() => syncYkbJitter = v);
+                    _setBool(keySyncYkbJitter, v);
+                  },
+                ),
+              ),
+              IconTile(
+                icon: Icons.person_outline,
+                label: '模拟刷题节奏（章节间随机等候）',
+                trailing: Switch(
+                  value: syncYkbPacing,
+                  onChanged: (v) {
+                    setState(() => syncYkbPacing = v);
+                    _setBool(keySyncYkbPacing, v);
+                  },
+                ),
+              ),
+              IconTile(
+                icon: Icons.auto_awesome_outlined,
+                label: '智能增量同步题库（推荐）',
+                value: '只拉变化章节，原子更新',
+                trailing: _syncingBank
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.chevron_right),
+                onTap: _syncingBank ? null : _smartSyncBank,
+              ),
+              IconTile(
+                icon: Icons.sync,
+                label: '启动后自动增量同步题库',
+                trailing: Switch(
+                  value: smartBankSyncEnabled,
+                  onChanged: (v) {
+                    setState(() => smartBankSyncEnabled = v);
+                    _setBool(keySmartBankSync, v);
+                    _setBool(keySyncQuestionBank, v);
+                  },
+                ),
+              ),
+              IconTile(
+                icon: Icons.cloud_download_outlined,
                 label: '立即拉取医考帮做题记录',
                 value: '合并云端答案与对错',
-                trailing: const Icon(Icons.chevron_right),
                 onTap: () async {
                   final result = await YkbPullService.instance
-                      .pullForActiveBank(force: true);
+                      .pullForActiveBank(force: true, manual: true);
                   if (!context.mounted) return;
                   ScaffoldMessenger.of(
                     context,
                   ).showSnackBar(SnackBar(content: Text(result.summary)));
                 },
+              ),
+              IconTile(
+                icon: Icons.download_for_offline_outlined,
+                label: '全量重建题库（慢，慎用）',
+                value: '完整拉取官方题目重新构建题库包',
+                trailing: _syncingBank
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.chevron_right),
+                onTap: _syncingBank ? null : _syncBankFromYkb,
               ),
             ],
           ),

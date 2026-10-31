@@ -1,5 +1,8 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'services/ykb_bank_smart_sync_service.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
@@ -88,7 +91,35 @@ Future<void> _checkAuthThenPull() async {
     promptRelogin: true,
   );
   if (result.isValid) {
-    await YkbPullService.instance.pullForActiveBank();
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool('sync_ykb_silent') ?? true) {
+      await YkbPullService.instance.pullForActiveBank();
+    }
+    unawaited(_silentBankSmartSync());
+  }
+}
+
+/// 静默执行一批题库智能增量同步；未完成时定时续传。
+Future<void> _silentBankSmartSync() async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    if (!(prefs.getBool('loggedin') ?? false)) return;
+    if (!(prefs.getBool('sync_bank_smart_enabled') ??
+        prefs.getBool('sync_question_bank') ??
+        true)) {
+      return;
+    }
+    // 启动/续传之间加随机间隔，避免首屏和做题记录拉取同时打网络。
+    await Future.delayed(Duration(seconds: 15 + Random().nextInt(20)));
+    final result = await YkbBankSmartSyncService.instance.run();
+    debugPrint('[ykb-smart-sync] ${result.summary}');
+    if (result.remainingChapters > 0 || !result.isSuccess) {
+      Timer(const Duration(minutes: 4), () {
+        unawaited(_silentBankSmartSync());
+      });
+    }
+  } catch (e) {
+    debugPrint('[ykb-smart-sync] silent error: $e');
   }
 }
 

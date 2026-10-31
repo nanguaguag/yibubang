@@ -50,10 +50,7 @@ class NoteService {
   /// 获取所有本地笔记（按时间倒序）
   Future<List<QuestionNote>> getAllNotes() async {
     final db = await UserDBHelper().database;
-    final rows = await db.query(
-      'Notes',
-      orderBy: 'timestamp DESC',
-    );
+    final rows = await db.query('Notes', orderBy: 'timestamp DESC');
     return rows.map((e) => QuestionNote.fromMap(e)).toList();
   }
 
@@ -67,12 +64,21 @@ class NoteService {
       updatedAt: DateTime.now().millisecondsSinceEpoch,
     );
 
+    // 外键约束已开启：先补 Question 兜底行，防止为「未作答的题」写笔记时
+    // Notes.question_id 引用失败导致插入被拒绝。
+    await db.insert('Question', {
+      'id': note.questionId,
+      'chapter_id': question?.chapterId ?? '',
+      'chapter_parent_id': question?.chapterParentId ?? '',
+    }, conflictAlgorithm: ConflictAlgorithm.ignore);
     await db.insert(
       'Notes',
       noteToSave.toMap(),
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
-    debugPrint('[NoteService] saveNote locally: ${note.id}, syncEnabled: $syncEnabled');
+    debugPrint(
+      '[NoteService] saveNote locally: ${note.id}, syncEnabled: $syncEnabled',
+    );
 
     if (syncEnabled) {
       final queuePayload = {
@@ -81,14 +87,16 @@ class NoteService {
         'identity_id': question?.identityId ?? '',
         'app_id': question?.nativeAppId ?? question?.appId ?? '12',
       };
-      await _enqueue(NoteSyncQueueItem(
-        id: 'upload_${note.id}_${DateTime.now().millisecondsSinceEpoch}',
-        action: 'upload',
-        noteId: note.id,
-        questionId: note.questionId,
-        payload: jsonEncode(queuePayload),
-        createdAt: DateTime.now().millisecondsSinceEpoch,
-      ));
+      await _enqueue(
+        NoteSyncQueueItem(
+          id: 'upload_${note.id}_${DateTime.now().millisecondsSinceEpoch}',
+          action: 'upload',
+          noteId: note.id,
+          questionId: note.questionId,
+          payload: jsonEncode(queuePayload),
+          createdAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
       // 触发后台处理
       processQueue(question: question);
     }
@@ -115,17 +123,16 @@ class NoteService {
       }
     }
     // 若 id 本身不是 local_ 开头，说明其本身就是服务端笔记 ID
-    if ((effectiveRemoteId == null || effectiveRemoteId.isEmpty) && !note.id.startsWith('local_')) {
+    if ((effectiveRemoteId == null || effectiveRemoteId.isEmpty) &&
+        !note.id.startsWith('local_')) {
       effectiveRemoteId = note.id;
     }
 
     // 2. 从本地 SQLite 删除该笔记
-    await db.delete(
-      'Notes',
-      where: 'id = ?',
-      whereArgs: [note.id],
+    await db.delete('Notes', where: 'id = ?', whereArgs: [note.id]);
+    debugPrint(
+      '[NoteService] deleteNote locally: ${note.id}, remoteId: $effectiveRemoteId',
     );
-    debugPrint('[NoteService] deleteNote locally: ${note.id}, remoteId: $effectiveRemoteId');
 
     // 3. 取消并清除队列中该笔记所有待上传任务（避免后续冗余发包）
     await db.delete(
@@ -135,20 +142,24 @@ class NoteService {
     );
 
     // 4. 若开启同步且存在有效远端 ID，入队 delete 任务同步至云端
-    if (syncEnabled && effectiveRemoteId != null && effectiveRemoteId.isNotEmpty) {
+    if (syncEnabled &&
+        effectiveRemoteId != null &&
+        effectiveRemoteId.isNotEmpty) {
       final queuePayload = {
         'subject_id': question?.chapterParentId ?? '',
         'identity_id': question?.identityId ?? '',
         'app_id': question?.nativeAppId ?? question?.appId ?? '12',
       };
-      await _enqueue(NoteSyncQueueItem(
-        id: 'del_${effectiveRemoteId}_${DateTime.now().millisecondsSinceEpoch}',
-        action: 'delete',
-        noteId: effectiveRemoteId,
-        questionId: note.questionId,
-        payload: jsonEncode(queuePayload),
-        createdAt: DateTime.now().millisecondsSinceEpoch,
-      ));
+      await _enqueue(
+        NoteSyncQueueItem(
+          id: 'del_${effectiveRemoteId}_${DateTime.now().millisecondsSinceEpoch}',
+          action: 'delete',
+          noteId: effectiveRemoteId,
+          questionId: note.questionId,
+          payload: jsonEncode(queuePayload),
+          createdAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
       processQueue(question: question);
     }
     notifyNoteChanged();
@@ -206,19 +217,20 @@ class NoteService {
       final streamedResponse = await request.send();
       final response = await http.Response.fromStream(streamedResponse);
       final bodyStr = utf8.decode(response.bodyBytes);
-      debugPrint('[NoteService] uploadImage response (${response.statusCode}): $bodyStr');
+      debugPrint(
+        '[NoteService] uploadImage response (${response.statusCode}): $bodyStr',
+      );
 
       final data = jsonDecode(bodyStr);
-      if ((data['code'] == '200' || data['code'] == 200) && data['data'] != null) {
+      if ((data['code'] == '200' || data['code'] == 200) &&
+          data['data'] != null) {
         final bImg = data['data']['b_img']?.toString() ?? '';
         final sImg = data['data']['s_img']?.toString() ?? bImg;
-        return NoteImage(
-          bImg: bImg,
-          sImg: sImg,
-          localPath: file.path,
-        );
+        return NoteImage(bImg: bImg, sImg: sImg, localPath: file.path);
       } else {
-        debugPrint('[NoteService] uploadImage failed with code: ${data['code']}, msg: ${data['message']}');
+        debugPrint(
+          '[NoteService] uploadImage failed with code: ${data['code']}, msg: ${data['message']}',
+        );
       }
     } catch (e, stack) {
       debugPrint('[NoteService] uploadImage exception: $e\n$stack');
@@ -254,21 +266,17 @@ class NoteService {
           ? question.nativeAppId!
           : (question.appId?.isNotEmpty == true ? question.appId! : '12');
 
-      final resp = await basicReq(
-        '/allQuestion/Note/getNote',
-        {
-          'question_id': question.id,
-          'subject_id': subjectId,
-          'identity_id': identityId,
-          'app_id': appId,
-          'module_type': '1',
-          'page': '1',
-          'size': '20',
-          'is_vip': '0',
-          'is_svip': '0',
-        },
-        method: 'GET',
-      );
+      final resp = await basicReq('/allQuestion/Note/getNote', {
+        'question_id': question.id,
+        'subject_id': subjectId,
+        'identity_id': identityId,
+        'app_id': appId,
+        'module_type': '1',
+        'page': '1',
+        'size': '20',
+        'is_vip': '0',
+        'is_svip': '0',
+      }, method: 'GET');
 
       if (resp['code'] == '200' && resp['data'] is List) {
         final remoteList = resp['data'] as List;
@@ -279,7 +287,9 @@ class NoteService {
           final rId = item['id']?.toString() ?? '';
           final rContent = item['content']?.toString() ?? '';
           final rCtime = int.tryParse(item['ctime']?.toString() ?? '0') ?? 0;
-          final rTimestamp = rCtime > 0 ? rCtime * 1000 : DateTime.now().millisecondsSinceEpoch;
+          final rTimestamp = rCtime > 0
+              ? rCtime * 1000
+              : DateTime.now().millisecondsSinceEpoch;
 
           List<NoteImage> rImages = [];
           if (item['img'] is List) {
@@ -294,12 +304,18 @@ class NoteService {
           }
 
           // 匹配本地记录：按 remote_id 或 id
-          final matchedLocal = localNotes.where(
-            (n) => n.remoteId == rId || n.id == rId,
-          ).firstOrNull;
+          final matchedLocal = localNotes
+              .where((n) => n.remoteId == rId || n.id == rId)
+              .firstOrNull;
 
           if (matchedLocal == null) {
             // 本地不存在，插入
+            // 外键约束已开启：先补 Question 兜底行（查看他人笔记的题可能从未作答）。
+            await db.insert('Question', {
+              'id': question.id,
+              'chapter_id': question.chapterId ?? '',
+              'chapter_parent_id': question.chapterParentId ?? '',
+            }, conflictAlgorithm: ConflictAlgorithm.ignore);
             final newNote = QuestionNote(
               id: rId,
               remoteId: rId,
@@ -394,8 +410,11 @@ class NoteService {
   /// 单项手动重试笔记任务（重置重试计数为 0 并立即尝试发包）
   Future<bool> retryItem(String id, {Question? question}) async {
     final db = await UserDBHelper().database;
-    final rows =
-        await db.query('NoteSyncQueue', where: 'id = ?', whereArgs: [id]);
+    final rows = await db.query(
+      'NoteSyncQueue',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
     if (rows.isEmpty) return false;
 
     await resetItemRetry(id);
@@ -448,10 +467,7 @@ class NoteService {
   /// 一键重置笔记队列所有任务的重试计数
   Future<void> resetAllRetries() async {
     final db = await UserDBHelper().database;
-    await db.update(
-      'NoteSyncQueue',
-      {'retry_count': 0, 'last_error': null},
-    );
+    await db.update('NoteSyncQueue', {'retry_count': 0, 'last_error': null});
   }
 
   /// 执行同步队列（断网重试）
@@ -479,7 +495,9 @@ class NoteService {
         _isProcessingQueue = false;
         return;
       }
-      debugPrint('[NoteService] processQueue started, pending items: ${queueRows.length}');
+      debugPrint(
+        '[NoteService] processQueue started, pending items: ${queueRows.length}',
+      );
 
       for (final row in queueRows) {
         final item = NoteSyncQueueItem.fromMap(row);
@@ -495,8 +513,9 @@ class NoteService {
           }
         } catch (e, stack) {
           debugPrint('[NoteService] process queue item error: $e\n$stack');
-          final errJson = const JsonEncoder.withIndent('  ')
-              .convert({'error': e.toString()});
+          final errJson = const JsonEncoder.withIndent(
+            '  ',
+          ).convert({'error': e.toString()});
           await db.update(
             'NoteSyncQueue',
             {
@@ -529,7 +548,9 @@ class NoteService {
         } else {
           debugPrint('[NoteService] queue item failed: ${item.id}');
           if (item.retryCount + 1 >= 5) {
-            debugPrint('[NoteService] 任务 ${item.id} 达到最大重试次数上限(5次)，移出活跃队列以防队头阻塞');
+            debugPrint(
+              '[NoteService] 任务 ${item.id} 达到最大重试次数上限(5次)，移出活跃队列以防队头阻塞',
+            );
             await db.delete(
               'NoteSyncQueue',
               where: 'id = ?',
@@ -538,9 +559,7 @@ class NoteService {
           } else {
             await db.update(
               'NoteSyncQueue',
-              {
-                'retry_count': item.retryCount + 1,
-              },
+              {'retry_count': item.retryCount + 1},
               where: 'id = ?',
               whereArgs: [item.id],
             );
@@ -628,7 +647,9 @@ class NoteService {
           firstImg.localPath!.isNotEmpty) {
         final file = File(firstImg.localPath!);
         if (await file.exists()) {
-          debugPrint('[NoteService] uploading first image to cloud: ${file.path}');
+          debugPrint(
+            '[NoteService] uploading first image to cloud: ${file.path}',
+          );
           final uploaded = await uploadImage(
             file,
             subjectId: subjectId,
@@ -667,7 +688,9 @@ class NoteService {
       final firstImg = note.images.first;
       if (firstImg.bImg.isNotEmpty) {
         params['b_img'] = firstImg.bImg;
-        params['s_img'] = firstImg.sImg.isNotEmpty ? firstImg.sImg : firstImg.bImg;
+        params['s_img'] = firstImg.sImg.isNotEmpty
+            ? firstImg.sImg
+            : firstImg.bImg;
         params['img'] = jsonEncode([firstImg.toJson()]);
       }
     }
@@ -696,21 +719,17 @@ class NoteService {
       if (remoteId == null || remoteId.isEmpty) {
         // 新上传的笔记尝试查询 getNote 获取服务端生成的 remoteId
         try {
-          final listResp = await basicReq(
-            '/allQuestion/Note/getNote',
-            {
-              'question_id': note.questionId,
-              'subject_id': subjectId,
-              'identity_id': identityId,
-              'app_id': appId,
-              'module_type': '1',
-              'page': '1',
-              'size': '5',
-              'is_vip': '0',
-              'is_svip': '0',
-            },
-            method: 'GET',
-          );
+          final listResp = await basicReq('/allQuestion/Note/getNote', {
+            'question_id': note.questionId,
+            'subject_id': subjectId,
+            'identity_id': identityId,
+            'app_id': appId,
+            'module_type': '1',
+            'page': '1',
+            'size': '5',
+            'is_vip': '0',
+            'is_svip': '0',
+          }, method: 'GET');
           if (listResp['code'] == '200' && listResp['data'] is List) {
             final list = listResp['data'] as List;
             if (list.isNotEmpty) {
@@ -722,10 +741,7 @@ class NoteService {
 
       await db.update(
         'Notes',
-        {
-          'remote_id': remoteId,
-          'sync_status': 0,
-        },
+        {'remote_id': remoteId, 'sync_status': 0},
         where: 'id = ?',
         whereArgs: [note.id],
       );
@@ -816,20 +832,16 @@ class NoteService {
       appId = '12';
     }
 
-    final resp = await basicReq(
-      '/allQuestion/Note/cleanNote',
-      {
-        'id': item.noteId,
-        'question_id': item.questionId,
-        'module_type': '1',
-        'subject_id': subjectId,
-        'identity_id': identityId,
-        'app_id': appId,
-        'is_vip': '0',
-        'is_svip': '0',
-      },
-      method: 'POST',
-    );
+    final resp = await basicReq('/allQuestion/Note/cleanNote', {
+      'id': item.noteId,
+      'question_id': item.questionId,
+      'module_type': '1',
+      'subject_id': subjectId,
+      'identity_id': identityId,
+      'app_id': appId,
+      'is_vip': '0',
+      'is_svip': '0',
+    }, method: 'POST');
 
     final code = resp['code']?.toString() ?? '200';
     final rawResp = const JsonEncoder.withIndent('  ').convert(resp);
@@ -838,10 +850,7 @@ class NoteService {
       itemId: item.questionId,
       type: 'note_delete',
       code: code,
-      payload: {
-        'id': item.noteId,
-        'question_id': item.questionId,
-      },
+      payload: {'id': item.noteId, 'question_id': item.questionId},
       response: resp,
       rawResponse: rawResp,
     );

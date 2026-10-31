@@ -9,6 +9,8 @@ import '../common/request.dart';
 import '../db/data_transfer.dart';
 import '../db/database_helper.dart';
 import '../db/question_bank_manager.dart';
+import '../models/question_bank.dart';
+import 'ykb_bank_sync_service.dart' show SyncPacing;
 
 /// 医考帮做题记录拉取结果
 class YkbPullResult {
@@ -49,10 +51,19 @@ class YkbPullService {
   static const String keySyncProgressToYkb = 'sync_ykb_progress_enabled';
   static const String keyLastPullTime = 'ykb_pull_last_sync_time';
 
-  static const int _pageSize = 500;
   static const int _minIntervalMs = 10 * 60 * 1000;
 
   bool _isPulling = false;
+
+  static Future<YkbPullResult> pullForBank(
+    QuestionBank bank, {
+    SyncPacing pacing = const SyncPacing(),
+  }) => instance.pullForActiveBank(
+    force: true,
+    manual: true,
+    bank: bank,
+    pacing: pacing,
+  );
 
   /// 是否开启自动拉取医考帮做题记录
   Future<bool> isEnabled() async {
@@ -63,7 +74,12 @@ class YkbPullService {
   /// 拉取当前活动题库的做题记录。
   ///
   /// [force] 为 true 时忽略 10 分钟节流（手动刷新、登录后使用）。
-  Future<YkbPullResult> pullForActiveBank({bool force = false}) async {
+  Future<YkbPullResult> pullForActiveBank({
+    bool force = false,
+    bool manual = false,
+    QuestionBank? bank,
+    SyncPacing pacing = const SyncPacing(),
+  }) async {
     if (_isPulling) {
       return const YkbPullResult(error: '正在拉取中');
     }
@@ -75,26 +91,28 @@ class YkbPullService {
         debugPrint('[YkbPullService] 未登录，跳过拉取');
         return const YkbPullResult(error: '未登录');
       }
-      if (!await isEnabled()) {
+      if (!manual && !await isEnabled()) {
         debugPrint('[YkbPullService] 自动拉取做题记录已关闭');
         return const YkbPullResult(error: '已关闭');
       }
 
       final now = DateTime.now().millisecondsSinceEpoch;
-      final last = prefs.getInt(keyLastPullTime) ?? 0;
+      final bankId = bank?.bankId ?? prefs.getString('activeBankId') ?? '';
+      final throttleKey =
+          '$keyLastPullTime:${prefs.getString('user_id') ?? ''}:$bankId';
+      final last = prefs.getInt(throttleKey) ?? 0;
       if (!force && last > 0 && now - last < _minIntervalMs) {
         debugPrint('[YkbPullService] 距上次拉取不足 10 分钟，跳过');
         return const YkbPullResult(error: '节流中');
       }
 
-      final bankId = prefs.getString('activeBankId') ?? '';
       if (bankId.isEmpty) {
         return const YkbPullResult(error: '没有活动题库');
       }
 
-      final result = await _pullBank(bankId, sw);
+      final result = await _pullBank(bankId, sw, pacing);
       if (result.isSuccess) {
-        await prefs.setInt(keyLastPullTime, now);
+        await prefs.setInt(throttleKey, now);
       }
       return result;
     } catch (e, stack) {
@@ -109,7 +127,11 @@ class YkbPullService {
     }
   }
 
-  Future<YkbPullResult> _pullBank(String bankId, Stopwatch sw) async {
+  Future<YkbPullResult> _pullBank(
+    String bankId,
+    Stopwatch sw,
+    SyncPacing pacing,
+  ) async {
     final userDb = await UserDBHelper().database;
 
     // 本地题库的根身份：临床期末为 20101，口腔/护理题库同理。
@@ -137,15 +159,18 @@ class YkbPullService {
     var applied = 0;
     var skipped = 0;
     var tokenExpired = false;
+    String? requestError;
 
     for (final identityId in identities) {
       final appId = await _appIdForIdentity(bankDb, identityId);
+      await pacing.chapterDelay();
+      await pacing.requestDelay();
       final resp = await basicReq('/allquestion/main/userAnswer', {
         'app_id': appId,
         'module_type': '1',
         'identity_id': identityId,
-        'page': '1',
-        'size': '$_pageSize',
+        'category': 'chapter',
+        'type': 'all',
         'is_vip': '0',
         'is_svip': '0',
       }, method: 'GET');
@@ -160,6 +185,7 @@ class YkbPullService {
         debugPrint(
           '[YkbPullService] identity=$identityId 拉取失败: $code ${resp['message']}',
         );
+        requestError = '身份 $identityId 拉取失败：$code';
         continue;
       }
 
@@ -282,7 +308,7 @@ class YkbPullService {
       fetched: fetched,
       applied: applied,
       skipped: skipped,
-      error: tokenExpired ? '登录已过期，请重新登录' : null,
+      error: tokenExpired ? '登录已过期，请重新登录' : requestError,
       elapsedMs: sw.elapsedMilliseconds,
     );
   }
