@@ -8,7 +8,7 @@
 - 智能同步来源：桌面 `yibubang-src-smart-sync.zip`。
 - 源码快照 SHA-256：`982730342fef8245f8b5ae61d371c5b40063201b2cbc74355cc66ff4bd10a381`。
 - 原设计与当时手工实测见 `SMART_SYNC_DESIGN.md`；其中实测数据属于 10-30 的独立开发线，不代表本次执行了线上同步。
-- 旧根目录构建包已移动到 `D:\Projects\yibubang-finalize\legacy-artifacts`；源码仓库忽略 `*.zip`，桌面原件保留。
+- 旧根目录构建包已归档移出源码树，源码仓库忽略 `*.zip`。
 
 ## 合流结果
 
@@ -29,14 +29,14 @@
 - 智能同步专项：9 项通过，覆盖 ID 漂移映射、新章节隔离、已保存映射、题目重合度、内容哈希、续传顺序、损坏队列恢复，以及 v9/v10→v11 数据保留。
 - `flutter analyze --no-fatal-infos`：通过，0 error / 0 warning；保留 8 条原有 info（旧页面 State 类型、key、Radio API 弃用及 forEach 风格）。
 - Android Release：已尝试，因本机没有 Android SDK 而失败，尚未验证。现有 Android CI 已补静态检查和全量测试，提交 PR 后可在 CI 构建 APK。
-- Windows Release：构建成功；产物版本 2.1.0+210。发布包、源码归档、依赖锁和验证日志位于 `D:\Projects\yibubang-finalize\release`。
+- Windows Release：构建成功；产物版本 2.1.0+210。发布包、源码归档、依赖锁和验证日志位于构建产物输出目录。
 
 ## 本地复现
 
-Flutter SDK：`D:\Projects\flutter-sdk`（3.47.8 / Dart 3.13.7）。
+Flutter SDK 环境要求：3.47.x / Dart 3.13.x。
 
 ```powershell
-$env:Path = 'D:\Projects\flutter-sdk\bin;' + $env:Path
+# 确保 flutter 命令位于系统 PATH 中
 flutter --no-version-check pub get
 flutter --no-version-check analyze --no-fatal-infos
 flutter --no-version-check test
