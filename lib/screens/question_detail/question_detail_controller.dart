@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../common/shortcut_config.dart';
 import '../../models/chapter.dart';
 import '../../models/question.dart';
 import '../../services/ykb_sync_service.dart';
@@ -39,8 +40,13 @@ class QuestionDetailController extends ChangeNotifier {
   // 每个题目页独立的滚动控制器，供评论区无限滚动监听
   final Map<int, ScrollController> _scrollControllers = {};
 
+  // 已斩题目临时显示内容的页码集合；未记录时使用 defaultShowCutContent
+  final Map<int, bool> _cutContentReveal = {};
+
   // 局部精准刷新 Notifier
-  final ValueNotifier<Duration> elapsedNotifier = ValueNotifier<Duration>(Duration.zero);
+  final ValueNotifier<Duration> elapsedNotifier = ValueNotifier<Duration>(
+    Duration.zero,
+  );
   final ValueNotifier<int> answeredCountNotifier = ValueNotifier<int>(0);
   final ValueNotifier<int> currentPageNotifier = ValueNotifier<int>(0);
   final ValueNotifier<int> modeNotifier = ValueNotifier<int>(0);
@@ -62,6 +68,7 @@ class QuestionDetailController extends ChangeNotifier {
   }
 
   Future<void> init() async {
+    await ShortcutConfig.load();
     await _loadSettings();
     await _saveLastQIndex();
   }
@@ -73,8 +80,9 @@ class QuestionDetailController extends ChangeNotifier {
       Duration(milliseconds: _testBaseMs) + _testStopwatch.elapsed;
 
   void _updateAnsweredCount() {
-    answeredCountNotifier.value =
-        userQuestions.where((uq) => uq.status == 4).length;
+    answeredCountNotifier.value = userQuestions
+        .where((uq) => uq.status == 4)
+        .length;
   }
 
   void _startTestTimer() {
@@ -156,6 +164,120 @@ class QuestionDetailController extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ------------------------------------------------------------------
+  // 快捷键交互
+  // ------------------------------------------------------------------
+
+  /// 是否临时显示已斩题目的内容（供斩题占位视图使用）。
+  bool isCutContentRevealed(int index) {
+    return _cutContentReveal[index] ?? defaultShowCutContent;
+  }
+
+  /// 切换当前题目已斩内容的显示状态。
+  void toggleCutContentReveal(int index) {
+    if (index < 0 || index >= userQuestions.length) return;
+    final UserQuestion userQuestion = userQuestions[index];
+    if (!userQuestion.isCut && userQuestion.status != 3) return;
+    _cutContentReveal[index] = !isCutContentRevealed(index);
+    notifyListeners();
+  }
+
+  /// 通过键盘选择第 [optionIndex] 个选项（从 0 开始）。
+  ///
+  /// 单选题选择后立即判题（与点击选项一致）；
+  /// 多选题切换勾选状态，由「提交答案」快捷键提交。
+  bool selectOptionByShortcut(int optionIndex, BuildContext context) {
+    final int index = _currentPage;
+    final Question question = questions[index];
+    final UserQuestion userQuestion = userQuestions[index];
+
+    if (_mode == 3) return false;
+    if (question.type != '1' && question.type != '2') return false;
+    if (userQuestion.isCut && !isCutContentRevealed(index)) return false;
+    if (userQuestion.status == 1 ||
+        userQuestion.status == 2 ||
+        userQuestion.status == 3) {
+      return false;
+    }
+
+    final List<dynamic> options = getOptionJson(question);
+    if (optionIndex < 0 || optionIndex >= options.length) return false;
+    final Object? option = options[optionIndex];
+    final String optionKey = option is Map
+        ? (option['key']?.toString() ?? '')
+        : '';
+    if (optionKey.isEmpty) return false;
+
+    if (question.type == '1') {
+      userQuestion.userAnswer = changeLastAnswer(
+        userQuestion.userAnswer,
+        optionKey,
+      );
+      submitAnswer(question, userQuestion, index, context);
+    } else {
+      final String currentAnswer = getLastAnswer(userQuestion.userAnswer);
+      final String nextAnswer = currentAnswer.contains(optionKey)
+          ? currentAnswer.replaceAll(optionKey, '')
+          : '$currentAnswer$optionKey';
+      userQuestion.userAnswer = changeLastAnswer(
+        userQuestion.userAnswer,
+        nextAnswer,
+      );
+      if (_mode == 2) {
+        userQuestion.status = 4;
+        userQuestions[index].status = 4;
+        updateQuestionSimple(userQuestion, question);
+      }
+    }
+    notifyListeners();
+    return true;
+  }
+
+  /// 通过快捷键提交当前多选题答案（对应页面上的「提交」按钮）。
+  bool submitCurrentAnswer(BuildContext context) {
+    final int index = _currentPage;
+    final Question question = questions[index];
+    final UserQuestion userQuestion = userQuestions[index];
+
+    if (_mode == 2 || _mode == 3) return false;
+    if (question.type != '2') return false;
+    if (userQuestion.isCut && !isCutContentRevealed(index)) return false;
+    if (userQuestion.status == 1 ||
+        userQuestion.status == 2 ||
+        userQuestion.status == 3) {
+      return false;
+    }
+    if (getLastAnswer(userQuestion.userAnswer).isEmpty) return false;
+
+    submitAnswer(question, userQuestion, index, context);
+    notifyListeners();
+    return true;
+  }
+
+  /// 在当前题目内容中滚动。[direction] 为 1 向下、-1 向上。
+  ///
+  /// [byPage] 为 true 时按「翻页步长」滚动，否则按「连续滚动步长」滚动。
+  void scrollCurrentPage(int direction, {bool byPage = true}) {
+    final ScrollController scrollController = controllerFor(_currentPage);
+    if (!scrollController.hasClients) return;
+    final ScrollPosition position = scrollController.position;
+    if (!position.hasContentDimensions) return;
+
+    final double distance = byPage
+        ? position.viewportDimension * ShortcutConfig.pageScrollPercent / 100
+        : ShortcutConfig.lineScrollPixels.toDouble();
+    final double target = (position.pixels + distance * direction).clamp(
+      position.minScrollExtent,
+      position.maxScrollExtent,
+    );
+    if ((target - position.pixels).abs() < 1) return;
+    scrollController.animateTo(
+      target,
+      duration: Duration(milliseconds: byPage ? 180 : 80),
+      curve: byPage ? Curves.easeOutCubic : Curves.easeOut,
+    );
+  }
+
   void submitAnswer(
     Question question,
     UserQuestion userQuestion,
@@ -229,6 +351,8 @@ class QuestionDetailController extends ChangeNotifier {
   void toggleCut(BuildContext context, {VoidCallback? onStateChanged}) {
     final UserQuestion userQuestion = userQuestions[_currentPage];
     final Question question = questions[_currentPage];
+    // 斩题状态变化后，重新收起临时显示的题目内容
+    _cutContentReveal.remove(_currentPage);
     userQuestion.isCut = !userQuestion.isCut;
     if (!userQuestion.isCut && userQuestion.status == 3) {
       userQuestion.status = 0;
@@ -268,7 +392,8 @@ class QuestionDetailController extends ChangeNotifier {
       final String title = option['title'];
       optionText += '\n$key. $title';
     }
-    final String copyText = '## 题目\n\n'
+    final String copyText =
+        '## 题目\n\n'
         '${question.publicTitle ?? ''}'
         '${question.title ?? ''}$optionText\n\n'
         '## 正确答案：$answer\n\n'
@@ -297,11 +422,7 @@ class QuestionDetailController extends ChangeNotifier {
       _stopTestTimer();
       _testBaseMs = 0;
       await _saveTestElapsed(0);
-      await gradePendingQuestions(
-        questions,
-        userQuestions,
-        bankId: bankId,
-      );
+      await gradePendingQuestions(questions, userQuestions, bankId: bankId);
       _updateAnsweredCount();
     }
 
@@ -431,15 +552,9 @@ class QuestionDetailController extends ChangeNotifier {
         children: [
           SizedBox(
             width: 76,
-            child: Text(
-              label,
-              style: const TextStyle(color: Colors.grey),
-            ),
+            child: Text(label, style: const TextStyle(color: Colors.grey)),
           ),
-          Text(
-            value,
-            style: const TextStyle(fontWeight: FontWeight.bold),
-          ),
+          Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
         ],
       ),
     );

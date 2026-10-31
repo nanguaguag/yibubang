@@ -7,12 +7,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../common/adaptive_route.dart';
 import '../common/app_strings.dart';
 import '../common/github_proxy.dart';
+import '../common/shortcut_config.dart';
 import '../db/data_transfer.dart';
 import '../db/record_sync_service.dart';
 import '../repositories/question_search_repository.dart';
 import '../services/app_update_service.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/note_service.dart';
+import '../services/ykb_pull_service.dart';
 import '../services/ykb_sync_service.dart';
 import '../widgets/common/info_card.dart';
 import '../widgets/common/styled_tile.dart';
@@ -23,6 +25,7 @@ import 'developer_page.dart';
 import 'question_sections_page.dart';
 import 'set_duration_page.dart';
 import 'set_theme_color_page.dart';
+import 'shortcut_settings_page.dart';
 
 enum _UpdateCheckState { idle, checking, hasUpdate, latest }
 
@@ -54,6 +57,7 @@ class _SettingsPageState extends State<SettingsPage> {
   bool syncCutToYkb = true;
   bool syncNotesToYkb = true;
   bool syncRedoToYkb = true;
+  bool syncProgressFromYkb = true;
 
   static const String keyAcceptUpdate = 'accept_update';
   static const String keySyncQuestionBank = 'sync_question_bank';
@@ -62,6 +66,7 @@ class _SettingsPageState extends State<SettingsPage> {
   static const String keySyncCutToYkb = 'sync_cut_to_ykb';
   static const String keySyncNotesToYkb = 'sync_notes_to_ykb';
   static const String keySyncRedoToYkb = 'sync_redo_to_ykb';
+  static const String keySyncProgressToYkb = 'sync_ykb_progress_enabled';
 
   static const List<double> _fontScales = [0.85, 1.0, 1.15, 1.3];
   static const List<String> _fontScaleLabels = ['小', '标准', '大', '特大'];
@@ -80,7 +85,9 @@ class _SettingsPageState extends State<SettingsPage> {
     syncNotesToYkb = _prefs.getBool(keySyncNotesToYkb) ?? true;
     syncCutToYkb = _prefs.getBool(keySyncCutToYkb) ?? true;
     syncRedoToYkb = _prefs.getBool(keySyncRedoToYkb) ?? true;
-    syncAnswersToYkb = _prefs.getBool(keySyncAnswersToYkb) ??
+    syncProgressFromYkb = _prefs.getBool(keySyncProgressToYkb) ?? true;
+    syncAnswersToYkb =
+        _prefs.getBool(keySyncAnswersToYkb) ??
         _prefs.getBool('questionUpload') ??
         _prefs.getBool(keySyncQuestionBank) ??
         true;
@@ -178,9 +185,9 @@ class _SettingsPageState extends State<SettingsPage> {
     } catch (e) {
       debugPrint('[record-sync] 导出异常: $e');
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('导出失败：$e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('导出失败：$e')));
     }
   }
 
@@ -199,9 +206,9 @@ class _SettingsPageState extends State<SettingsPage> {
         final path = result.files.single.path;
         if (path == null) {
           if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('无法读取所选文件')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('无法读取所选文件')));
           return;
         }
         bytes = await File(path).readAsBytes();
@@ -227,9 +234,9 @@ class _SettingsPageState extends State<SettingsPage> {
     } catch (e) {
       debugPrint('[record-sync] 导入异常: $e');
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('导入失败：$e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('导入失败：$e')));
     }
   }
 
@@ -285,9 +292,9 @@ class _SettingsPageState extends State<SettingsPage> {
 
     await QuestionSearchRepository().clearHistory();
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('搜索历史已清空')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('搜索历史已清空')));
   }
 
   Future<void> _clearAllRecords() async {
@@ -295,9 +302,7 @@ class _SettingsPageState extends State<SettingsPage> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('清空全部做题记录'),
-        content: const Text(
-          '将删除所有题目的作答状态、收藏、斩题记录以及刷题流水，且无法恢复。确定继续吗？',
-        ),
+        content: const Text('将删除所有题目的作答状态、收藏、斩题记录以及刷题流水，且无法恢复。确定继续吗？'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
@@ -314,9 +319,9 @@ class _SettingsPageState extends State<SettingsPage> {
 
     await clearAllRecords();
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('已清空全部做题记录')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('已清空全部做题记录')));
   }
 
   // ------------------------------------------------------------------
@@ -448,7 +453,8 @@ class _SettingsPageState extends State<SettingsPage> {
   // ------------------------------------------------------------------
   Future<void> _checkForUpdate() async {
     if (_updateCheckState == _UpdateCheckState.checking) return;
-    if (_updateCheckState == _UpdateCheckState.hasUpdate && _updateData != null) {
+    if (_updateCheckState == _UpdateCheckState.hasUpdate &&
+        _updateData != null) {
       await AppUpdateService().showUpdateDialog(context, _updateData!);
       return;
     }
@@ -477,9 +483,9 @@ class _SettingsPageState extends State<SettingsPage> {
       setState(() {
         _updateCheckState = _UpdateCheckState.idle;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('检查更新失败：$e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('检查更新失败：$e')));
     }
   }
 
@@ -627,6 +633,21 @@ class _SettingsPageState extends State<SettingsPage> {
                   ],
                 ),
               ),
+              IconTile(
+                icon: Icons.keyboard_outlined,
+                label: '刷题快捷键',
+                value: '${ShortcutConfig.boundActionCount} 项已绑定',
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () async {
+                  await Navigator.push(
+                    context,
+                    adaptivePageRoute(
+                      builder: (context) => const ShortcutSettingsPage(),
+                    ),
+                  );
+                  if (mounted) setState(() {});
+                },
+              ),
             ],
           ),
           const SizedBox(height: 14),
@@ -692,6 +713,34 @@ class _SettingsPageState extends State<SettingsPage> {
                   },
                 ),
               ),
+              IconTile(
+                icon: Icons.cloud_download_outlined,
+                label: '自动拉取医考帮做题记录',
+                trailing: Switch(
+                  value: syncProgressFromYkb,
+                  onChanged: (v) {
+                    setState(() => syncProgressFromYkb = v);
+                    _setBool(keySyncProgressToYkb, v);
+                    if (v) {
+                      YkbPullService.instance.pullForActiveBank(force: true);
+                    }
+                  },
+                ),
+              ),
+              IconTile(
+                icon: Icons.download_for_offline_outlined,
+                label: '立即拉取医考帮做题记录',
+                value: '合并云端答案与对错',
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () async {
+                  final result = await YkbPullService.instance
+                      .pullForActiveBank(force: true);
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(SnackBar(content: Text(result.summary)));
+                },
+              ),
             ],
           ),
           const SizedBox(height: 14),
@@ -752,15 +801,13 @@ class _SettingsPageState extends State<SettingsPage> {
                 onTap: () async {
                   await Navigator.push(
                     context,
-                    adaptivePageRoute(
-                      builder: (context) => const AboutPage(),
-                    ),
+                    adaptivePageRoute(builder: (context) => const AboutPage()),
                   );
                   if (mounted) {
                     setState(() {
                       developerModeEnabled =
                           _prefs.getBool(AppStrings.keyDeveloperModeEnabled) ??
-                              false;
+                          false;
                     });
                   }
                 },
@@ -814,15 +861,16 @@ class _SettingsPageState extends State<SettingsPage> {
                         _updateCheckState == _UpdateCheckState.idle
                             ? '点击获取'
                             : (_updateCheckState == _UpdateCheckState.hasUpdate
-                                ? '发现新版本'
-                                : '已是最新'),
+                                  ? '发现新版本'
+                                  : '已是最新'),
                         style: TextStyle(
                           fontSize: 13,
                           fontWeight:
                               _updateCheckState == _UpdateCheckState.hasUpdate
-                                  ? FontWeight.bold
-                                  : FontWeight.normal,
-                          color: _updateCheckState == _UpdateCheckState.hasUpdate
+                              ? FontWeight.bold
+                              : FontWeight.normal,
+                          color:
+                              _updateCheckState == _UpdateCheckState.hasUpdate
                               ? Theme.of(context).colorScheme.primary
                               : Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
@@ -830,10 +878,9 @@ class _SettingsPageState extends State<SettingsPage> {
                     const SizedBox(width: 4),
                     Icon(
                       Icons.chevron_right_rounded,
-                      color: Theme.of(context)
-                          .colorScheme
-                          .onSurfaceVariant
-                          .withValues(alpha: 0.4),
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
                       size: 20,
                     ),
                   ],

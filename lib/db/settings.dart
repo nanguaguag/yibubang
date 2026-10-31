@@ -82,11 +82,17 @@ Future<void> initSettings() async {
     await prefs.setBool('sync_cut_to_ykb', true); // 同步斩题到医考帮默认开启
   }
   if (!prefs.containsKey('sync_answers_to_ykb')) {
-    final legacy = prefs.getBool('questionUpload') ?? prefs.getBool('sync_question_bank') ?? true;
+    final legacy =
+        prefs.getBool('questionUpload') ??
+        prefs.getBool('sync_question_bank') ??
+        true;
     await prefs.setBool('sync_answers_to_ykb', legacy); // 做题同步到医考帮默认开启
   }
   if (!prefs.containsKey('sync_redo_to_ykb')) {
     await prefs.setBool('sync_redo_to_ykb', true); // 章节重做同步到医考帮默认开启
+  }
+  if (!prefs.containsKey('sync_ykb_progress_enabled')) {
+    await prefs.setBool('sync_ykb_progress_enabled', true); // 自动拉取医考帮做题记录默认开启
   }
   await QuestionSectionConfig.loadConfig();
 }

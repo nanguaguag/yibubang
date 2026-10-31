@@ -37,6 +37,7 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
   late Future<List<UserQuestion>> allUserQuestions;
   final ScrollController _scrollController = ScrollController();
   double _savedScrollOffset = 0.0;
+  Map<String, int> _chapterQuestionNumbers = {};
 
   // 筛选选项
   int cutType = 0;
@@ -125,6 +126,9 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
   ) async {
     List<Question> questions = await questionsFuture;
     List<UserQuestion> userQuestions = await userQuestionsFuture;
+    _chapterQuestionNumbers = {
+      for (var i = 0; i < questions.length; i++) questions[i].id: i + 1,
+    };
     // 1️⃣ 根据 category 和 cutType 先过滤 userQuestions
     userQuestions = userQuestions.where((uq) {
       if (category == 1 && uq.status != 2) return false; // 只保留做错的题目
@@ -629,7 +633,7 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
                     borderRadius: BorderRadius.all(Radius.circular(8)),
                   ),
                 ),
-          child: Text('${index + 1}'),
+          child: Text('${_chapterQuestionNumbers[questions[index].id] ?? index + 1}'),
         );
       },
     );
