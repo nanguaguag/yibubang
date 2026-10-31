@@ -24,18 +24,15 @@ class AppUpdateService {
     final currentVersion = info.version;
 
     Map<String, dynamic>? manifest;
-    // 优先使用用户配置的 GitHub 镜像站拉取
-    final primaryUrl = await GitHubProxyConfig.getManifestUrl();
-    try {
-      manifest = await _fetchManifest(primaryUrl);
-    } catch (e) {
-      debugPrint('[AppUpdateService] 镜像源请求失败: $e，尝试官方直连兜底...');
-      if (primaryUrl != GitHubProxyConfig.rawBaseUrl) {
-        try {
-          manifest = await _fetchManifest(GitHubProxyConfig.rawBaseUrl);
-        } catch (fallbackError) {
-          debugPrint('[AppUpdateService] 直连兜底亦失败: $fallbackError');
-        }
+    // 多源轮询容错：优先使用用户配置的源，若受限或失败自动尝试备用镜像、jsDelivr CDN 与官方直连
+    final candidateUrls = await GitHubProxyConfig.getCandidateManifestUrls();
+    for (final url in candidateUrls) {
+      try {
+        manifest = await _fetchManifest(url);
+        debugPrint('[AppUpdateService] 成功通过清单源拉取更新: $url');
+        break;
+      } catch (e) {
+        debugPrint('[AppUpdateService] 清单源拉取失败 ($url): $e，尝试备用源...');
       }
     }
 
@@ -54,7 +51,7 @@ class AppUpdateService {
     final response = await http
         .get(
           Uri.parse(url),
-          headers: {'Content-Type': 'application/json; charset=utf-8'},
+          headers: GitHubProxyConfig.defaultHeaders,
         )
         .timeout(const Duration(seconds: 8));
 
@@ -106,6 +103,7 @@ class AppUpdateService {
     final client = http.Client();
     try {
       final request = http.Request('GET', Uri.parse(acceleratedUrl));
+      request.headers.addAll(GitHubProxyConfig.defaultHeaders);
       final response = await client.send(request);
 
       if (response.statusCode != 200) {

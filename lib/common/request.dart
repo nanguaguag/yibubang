@@ -25,7 +25,9 @@ Future<Map<String, dynamic>> basicReq(
     params['secret'] = prefs.getString('secret') ?? '';
     params['user_id'] = prefs.getString('user_id') ?? '';
   }
-  if (!params.containsKey('app_id')) {
+  if (!params.containsKey('app_id') ||
+      params['app_id'] == null ||
+      params['app_id'].toString().isEmpty) {
     params['app_id'] = '1';
   }
 
@@ -52,7 +54,7 @@ Future<Map<String, dynamic>> basicReq(
     } else if (method == "GET") {
       uri = uri.replace(
         queryParameters: params.map(
-          (k, v) => MapEntry(k, v.toString()),
+          (k, v) => MapEntry(k, v?.toString() ?? ''),
         ),
       );
       response = await http.get(uri, headers: headers);
@@ -66,14 +68,33 @@ Future<Map<String, dynamic>> basicReq(
     rethrow;
   }
 
-  debugPrint('[API-RESP] <<< $method $url [${response.statusCode}]');
+  if (response.statusCode != 200) {
+    debugPrint(
+      '[API-RESP] <<< $method $url [${response.statusCode}], raw body: ${response.body.isEmpty ? "<EMPTY>" : response.body}',
+    );
+  } else {
+    debugPrint('[API-RESP] <<< $method $url [${response.statusCode}]');
+  }
+
+  if (response.body.trim().isEmpty) {
+    debugPrint('[API-RESP] <<< $method $url returned empty response body (HTTP ${response.statusCode})');
+    return {
+      'code': response.statusCode.toString(),
+      'message': 'HTTP ${response.statusCode}: Empty response body',
+      'data': null,
+    };
+  }
 
   Map<String, dynamic> resp;
   try {
     resp = json.decode(response.body) as Map<String, dynamic>;
   } catch (e) {
-    debugPrint('[API-RESP] JSON decode error: $e');
-    return {'code': response.statusCode.toString(), 'message': response.body};
+    debugPrint('[API-RESP] JSON decode error: $e, raw response body: ${response.body}');
+    return {
+      'code': response.statusCode.toString(),
+      'message': response.body,
+      'data': null,
+    };
   }
 
   if (resp['code'] == '309' || resp['code'] == 309) {

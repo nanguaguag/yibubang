@@ -461,21 +461,27 @@ class QuestionBankRepository {
   Future<Map<String, dynamic>?> checkRemoteManifest() async {
     Map<String, dynamic> decoded;
     try {
-      final manifestUrl = await GitHubProxyConfig.getManifestUrl();
-      http.Response response;
-      try {
-        response = await http.get(Uri.parse(manifestUrl)).timeout(const Duration(seconds: 8));
-      } catch (proxyError) {
-        debugPrint('镜像题库清单拉取失败 ($proxyError)，尝试官方直连兜底...');
-        response = await http
-            .get(Uri.parse(GitHubProxyConfig.rawBaseUrl))
-            .timeout(const Duration(seconds: 8));
+      final candidateUrls = await GitHubProxyConfig.getCandidateManifestUrls();
+      http.Response? successfulResponse;
+      for (final url in candidateUrls) {
+        try {
+          final response = await http
+              .get(Uri.parse(url), headers: GitHubProxyConfig.defaultHeaders)
+              .timeout(const Duration(seconds: 8));
+          if (response.statusCode == 200) {
+            successfulResponse = response;
+            break;
+          }
+        } catch (candidateError) {
+          debugPrint('题库清单源拉取失败 ($url): $candidateError，尝试备用源...');
+        }
       }
 
-      if (response.statusCode != 200) {
-        throw HttpException('题库清单请求失败：HTTP ${response.statusCode}');
+      if (successfulResponse == null) {
+        throw const HttpException('题库清单请求失败：所有清单源均不可用');
       }
-      final value = jsonDecode(utf8.decode(response.bodyBytes));
+
+      final value = jsonDecode(utf8.decode(successfulResponse.bodyBytes));
       if (value is! Map<String, dynamic>) {
         throw const FormatException('远程更新清单格式不正确');
       }
@@ -598,6 +604,7 @@ class QuestionBankRepository {
     try {
       final downloadUrl = await GitHubProxyConfig.resolveDownloadUrl(url);
       final request = http.Request('GET', Uri.parse(downloadUrl));
+      request.headers.addAll(GitHubProxyConfig.defaultHeaders);
       final response = await client.send(request);
       if (response.statusCode != 200) {
         throw HttpException('题库下载失败：HTTP ${response.statusCode}');

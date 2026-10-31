@@ -15,18 +15,26 @@ class QuestionStatView extends StatelessWidget {
     required this.userQuestion,
   });
 
-  Future<QuestionStat> _fetchQuestionStat() async {
+  Future<QuestionStat?> _fetchQuestionStat() async {
+    final resolvedAppId = question.nativeAppId?.isNotEmpty == true
+        ? question.nativeAppId!
+        : (question.appId?.isNotEmpty == true ? question.appId! : '1');
+
     final response = await basicReq('/allquestion/main/stat', method: 'GET', {
       'module_type': '1',
       'question_id': question.id,
-      'app_id': question.appId,
+      'app_id': resolvedAppId,
     });
-    return QuestionStat.fromMap(response['data']);
+    final data = response['data'];
+    if (data is Map<String, dynamic>) {
+      return QuestionStat.fromMap(data);
+    }
+    return null;
   }
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<QuestionStat>(
+    return FutureBuilder<QuestionStat?>(
       future: _fetchQuestionStat(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting ||
