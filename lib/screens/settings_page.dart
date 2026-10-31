@@ -238,6 +238,11 @@ class _SettingsPageState extends State<SettingsPage> {
       } else {
         await RecordSyncService.importMerge(bytes);
       }
+      try {
+        await rebuildQuestionCount();
+      } catch (e) {
+        debugPrint('[record-sync] 重建题目统计异常: $e');
+      }
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(

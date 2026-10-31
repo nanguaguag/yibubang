@@ -743,10 +743,10 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
                     cutTypes,
                     cutTypes[cutType],
                     (value) {
-                      saveSettings();
                       setState(() {
                         cutType = cutTypes.indexOf(value);
                       });
+                      saveSettings();
                     },
                   ),
                 ),
@@ -757,10 +757,10 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
                     questionTypes,
                     questionTypes[questionType],
                     (value) {
-                      saveSettings();
                       setState(() {
                         questionType = questionTypes.indexOf(value);
                       });
+                      saveSettings();
                     },
                   ),
                 ),
@@ -771,10 +771,10 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
                     categories,
                     categories[category],
                     (value) {
-                      saveSettings();
                       setState(() {
                         category = categories.indexOf(value);
                       });
+                      saveSettings();
                     },
                   ),
                 ),

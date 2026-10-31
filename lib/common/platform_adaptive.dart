@@ -166,14 +166,14 @@ class _ModalSentinelRoute extends PageRoute<void> {
 
 /// 监听模态内置 Navigator 路由变化的 Observer
 class _AdaptiveModalNavigatorObserver extends NavigatorObserver {
-  final VoidCallback onDismissModal;
+  final void Function(dynamic result) onDismissModal;
   _AdaptiveModalNavigatorObserver({required this.onDismissModal});
 
   @override
   void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
     super.didPop(route, previousRoute);
     if (previousRoute is _ModalSentinelRoute || previousRoute == null) {
-      onDismissModal();
+      onDismissModal(route.currentResult);
     }
   }
 }
@@ -201,9 +201,9 @@ class _AdaptiveModalContainerState extends State<_AdaptiveModalContainer> {
   void initState() {
     super.initState();
     _observer = _AdaptiveModalNavigatorObserver(
-      onDismissModal: () {
+      onDismissModal: (result) {
         if (mounted && Navigator.of(widget.dialogContext).canPop()) {
-          Navigator.of(widget.dialogContext).pop();
+          Navigator.of(widget.dialogContext).pop(result);
         }
       },
     );
@@ -221,14 +221,14 @@ class _AdaptiveModalContainerState extends State<_AdaptiveModalContainer> {
           final nav = widget.nestedNavKey.currentState;
           if (nav == null) {
             if (Navigator.of(widget.dialogContext).canPop()) {
-              Navigator.of(widget.dialogContext).pop();
+              Navigator.of(widget.dialogContext).pop(result);
             }
             return;
           }
           final popped = await nav.maybePop(result);
           if (!popped && widget.dialogContext.mounted) {
             if (Navigator.of(widget.dialogContext).canPop()) {
-              Navigator.of(widget.dialogContext).pop();
+              Navigator.of(widget.dialogContext).pop(result);
             }
           }
         },

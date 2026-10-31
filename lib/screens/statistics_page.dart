@@ -951,6 +951,17 @@ void _showDayStatsBottomSheet(BuildContext context, DateTime date) {
         isToday: isToday,
         startMs: startMs,
         endMs: endMs,
+        onViewAll: () {
+          if (!context.mounted) return;
+          pushAdaptiveModalPage(
+            context,
+            builder: (_) => AnsweredRecordsPage(
+              title: '${date.year}年${date.month}月${date.day}日 刷题记录',
+              startMs: startMs,
+              endMs: endMs,
+            ),
+          );
+        },
       );
     },
   );
@@ -962,6 +973,7 @@ class _DayDetailSheet extends StatefulWidget {
   final bool isToday;
   final int startMs;
   final int endMs;
+  final VoidCallback? onViewAll;
 
   const _DayDetailSheet({
     required this.date,
@@ -969,6 +981,7 @@ class _DayDetailSheet extends StatefulWidget {
     required this.isToday,
     required this.startMs,
     required this.endMs,
+    this.onViewAll,
   });
 
   @override
@@ -1119,14 +1132,7 @@ class _DayDetailSheetState extends State<_DayDetailSheet> {
                       ),
                       onPressed: () {
                         Navigator.pop(context);
-                        pushAdaptiveModalPage(
-                          context,
-                          builder: (_) => AnsweredRecordsPage(
-                            title: '${widget.date.year}年${widget.date.month}月${widget.date.day}日 刷题记录',
-                            startMs: widget.startMs,
-                            endMs: widget.endMs,
-                          ),
-                        );
+                        widget.onViewAll?.call();
                       },
                     )
                   else
