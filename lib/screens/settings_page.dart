@@ -7,12 +7,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../common/app_strings.dart';
 import '../common/platform_adaptive.dart';
 import '../common/github_proxy.dart';
+import '../common/shortcut_config.dart';
 import '../db/data_transfer.dart';
 import '../db/record_sync_service.dart';
 import '../repositories/question_search_repository.dart';
 import '../services/app_update_service.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/note_service.dart';
+import '../services/course_sync_actions.dart';
 import '../services/ykb_sync_service.dart';
 import '../widgets/common/info_card.dart';
 import '../widgets/common/styled_tile.dart';
@@ -23,6 +25,7 @@ import 'developer_page.dart';
 import 'question_sections_page.dart';
 import 'set_duration_page.dart';
 import 'set_theme_color_page.dart';
+import 'shortcut_settings_page.dart';
 
 enum _UpdateCheckState { idle, checking, hasUpdate, latest }
 
@@ -55,6 +58,15 @@ class _SettingsPageState extends State<SettingsPage> {
   bool syncNotesToYkb = true;
   bool syncRedoToYkb = true;
 
+  // 医考帮拉取同步设置
+  bool syncYkbProgressEnabled = true;
+  bool syncYkbSilent = false;
+  bool syncYkbJitter = false;
+  bool syncYkbPacing = false;
+
+  // 题库智能增量同步
+  bool smartBankSyncEnabled = true;
+
   static const String keyAcceptUpdate = 'accept_update';
   static const String keySyncQuestionBank = 'sync_question_bank';
   static const String keyAutoResume = 'autoResume';
@@ -62,6 +74,11 @@ class _SettingsPageState extends State<SettingsPage> {
   static const String keySyncCutToYkb = 'sync_cut_to_ykb';
   static const String keySyncNotesToYkb = 'sync_notes_to_ykb';
   static const String keySyncRedoToYkb = 'sync_redo_to_ykb';
+  static const String keySyncYkbProgressEnabled = 'sync_ykb_progress_enabled';
+  static const String keySyncYkbSilent = 'sync_ykb_silent';
+  static const String keySyncYkbJitter = 'sync_ykb_jitter_enabled';
+  static const String keySyncYkbPacing = 'sync_ykb_pacing_enabled';
+  static const String keySmartBankSync = 'sync_bank_smart_enabled';
 
   static const List<double> _fontScales = [0.85, 1.0, 1.15, 1.3];
   static const List<String> _fontScaleLabels = ['小', '标准', '大', '特大'];
@@ -74,14 +91,24 @@ class _SettingsPageState extends State<SettingsPage> {
 
   Future<void> _loadSettings() async {
     _prefs = await SharedPreferences.getInstance();
+    await CourseSyncActions.instance.load();
 
     acceptUpdate = _prefs.getBool(keyAcceptUpdate) ?? true;
     autoResume = _prefs.getBool(keyAutoResume) ?? false;
     syncNotesToYkb = _prefs.getBool(keySyncNotesToYkb) ?? true;
     syncCutToYkb = _prefs.getBool(keySyncCutToYkb) ?? true;
     syncRedoToYkb = _prefs.getBool(keySyncRedoToYkb) ?? true;
-    syncAnswersToYkb = _prefs.getBool(keySyncAnswersToYkb) ??
+    syncAnswersToYkb =
+        _prefs.getBool(keySyncAnswersToYkb) ??
         _prefs.getBool('questionUpload') ??
+        _prefs.getBool(keySyncQuestionBank) ??
+        true;
+    syncYkbProgressEnabled = _prefs.getBool(keySyncYkbProgressEnabled) ?? true;
+    syncYkbSilent = _prefs.getBool(keySyncYkbSilent) ?? false;
+    syncYkbJitter = _prefs.getBool(keySyncYkbJitter) ?? false;
+    syncYkbPacing = _prefs.getBool(keySyncYkbPacing) ?? false;
+    smartBankSyncEnabled =
+        _prefs.getBool(keySmartBankSync) ??
         _prefs.getBool(keySyncQuestionBank) ??
         true;
     mode = _prefs.getInt('mode') ?? 0;
@@ -178,9 +205,9 @@ class _SettingsPageState extends State<SettingsPage> {
     } catch (e) {
       debugPrint('[record-sync] 导出异常: $e');
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('导出失败：$e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('导出失败：$e')));
     }
   }
 
@@ -199,9 +226,9 @@ class _SettingsPageState extends State<SettingsPage> {
         final path = result.files.single.path;
         if (path == null) {
           if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('无法读取所选文件')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('无法读取所选文件')));
           return;
         }
         bytes = await File(path).readAsBytes();
@@ -227,9 +254,9 @@ class _SettingsPageState extends State<SettingsPage> {
     } catch (e) {
       debugPrint('[record-sync] 导入异常: $e');
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('导入失败：$e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('导入失败：$e')));
     }
   }
 
@@ -285,9 +312,9 @@ class _SettingsPageState extends State<SettingsPage> {
 
     await QuestionSearchRepository().clearHistory();
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('搜索历史已清空')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('搜索历史已清空')));
   }
 
   Future<void> _clearAllRecords() async {
@@ -295,9 +322,7 @@ class _SettingsPageState extends State<SettingsPage> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('清空全部做题记录'),
-        content: const Text(
-          '将删除所有题目的作答状态、收藏、斩题记录以及刷题流水，且无法恢复。确定继续吗？',
-        ),
+        content: const Text('将删除所有题目的作答状态、收藏、斩题记录以及刷题流水，且无法恢复。确定继续吗？'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
@@ -314,9 +339,9 @@ class _SettingsPageState extends State<SettingsPage> {
 
     await clearAllRecords();
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('已清空全部做题记录')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('已清空全部做题记录')));
   }
 
   // ------------------------------------------------------------------
@@ -448,7 +473,8 @@ class _SettingsPageState extends State<SettingsPage> {
   // ------------------------------------------------------------------
   Future<void> _checkForUpdate() async {
     if (_updateCheckState == _UpdateCheckState.checking) return;
-    if (_updateCheckState == _UpdateCheckState.hasUpdate && _updateData != null) {
+    if (_updateCheckState == _UpdateCheckState.hasUpdate &&
+        _updateData != null) {
       await AppUpdateService().showUpdateDialog(context, _updateData!);
       return;
     }
@@ -477,9 +503,9 @@ class _SettingsPageState extends State<SettingsPage> {
       setState(() {
         _updateCheckState = _UpdateCheckState.idle;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('检查更新失败：$e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('检查更新失败：$e')));
     }
   }
 
@@ -623,6 +649,19 @@ class _SettingsPageState extends State<SettingsPage> {
                   ],
                 ),
               ),
+              IconTile(
+                icon: Icons.keyboard_outlined,
+                label: '刷题快捷键',
+                value: '${ShortcutConfig.boundActionCount} 项已绑定',
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () async {
+                  await pushAdaptiveModalPage(
+                    context,
+                    builder: (context) => const ShortcutSettingsPage(),
+                  );
+                  if (mounted) setState(() {});
+                },
+              ),
             ],
           ),
           const SizedBox(height: 14),
@@ -685,6 +724,76 @@ class _SettingsPageState extends State<SettingsPage> {
                     if (v) {
                       YkbSyncService.instance.processQueue();
                     }
+                  },
+                ),
+              ),
+              IconTile(
+                icon: Icons.cloud_download_outlined,
+                label: '拉取医考帮做题记录',
+                trailing: Switch(
+                  value: syncYkbProgressEnabled,
+                  onChanged: (v) {
+                    setState(() => syncYkbProgressEnabled = v);
+                    _setBool(keySyncYkbProgressEnabled, v);
+                  },
+                ),
+              ),
+              IconTile(
+                icon: Icons.visibility_off_outlined,
+                label: '静默同步（启动后后台拉取做题记录）',
+                trailing: Switch(
+                  value: syncYkbSilent,
+                  onChanged: (v) {
+                    setState(() => syncYkbSilent = v);
+                    _setBool(keySyncYkbSilent, v);
+                  },
+                ),
+              ),
+              IconTile(
+                icon: Icons.timer_outlined,
+                label: '模拟延迟抖动（拉取时随机加延迟）',
+                trailing: Switch(
+                  value: syncYkbJitter,
+                  onChanged: (v) {
+                    setState(() => syncYkbJitter = v);
+                    _setBool(keySyncYkbJitter, v);
+                  },
+                ),
+              ),
+              IconTile(
+                icon: Icons.person_outline,
+                label: '模拟刷题节奏（章节间随机等候）',
+                trailing: Switch(
+                  value: syncYkbPacing,
+                  onChanged: (v) {
+                    setState(() => syncYkbPacing = v);
+                    _setBool(keySyncYkbPacing, v);
+                  },
+                ),
+              ),
+              ...CourseSyncAction.values.map(
+                (action) => ListenableBuilder(
+                  listenable: CourseSyncActions.instance,
+                  builder: (context, _) => IconTile(
+                    icon: action.icon,
+                    label: '我的课程：显示「${action.label}」按钮',
+                    trailing: Switch(
+                      value: CourseSyncActions.instance.isVisible(action),
+                      onChanged: (value) =>
+                          CourseSyncActions.instance.setVisible(action, value),
+                    ),
+                  ),
+                ),
+              ),
+              IconTile(
+                icon: Icons.sync,
+                label: '启动后自动增量同步题库',
+                trailing: Switch(
+                  value: smartBankSyncEnabled,
+                  onChanged: (v) {
+                    setState(() => smartBankSyncEnabled = v);
+                    _setBool(keySmartBankSync, v);
+                    _setBool(keySyncQuestionBank, v);
                   },
                 ),
               ),
@@ -754,7 +863,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     setState(() {
                       developerModeEnabled =
                           _prefs.getBool(AppStrings.keyDeveloperModeEnabled) ??
-                              false;
+                          false;
                     });
                   }
                 },
@@ -807,15 +916,16 @@ class _SettingsPageState extends State<SettingsPage> {
                         _updateCheckState == _UpdateCheckState.idle
                             ? '点击获取'
                             : (_updateCheckState == _UpdateCheckState.hasUpdate
-                                ? '发现新版本'
-                                : '已是最新'),
+                                  ? '发现新版本'
+                                  : '已是最新'),
                         style: TextStyle(
                           fontSize: 13,
                           fontWeight:
                               _updateCheckState == _UpdateCheckState.hasUpdate
-                                  ? FontWeight.bold
-                                  : FontWeight.normal,
-                          color: _updateCheckState == _UpdateCheckState.hasUpdate
+                              ? FontWeight.bold
+                              : FontWeight.normal,
+                          color:
+                              _updateCheckState == _UpdateCheckState.hasUpdate
                               ? Theme.of(context).colorScheme.primary
                               : Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
@@ -823,10 +933,9 @@ class _SettingsPageState extends State<SettingsPage> {
                     const SizedBox(width: 4),
                     Icon(
                       Icons.chevron_right_rounded,
-                      color: Theme.of(context)
-                          .colorScheme
-                          .onSurfaceVariant
-                          .withValues(alpha: 0.4),
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
                       size: 20,
                     ),
                   ],

@@ -44,8 +44,6 @@ Future<Map<String, dynamic>> basicReq(
 
   Uri uri = Uri.parse(rootUrl + url);
   debugPrint('[API-REQ] >>> $method $url');
-  debugPrint('[API-REQ] Params: $params');
-  debugPrint('[API-REQ] Headers: $headers');
 
   http.Response response;
   try {
@@ -69,7 +67,6 @@ Future<Map<String, dynamic>> basicReq(
   }
 
   debugPrint('[API-RESP] <<< $method $url [${response.statusCode}]');
-  debugPrint('[API-RESP] Body: ${response.body}');
 
   Map<String, dynamic> resp;
   try {
@@ -107,15 +104,22 @@ Future<Map<String, dynamic>> login(
     'app_id': appId,
   });
 
-  // 只有服务端明确返回成功且包含有效 token 时才持久化凭据并标记已登录
-  if ((loginResp['code'] == '200' || loginResp['code'] == 200) &&
-      loginResp['data'] is Map &&
-      loginResp['data']['token'] != null) {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    await prefs.setString('token', loginResp['data']['token']);
-    await prefs.setString('secret', loginResp['data']['secret']);
-    await prefs.setString('user_id', loginResp['data']['user_id']);
-    await prefs.setString('user_uuid', loginResp['data']['user_uuid']);
+  // 只要求鉴权必需的字段；个人资料可能为空或缺失。
+  if (loginResp['code'].toString() == '200') {
+    final data = loginResp['data'];
+    if (data is! Map ||
+        ['token', 'secret', 'user_id'].any(
+          (key) => data[key] == null || data[key].toString().isEmpty,
+        )) {
+      return {'code': 'login_invalid_response', 'message': '登录响应缺少必要的鉴权信息'};
+    }
+    final prefs = await SharedPreferences.getInstance();
+    for (final key in ['token', 'secret', 'user_id']) {
+      await prefs.setString(key, data[key].toString());
+    }
+    if (data['user_uuid'] != null && data['user_uuid'].toString().isNotEmpty) {
+      await prefs.setString('user_uuid', data['user_uuid'].toString());
+    }
     await prefs.setBool('loggedin', true);
   }
   return loginResp;

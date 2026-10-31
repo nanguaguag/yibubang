@@ -1,18 +1,24 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'services/ykb_bank_smart_sync_service.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'screens/home_page.dart';
 import 'common/app_shapes.dart';
 import 'common/app_strings.dart';
+import 'common/shortcut_config.dart';
 import 'db/settings.dart';
 import 'repositories/question_bank_repository.dart';
 import 'services/auth_service.dart';
 import 'services/cloud_sync_service.dart';
 import 'services/note_service.dart';
+import 'services/ykb_pull_service.dart';
 import 'services/ykb_sync_service.dart';
 import 'widgets/theme_controller.dart';
+import 'widgets/app_fullscreen_shortcut.dart';
 import 'package:flutter/foundation.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:sqflite_common_ffi_web/sqflite_ffi_web.dart';
@@ -36,13 +42,16 @@ Future main() async {
 
   // 设置系统UI样式，透明小白条背景（沉浸式）
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-    systemNavigationBarColor: Colors.transparent, // 设置小白条背景颜色透明
-    systemNavigationBarIconBrightness: Brightness.dark, // 图标颜色（深色，适配浅色背景）
-    systemNavigationBarDividerColor: Colors.transparent, // 分割线颜色透明
-  ));
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      systemNavigationBarColor: Colors.transparent, // 设置小白条背景颜色透明
+      systemNavigationBarIconBrightness: Brightness.dark, // 图标颜色（深色，适配浅色背景）
+      systemNavigationBarDividerColor: Colors.transparent, // 分割线颜色透明
+    ),
+  );
 
   await initSettings();
+  await ShortcutConfig.load();
   await ThemeController.instance.recoverTheme();
   debugPrint('[startup] initSettings 完成(${swStartup.elapsedMilliseconds}ms)');
   runApp(const Yibubang());
@@ -70,11 +79,48 @@ Future<void> _initializeQuestionBank() async {
     unawaited(YkbSyncService.instance.processQueue());
     unawaited(NoteService.instance.processQueue());
 
-    // 检查账号 Token 有效性，若已失效则提示用户重新登录
-    unawaited(AuthService.instance.checkTokenValidity(promptRelogin: true));
+    // 检查账号 Token 有效性；有效时顺带拉取医考帮云端做题记录
+    unawaited(_checkAuthThenPull());
   } catch (error) {
     // 目录迁移失败时仍启动应用，让用户可以通过题库管理或备份恢复继续处理。
     debugPrint('题库目录初始化失败：$error');
+  }
+}
+
+Future<void> _checkAuthThenPull() async {
+  final result = await AuthService.instance.checkTokenValidity(
+    promptRelogin: true,
+  );
+  if (result.isValid) {
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool('sync_ykb_silent') ?? true) {
+      await YkbPullService.instance.pullForActiveBank();
+    }
+    unawaited(_silentBankSmartSync());
+  }
+}
+
+/// 静默执行一批题库智能增量同步；未完成时定时续传。
+Future<void> _silentBankSmartSync() async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    if (!(prefs.getBool('loggedin') ?? false)) return;
+    if (!(prefs.getBool('sync_bank_smart_enabled') ??
+        prefs.getBool('sync_question_bank') ??
+        true)) {
+      return;
+    }
+    // 启动/续传之间加随机间隔，避免首屏和做题记录拉取同时打网络。
+    await Future.delayed(Duration(seconds: 15 + Random().nextInt(20)));
+    final result = await YkbBankSmartSyncService.instance.run();
+    debugPrint('[ykb-smart-sync] ${result.summary}');
+    if (result.remainingChapters > 0 || !result.isSuccess) {
+      Timer(const Duration(minutes: 4), () {
+        unawaited(_silentBankSmartSync());
+      });
+    }
+  } catch (e) {
+    debugPrint('[ykb-smart-sync] silent error: $e');
   }
 }
 
@@ -104,7 +150,9 @@ ThemeData _buildTheme(Brightness brightness) {
     ),
     cardTheme: const CardThemeData(
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.all(Radius.circular(AppShapes.largeIncreased)),
+        borderRadius: BorderRadius.all(
+          Radius.circular(AppShapes.largeIncreased),
+        ),
       ),
     ),
     dialogTheme: const DialogThemeData(
@@ -156,6 +204,7 @@ class Yibubang extends StatelessWidget {
       builder: (context, _) {
         return MaterialApp(
           navigatorKey: rootNavigatorKey,
+          builder: (context, child) => AppFullscreenShortcut(child: child!),
           debugShowCheckedModeBanner: false,
           title: AppStrings.appTitle,
           theme: _buildTheme(Brightness.light),

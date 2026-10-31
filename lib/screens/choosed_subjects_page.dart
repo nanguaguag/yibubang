@@ -11,6 +11,8 @@ import '../models/chapter.dart';
 import '../widgets/theme_controller.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/cloud_sync_service.dart';
+import '../services/course_sync_actions.dart';
+import '../widgets/course_sync_buttons.dart';
 
 class SubjectWithChapters {
   final Subject subject;
@@ -57,6 +59,7 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
   void initState() {
     super.initState();
     _loadLastProgress();
+    CourseSyncActions.instance.load();
     themeController.recoverTheme(); // 恢复主题
     subjectsWithChapters = getSubjectsWithChapters();
     _maybeAutoResume();
@@ -99,7 +102,9 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
   }
 
   Future<void> _saveLastProgress(
-      String lastSubjectId, String lastChapterId) async {
+    String lastSubjectId,
+    String lastChapterId,
+  ) async {
     final prefs = await SharedPreferences.getInstance();
     final activeBankId = prefs.getString('activeBankId') ?? 'dental_final';
     await prefs.setString('lastProgressBankId', activeBankId);
@@ -167,10 +172,8 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
     await Navigator.push(
       context,
       adaptivePageRoute(
-        builder: (context) => QuestionGridPage(
-          chapter: chapter,
-          directJump: true,
-        ),
+        builder: (context) =>
+            QuestionGridPage(chapter: chapter, directJump: true),
       ),
     );
 
@@ -179,33 +182,33 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
 
   /// 显示错误信息
   Widget _buildErrorMessage(Object? error) => Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.menu_book_outlined, size: 56),
-              const SizedBox(height: 16),
-              const Text('当前还没有可用题库，请先导入或下载题库'),
-              const SizedBox(height: 16),
-              FilledButton.icon(
-                onPressed: _navigateToBankManagement,
-                icon: const Icon(Icons.storage_outlined),
-                label: const Text('打开题库管理'),
-              ),
-              if (error != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 12),
-                  child: Text(
-                    '$error',
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ),
-            ],
+    child: Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.menu_book_outlined, size: 56),
+          const SizedBox(height: 16),
+          const Text('当前还没有可用题库，请先导入或下载题库'),
+          const SizedBox(height: 16),
+          FilledButton.icon(
+            onPressed: _navigateToBankManagement,
+            icon: const Icon(Icons.storage_outlined),
+            label: const Text('打开题库管理'),
           ),
-        ),
-      );
+          if (error != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Text(
+                '$error',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+        ],
+      ),
+    ),
+  );
 
   /// 打开题库管理页（桌面端居中模态弹窗，移动端左侧滑入）
   Future<void> _navigateToBankManagement() async {
@@ -356,10 +359,7 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
                       Expanded(
                         flex: ((1 - correctProgress - incorrectProgress) * 100)
                             .toInt(),
-                        child: Container(
-                          height: 4,
-                          color: Colors.grey[200],
-                        ),
+                        child: Container(height: 4, color: Colors.grey[200]),
                       ),
                     ],
                   ),
@@ -374,10 +374,8 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
         await Navigator.push(
           context,
           adaptivePageRoute(
-            builder: (context) => QuestionGridPage(
-              chapter: chapter,
-              directJump: false,
-            ),
+            builder: (context) =>
+                QuestionGridPage(chapter: chapter, directJump: false),
           ),
         );
         _refreshData();
@@ -398,6 +396,7 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
         ),
         title: const Text(AppStrings.selectedSubjectsTitle),
         actions: [
+          CourseSyncButtons(onCompleted: _refreshData),
           IconButton(
             tooltip: '搜索题目',
             icon: const Icon(Icons.search),
@@ -414,20 +413,15 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
               return IconButton(
                 icon: AnimatedSwitcher(
                   duration: const Duration(milliseconds: 300),
-                  transitionBuilder: (child, anim) => ScaleTransition(
-                    scale: anim,
-                    child: child,
-                  ),
-                  child: Icon(
-                    themeController.getIcon(),
-                    key: ValueKey(mode),
-                  ),
+                  transitionBuilder: (child, anim) =>
+                      ScaleTransition(scale: anim, child: child),
+                  child: Icon(themeController.getIcon(), key: ValueKey(mode)),
                 ),
                 // 切换主题模式
                 onPressed: themeController.toggleTheme,
               );
             },
-          )
+          ),
         ],
       ),
       body: FutureBuilder<List<SubjectWithChapters>>(
@@ -447,9 +441,9 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
                 final subject = data[index].subject;
                 final chapters = data[index].chapters;
                 return Theme(
-                  data: Theme.of(context).copyWith(
-                    dividerColor: Colors.grey.withValues(alpha: 0.2),
-                  ),
+                  data: Theme.of(
+                    context,
+                  ).copyWith(dividerColor: Colors.grey.withValues(alpha: 0.2)),
                   child: _buildChapterList(context, chapters, subject),
                 );
               },

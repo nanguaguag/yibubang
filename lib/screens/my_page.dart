@@ -5,8 +5,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:yibubang/db/settings.dart';
 
 import '../common/request.dart';
+import '../repositories/question_bank_repository.dart';
 import '../repositories/question_search_repository.dart';
 import '../services/note_service.dart';
+import '../services/ykb_bank_smart_sync_service.dart';
+import '../services/ykb_bank_sync_service.dart';
+import '../services/ykb_pull_service.dart';
 import '../services/ykb_sync_service.dart';
 import '../widgets/common/app_network_image.dart';
 import '../widgets/common/info_card.dart';
@@ -165,10 +169,14 @@ class _MyPageState extends State<MyPage> {
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
                 decoration: BoxDecoration(
-                  color: theme.colorScheme.surfaceContainerHighest
-                      .withValues(alpha: 0.6),
+                  color: theme.colorScheme.surfaceContainerHighest.withValues(
+                    alpha: 0.6,
+                  ),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
@@ -182,7 +190,9 @@ class _MyPageState extends State<MyPage> {
               const SizedBox(width: 8),
               Icon(
                 Icons.chevron_right_rounded,
-                color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+                color: theme.colorScheme.onSurfaceVariant.withValues(
+                  alpha: 0.6,
+                ),
               ),
             ],
           ),
@@ -206,13 +216,18 @@ class _MyPageState extends State<MyPage> {
               borderRadius: BorderRadius.circular(20),
               onTap: _onAccountTap,
               child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: _loggedIn
-                      ? theme.colorScheme.primaryContainer.withValues(alpha: 0.65)
-                      : theme.colorScheme.surfaceContainerHighest
-                          .withValues(alpha: 0.7),
+                      ? theme.colorScheme.primaryContainer.withValues(
+                          alpha: 0.65,
+                        )
+                      : theme.colorScheme.surfaceContainerHighest.withValues(
+                          alpha: 0.7,
+                        ),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Row(
@@ -247,9 +262,7 @@ class _MyPageState extends State<MyPage> {
             ),
           ),
         ),
-        actions: [
-          rebuildSettingsBtn(context),
-        ],
+        actions: [rebuildSettingsBtn(context)],
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
@@ -370,35 +383,43 @@ class _LoginPageState extends State<LoginPage> {
       String password = _passwordController.text;
       try {
         Map<String, dynamic> resp = await login(mobile, password);
-        if (resp['code'] == "200") {
-          SharedPreferences prefs = await SharedPreferences.getInstance();
-          Map<String, dynamic> userData = resp['data'];
+        if (resp['code'].toString() == '200') {
+          final prefs = await SharedPreferences.getInstance();
+          final userData = resp['data'] as Map;
+          // 个人资料是可选项，缺失时清除旧账号对应的资料。
+          for (final key in [
+            'mobile',
+            'is_logout',
+            'email',
+            'avatar',
+            'nickname',
+            'user_uuid',
+            'sex',
+            'str_sex',
+            'user_type',
+            'now_id',
+            'now_name',
+            'now_major_id',
+            'now_major_name',
+            'education_id',
+            'education_name',
+            'entrance_time',
+          ]) {
+            final value = userData[key];
+            if (value == null) {
+              await prefs.remove(key);
+            } else {
+              await prefs.setString(key, value.toString());
+            }
+          }
 
-          await prefs.setString('user_id', userData['user_id']);
-          await prefs.setString('mobile', userData['mobile']);
-          await prefs.setString('is_logout', userData['is_logout']);
-          await prefs.setString('email', userData['email'] ?? '');
-          await prefs.setString('avatar', userData['avatar']);
-          await prefs.setString('nickname', userData['nickname']);
-          await prefs.setString('user_uuid', userData['user_uuid']);
-          await prefs.setString('sex', userData['sex']); // 0
-          await prefs.setString('str_sex', userData['str_sex']); // 保密
-          await prefs.setString('token', userData['token']);
-          await prefs.setString('secret', userData['secret']);
-          await prefs.setString('user_type', userData['user_type']);
-          await prefs.setString('now_id', userData['now_id']); // 158
-          await prefs.setString('now_name', userData['now_name']); // 四川大学
-          await prefs.setString('now_major_id', userData['now_major_id']);
-          await prefs.setString('now_major_name', userData['now_major_name']);
-          await prefs.setString('education_id', userData['education_id']);
-          await prefs.setString('education_name', userData['education_name']);
-          await prefs.setString('entrance_time', userData['entrance_time']);
-
-          await prefs.setBool('loggedin', true);
-
-          // 登录成功后自动拉起离线同步队列
+          // 登录成功后自动拉起离线同步队列，并拉取云端做题记录
           YkbSyncService.instance.processQueue();
           NoteService.instance.processQueue();
+          // 登录成功后后台拉取一次医考帮做题记录
+          YkbPullService.instance.pullForActiveBank(force: true);
+          // 登录后后台同步一批题库增量
+          YkbBankSmartSyncService.instance.run();
 
           if (!mounted) return;
           ScaffoldMessenger.of(context).hideCurrentMaterialBanner();
@@ -554,7 +575,7 @@ class _LoginPageState extends State<LoginPage> {
                           '登录医考帮账号能够让您看到所有的题目评论、题目的作答统计信息等。医不帮APP仅提供第三方登录，不会保存您的账号密码。',
                           style: TextStyle(fontSize: 12, color: Colors.grey),
                         ),
-                      )
+                      ),
                     ],
                   ),
                 ),
@@ -572,10 +593,7 @@ class _LoginPageState extends State<LoginPage> {
                                 Colors.white,
                               ),
                             )
-                          : const Text(
-                              '登录',
-                              style: TextStyle(fontSize: 18),
-                            ),
+                          : const Text('登录', style: TextStyle(fontSize: 18)),
                     ),
                   ),
                 ),
@@ -661,14 +679,51 @@ class _ProfilePageState extends State<ProfilePage> {
     }
   }
 
+  bool _pullingYkb = false;
+
+  /// 拉取医考帮服务端上的做题进度（例如手机官方 App 上做的题）合并到本地。
+  Future<void> _pullYkbProgress() async {
+    if (_pullingYkb) return;
+    setState(() => _pullingYkb = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (!(prefs.getBool('sync_ykb_progress_enabled') ?? true)) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('「拉取医考帮做题记录」已在设置中关闭，请先开启')),
+        );
+        return;
+      }
+      final bank = await QuestionBankRepository().find(
+        await QuestionBankRepository().activeBankId(),
+      );
+      if (bank == null) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('当前题库未初始化，请先在题库管理中启用题库')),
+        );
+        return;
+      }
+      final result = await YkbPullService.pullForBank(
+        bank,
+        pacing: SyncPacing(
+          jitterEnabled: prefs.getBool('sync_ykb_jitter_enabled') ?? false,
+          pacingEnabled: prefs.getBool('sync_ykb_pacing_enabled') ?? false,
+        ),
+      );
+      messenger.showSnackBar(SnackBar(content: Text(result.summary)));
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('拉取失败：$e')));
+    } finally {
+      if (mounted) setState(() => _pullingYkb = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         leading: Navigator.canPop(context) ? const BackButton() : null,
-        actions: [
-          rebuildSettingsBtn(context),
-        ],
+        actions: [rebuildSettingsBtn(context)],
         title: const Text("个人中心"),
       ),
       body: ListView(
@@ -677,6 +732,8 @@ class _ProfilePageState extends State<ProfilePage> {
           _buildHeaderCard(context),
           const SizedBox(height: 16),
           _buildInfoCard(context),
+          const SizedBox(height: 16),
+          _buildYkbSyncCard(context),
           const SizedBox(height: 24),
           _buildLogoutButton(context),
         ],
@@ -722,9 +779,10 @@ class _ProfilePageState extends State<ProfilePage> {
   Widget _buildHeaderCard(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-    final subtitle = [nowName, nowMajorName]
-        .where((e) => e.isNotEmpty)
-        .join(' · ');
+    final subtitle = [
+      nowName,
+      nowMajorName,
+    ].where((e) => e.isNotEmpty).join(' · ');
 
     return Card(
       elevation: 0,
@@ -788,8 +846,9 @@ class _ProfilePageState extends State<ProfilePage> {
               children: [
                 Text(
                   label,
-                  style: textTheme.bodySmall
-                      ?.copyWith(color: colorScheme.onSurfaceVariant),
+                  style: textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
                 ),
                 const SizedBox(height: 2),
                 Text(value, style: textTheme.bodyLarge),
@@ -812,6 +871,42 @@ class _ProfilePageState extends State<ProfilePage> {
         foregroundColor: colorScheme.error,
         backgroundColor: colorScheme.errorContainer,
         minimumSize: const Size.fromHeight(52),
+      ),
+    );
+  }
+
+  Widget _buildYkbSyncCard(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('医考帮进度同步', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 4),
+            Text(
+              '拉取医考帮官方 App 上的做题记录（仅补充本地未做的题，'
+              '不影响本地已有进度）',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 12),
+            FilledButton.tonalIcon(
+              onPressed: _pullingYkb ? null : _pullYkbProgress,
+              icon: _pullingYkb
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.cloud_download_outlined),
+              label: Text(_pullingYkb ? '拉取中…' : '拉取做题进度'),
+            ),
+          ],
+        ),
       ),
     );
   }
