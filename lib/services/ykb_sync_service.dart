@@ -184,7 +184,7 @@ class YkbSyncService {
   /// 是否开启做题同步到医考帮
   Future<bool> isSyncAnswersEnabled() async {
     final prefs = await SharedPreferences.getInstance();
-    // 兼容历史 key: questionUpload / sync_question_bank
+    // 兼容历史 key: questionUpload (不应与题库清单 sync_question_bank 混淆)
     if (prefs.containsKey(keySyncAnswersToYkb)) {
       return prefs.getBool(keySyncAnswersToYkb) ?? true;
     }

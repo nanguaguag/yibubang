@@ -140,8 +140,7 @@ class YkbBankSmartSyncService {
     if (prefs.containsKey(keyEnabled)) {
       return prefs.getBool(keyEnabled) ?? true;
     }
-    // 兼容旧开关：sync_question_bank 原本就是题库同步总开关。
-    return prefs.getBool('sync_question_bank') ?? true;
+    return true;
   }
 
   /// 执行一批智能增量同步。

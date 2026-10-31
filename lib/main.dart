@@ -105,9 +105,7 @@ Future<void> _silentBankSmartSync() async {
   try {
     final prefs = await SharedPreferences.getInstance();
     if (!(prefs.getBool('loggedin') ?? false)) return;
-    if (!(prefs.getBool('sync_bank_smart_enabled') ??
-        prefs.getBool('sync_question_bank') ??
-        true)) {
+    if (!(prefs.getBool('sync_bank_smart_enabled') ?? true)) {
       return;
     }
     // 启动/续传之间加随机间隔，避免首屏和做题记录拉取同时打网络。

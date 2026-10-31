@@ -66,8 +66,11 @@ Future<void> initSettings() async {
   if (!prefs.containsKey('accept_update')) {
     await prefs.setBool('accept_update', true);
   }
+  if (!prefs.containsKey('sync_bank_smart_enabled')) {
+    await prefs.setBool('sync_bank_smart_enabled', true); // 智能增量同步题库默认开启
+  }
   if (!prefs.containsKey('sync_question_bank')) {
-    await prefs.setBool('sync_question_bank', false);
+    await prefs.setBool('sync_question_bank', false); // 题库管理页自动拉取清单（低频手动刷新）
   }
   if (!prefs.containsKey('fontScale')) {
     await prefs.setDouble('fontScale', 1.0); // 刷题字号缩放比例
@@ -82,10 +85,7 @@ Future<void> initSettings() async {
     await prefs.setBool('sync_cut_to_ykb', true); // 同步斩题到医考帮默认开启
   }
   if (!prefs.containsKey('sync_answers_to_ykb')) {
-    final legacy =
-        prefs.getBool('questionUpload') ??
-        prefs.getBool('sync_question_bank') ??
-        true;
+    final legacy = prefs.getBool('questionUpload') ?? true;
     await prefs.setBool('sync_answers_to_ykb', legacy); // 做题同步到医考帮默认开启
   }
   if (!prefs.containsKey('sync_redo_to_ykb')) {

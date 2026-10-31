@@ -68,7 +68,6 @@ class _SettingsPageState extends State<SettingsPage> {
   bool smartBankSyncEnabled = true;
 
   static const String keyAcceptUpdate = 'accept_update';
-  static const String keySyncQuestionBank = 'sync_question_bank';
   static const String keyAutoResume = 'autoResume';
   static const String keySyncAnswersToYkb = 'sync_answers_to_ykb';
   static const String keySyncCutToYkb = 'sync_cut_to_ykb';
@@ -101,16 +100,12 @@ class _SettingsPageState extends State<SettingsPage> {
     syncAnswersToYkb =
         _prefs.getBool(keySyncAnswersToYkb) ??
         _prefs.getBool('questionUpload') ??
-        _prefs.getBool(keySyncQuestionBank) ??
         true;
     syncYkbProgressEnabled = _prefs.getBool(keySyncYkbProgressEnabled) ?? true;
     syncYkbSilent = _prefs.getBool(keySyncYkbSilent) ?? false;
     syncYkbJitter = _prefs.getBool(keySyncYkbJitter) ?? false;
     syncYkbPacing = _prefs.getBool(keySyncYkbPacing) ?? false;
-    smartBankSyncEnabled =
-        _prefs.getBool(keySmartBankSync) ??
-        _prefs.getBool(keySyncQuestionBank) ??
-        true;
+    smartBankSyncEnabled = _prefs.getBool(keySmartBankSync) ?? true;
     mode = _prefs.getInt('mode') ?? 0;
     fontScale = _normalizeFontScale(_prefs.getDouble('fontScale') ?? 1.0);
     developerModeEnabled =
@@ -676,7 +671,6 @@ class _SettingsPageState extends State<SettingsPage> {
                   onChanged: (v) {
                     setState(() => syncAnswersToYkb = v);
                     _setBool(keySyncAnswersToYkb, v);
-                    _setBool(keySyncQuestionBank, v);
                     _setBool('questionUpload', v);
                     if (v) {
                       YkbSyncService.instance.processQueue();
@@ -793,7 +787,6 @@ class _SettingsPageState extends State<SettingsPage> {
                   onChanged: (v) {
                     setState(() => smartBankSyncEnabled = v);
                     _setBool(keySmartBankSync, v);
-                    _setBool(keySyncQuestionBank, v);
                   },
                 ),
               ),
