@@ -93,17 +93,13 @@ class _QuestionPageItemState extends State<QuestionPageItem> {
         case 1: // 正确
         case 2: // 错误
         case 3: // 历史已斩状态
-          content =
-              (uq.userAnswer.isNotEmpty ||
-                  (q.answer != null && q.answer!.isNotEmpty))
-              ? QuestionExplainView(
-                  question: q,
-                  userQuestion: uq,
-                  index: widget.index,
-                  controller: widget.controller,
-                  onStateChanged: _onStateChanged,
-                )
-              : _buildUnansweredView(context);
+          content = QuestionExplainView(
+            question: q,
+            userQuestion: uq,
+            index: widget.index,
+            controller: widget.controller,
+            onStateChanged: _onStateChanged,
+          );
           break;
         default:
           content = const Center(child: Text('未知的题目状态'));

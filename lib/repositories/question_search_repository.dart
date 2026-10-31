@@ -90,6 +90,18 @@ class QuestionSearchResult {
         return '单选题';
       case '2':
         return '多选题';
+      case '3':
+        return '填空题';
+      case '4':
+        return '名词解释';
+      case '5':
+        return '简答题';
+      case '6':
+        return '论述题';
+      case '7':
+        return '病例分析';
+      case '19':
+        return '案例分析题';
       default:
         return type ?? '题目';
     }

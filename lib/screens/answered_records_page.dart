@@ -256,7 +256,7 @@ class _AnsweredRecordsPageState extends State<AnsweredRecordsPage> {
     final scheme = theme.colorScheme;
     final q = item.question;
     final title = q?.title?.replaceAll(RegExp(r'<[^>]*>'), '').trim();
-    final typeText = q?.type == '2' ? '多选题' : '单选题';
+    final typeText = q?.typeLabel ?? '题目';
     final dt = DateTime.fromMillisecondsSinceEpoch(item.timestamp);
     final timeStr =
         '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}:${dt.second.toString().padLeft(2, '0')}';

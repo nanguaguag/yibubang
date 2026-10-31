@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../db/database_helper.dart';
 import '../db/question_bank_manager.dart';
@@ -299,6 +300,54 @@ class Question {
 
   bool get isCut => cutQuestion == '1' || cutQuestion == 'cutted';
   set isCut(bool value) => cutQuestion = value ? '1' : '0';
+
+  /// 获取题目类型的友好中文名称
+  String get typeLabel {
+    if (typeStr != null && typeStr!.trim().isNotEmpty) {
+      return typeStr!.trim();
+    }
+    switch (type) {
+      case '1':
+        return '单选题';
+      case '2':
+        return '多选题';
+      case '3':
+        return '填空题';
+      case '4':
+        return '名词解释';
+      case '5':
+        return '简答题';
+      case '6':
+        return '论述题';
+      case '7':
+        return '病例分析';
+      case '19':
+        return '案例分析题';
+      default:
+        return '其他题型';
+    }
+  }
+
+  /// 判断当前题目是否属于主观题/非选择题（无标准选项）
+  bool get isSubjective {
+    final rawOption = option;
+    if (rawOption != null && rawOption.isNotEmpty && rawOption != '[]') {
+      try {
+        final decoded = jsonDecode(rawOption);
+        if (decoded is List && decoded.isNotEmpty) {
+          return false;
+        }
+      } catch (_) {}
+    }
+    if (type == '3' ||
+        type == '4' ||
+        type == '5' ||
+        type == '6' ||
+        type == '7') {
+      return true;
+    }
+    return type != '1' && type != '2';
+  }
 }
 
 String getLastAnswer(String userAnswer) {
@@ -335,11 +384,18 @@ Future<MapEntry<int, int>> gradePendingQuestions(
     if (uq.status != 4) continue;
     final Question q = questions[i];
     final String ans = getLastAnswer(uq.userAnswer);
-    final String correctAns = q.answer ?? '';
-    uq.status =
-        (correctAns.isNotEmpty && sortString(ans) == sortString(correctAns))
-            ? 1
-            : 2;
+    if (q.isSubjective) {
+      uq.status =
+          (ans == '已掌握' || ans == '正确' || ans == '1' || uq.status == 1)
+              ? 1
+              : 2;
+    } else {
+      final String correctAns = q.answer ?? '';
+      uq.status =
+          (correctAns.isNotEmpty && sortString(ans) == sortString(correctAns))
+              ? 1
+              : 2;
+    }
     if (uq.status == 1) correct++;
     graded++;
     await updateQuestion(uq, q, durationMs: 0, bankId: bankId);

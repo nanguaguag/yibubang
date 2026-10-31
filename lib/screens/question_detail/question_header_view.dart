@@ -46,7 +46,7 @@ class QuestionHeaderView extends StatelessWidget {
         Row(
           children: [
             Text(
-              question.typeStr ?? '未知题型',
+              question.typeLabel,
               style: const TextStyle(
                 fontSize: 16,
                 color: Colors.grey,
@@ -74,13 +74,7 @@ class QuestionHeaderView extends StatelessWidget {
           ),
           const SizedBox(height: 10),
         ],
-        Text(
-          question.title ?? '',
-          style: const TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
+        _buildTitleWidget(context),
         if (titleImg != null && titleImg.isNotEmpty)
           InkWell(
             onTap: () {
@@ -99,6 +93,69 @@ class QuestionHeaderView extends StatelessWidget {
             ),
           ),
       ],
+    );
+  }
+
+  Widget _buildTitleWidget(BuildContext context) {
+    final rawTitle = question.title ?? '';
+    if (!rawTitle.contains('#@')) {
+      return Text(
+        rawTitle,
+        style: const TextStyle(
+          fontSize: 18,
+          fontWeight: FontWeight.bold,
+        ),
+      );
+    }
+
+    final regex = RegExp(r'#@(.*?)(?:@#|$)');
+    final spans = <InlineSpan>[];
+    int lastEnd = 0;
+    int blankIndex = 1;
+
+    final theme = Theme.of(context);
+    for (final match in regex.allMatches(rawTitle)) {
+      if (match.start > lastEnd) {
+        spans.add(TextSpan(
+          text: rawTitle.substring(lastEnd, match.start),
+          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        ));
+      }
+      spans.add(WidgetSpan(
+        alignment: PlaceholderAlignment.middle,
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.primaryContainer.withValues(alpha: 0.35),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(
+              color: theme.colorScheme.primary.withValues(alpha: 0.5),
+            ),
+          ),
+          child: Text(
+            '【空 $blankIndex】',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.bold,
+              color: theme.colorScheme.primary,
+            ),
+          ),
+        ),
+      ));
+      blankIndex++;
+      lastEnd = match.end;
+    }
+
+    if (lastEnd < rawTitle.length) {
+      spans.add(TextSpan(
+        text: rawTitle.substring(lastEnd),
+        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+      ));
+    }
+
+    return Text.rich(
+      TextSpan(children: spans),
     );
   }
 }

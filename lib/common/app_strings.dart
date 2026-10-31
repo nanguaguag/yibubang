@@ -23,7 +23,16 @@ class AppStrings {
   static const String myPageTitle = '我的';
   static const String subjectsListTitle = '选择课程';
   static const List<String> cutTypes = ['全部', '已斩', '未斩'];
-  static const List<String> questionTypes = ['全部', '单选题', '多选题'];
+  static const List<String> questionTypes = [
+    '全部',
+    '单选题',
+    '多选题',
+    '填空题',
+    '名词解释',
+    '简答题',
+    '论述题',
+    '病例分析',
+  ];
   static const List<String> categories = ['全部', '做错的', '收藏的', '未做的'];
   static const List<String> modesList = ['练习', '快刷', '测试', '背题'];
   static const String keyDeveloperModeEnabled = 'developer_mode_enabled';

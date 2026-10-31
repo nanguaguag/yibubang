@@ -192,13 +192,25 @@ class QuestionDetailController extends ChangeNotifier {
     final UserQuestion userQuestion = userQuestions[index];
 
     if (_mode == 3) return false;
-    if (question.type != '1' && question.type != '2') return false;
     if (userQuestion.isCut && !isCutContentRevealed(index)) return false;
     if (userQuestion.status == 1 ||
         userQuestion.status == 2 ||
         userQuestion.status == 3) {
       return false;
     }
+
+    if (question.isSubjective) {
+      if (optionIndex == 0) {
+        submitSubjectiveAnswer(question, userQuestion, index, context, isCorrect: true);
+        return true;
+      } else if (optionIndex == 1) {
+        submitSubjectiveAnswer(question, userQuestion, index, context, isCorrect: false);
+        return true;
+      }
+      return false;
+    }
+
+    if (question.type != '1' && question.type != '2') return false;
 
     final List<dynamic> options = getOptionJson(question);
     if (optionIndex < 0 || optionIndex >= options.length) return false;
@@ -336,6 +348,68 @@ class QuestionDetailController extends ChangeNotifier {
         nextPage();
       }
     }
+  }
+
+  /// 主观题（填空/名词解释/简答/论述/病例分析等）自评作答提交
+  void submitSubjectiveAnswer(
+    Question question,
+    UserQuestion userQuestion,
+    int index,
+    BuildContext context, {
+    required bool isCorrect,
+    VoidCallback? onStateChanged,
+  }) {
+    final int elapsedMs = (DateTime.now().millisecondsSinceEpoch - pageOpenedAt)
+        .clamp(0, 1 << 62);
+
+    userQuestion.userAnswer = isCorrect ? '已掌握' : '未掌握';
+
+    if (_mode == 2) {
+      userQuestion.status = 4; // 测试模式 - 待提交
+      updateQuestionSimple(userQuestion, question);
+      userQuestions[index].status = 4;
+      _updateAnsweredCount();
+      onStateChanged?.call();
+      nextPage();
+    } else {
+      userQuestion.status = isCorrect ? 1 : 2;
+      updateQuestion(
+        userQuestion,
+        question,
+        durationMs: elapsedMs,
+        bankId: bankId,
+        chapter: chapter,
+      );
+      userQuestions[index].status = userQuestion.status;
+      onStateChanged?.call();
+      if (userQuestion.status == 1 && _mode == 1) {
+        // 快刷模式自动翻页
+        nextPage();
+      }
+    }
+    notifyListeners();
+  }
+
+  /// 修改主观题已作答状态（重新标记已掌握/未掌握）
+  void updateSubjectiveStatus(
+    Question question,
+    UserQuestion userQuestion,
+    int index, {
+    required bool isCorrect,
+    VoidCallback? onStateChanged,
+  }) {
+    userQuestion.userAnswer = isCorrect ? '已掌握' : '未掌握';
+    userQuestion.status = isCorrect ? 1 : 2;
+    updateQuestion(
+      userQuestion,
+      question,
+      durationMs: 0,
+      bankId: bankId,
+      chapter: chapter,
+    );
+    userQuestions[index].status = userQuestion.status;
+    onStateChanged?.call();
+    notifyListeners();
   }
 
   void toggleCollection(BuildContext context, {VoidCallback? onStateChanged}) {

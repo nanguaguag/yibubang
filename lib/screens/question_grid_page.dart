@@ -140,11 +140,12 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
     }).toList();
     // 2️⃣ 根据 questionType 先过滤 questions
     questions = questions.where((q) {
+      if (questionType == 0) return true;
+      final selectedTypeName = questionTypes[questionType];
+      if (q.typeLabel == selectedTypeName) return true;
       final qType = int.tryParse(q.type ?? '');
-      if (questionType != 0 && qType != questionType) {
-        return false; // 过滤单选题、多选题
-      }
-      return true;
+      if (qType != null && qType == questionType) return true;
+      return false;
     }).toList();
     // 3️⃣ 构造两个 id 集合
     final Set<String> userIds = userQuestions.map((q) => q.id).toSet();
@@ -164,10 +165,10 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     // 获取设置数据并更新状态
     setState(() {
-      cutType = prefs.getInt('cutType') ?? 0;
-      questionType = prefs.getInt('questionType') ?? 0;
-      category = prefs.getInt('category') ?? 0;
-      mode = prefs.getInt('mode') ?? 0;
+      cutType = (prefs.getInt('cutType') ?? 0).clamp(0, cutTypes.length - 1);
+      questionType = (prefs.getInt('questionType') ?? 0).clamp(0, questionTypes.length - 1);
+      category = (prefs.getInt('category') ?? 0).clamp(0, categories.length - 1);
+      mode = (prefs.getInt('mode') ?? 0).clamp(0, modesList.length - 1);
     });
   }
 
