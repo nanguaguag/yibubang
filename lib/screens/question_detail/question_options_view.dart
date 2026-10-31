@@ -410,7 +410,9 @@ class _QuestionOptionsViewState extends State<QuestionOptionsView> {
               return RadioListTile<String>(
                 title: Text("$optKey. $optTitle"),
                 value: optKey,
+                // ignore: deprecated_member_use
                 groupValue: getLastAnswer(widget.userQuestion.userAnswer),
+                // ignore: deprecated_member_use
                 onChanged: (String? value) {
                   widget.userQuestion.userAnswer = changeLastAnswer(
                     widget.userQuestion.userAnswer,

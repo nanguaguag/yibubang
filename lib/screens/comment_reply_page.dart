@@ -12,12 +12,13 @@ class CommentReplyPage extends StatefulWidget {
   final Question question;
 
   const CommentReplyPage({
+    super.key,
     required this.comment,
     required this.question,
   });
 
   @override
-  _CommentReplyPageState createState() => _CommentReplyPageState();
+  State<CommentReplyPage> createState() => _CommentReplyPageState();
 }
 
 class _CommentReplyPageState extends State<CommentReplyPage> {

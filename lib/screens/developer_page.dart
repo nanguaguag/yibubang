@@ -166,7 +166,6 @@ class _DeveloperPageState extends State<DeveloperPage>
       'Activities',
       'YkbSyncQueue',
       'NoteSyncQueue',
-      'Cards',
       'IdentitySubject',
       'IdentityChapter',
       'QuestionBank',

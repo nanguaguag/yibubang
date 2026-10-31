@@ -116,41 +116,12 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  void showRestartDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      barrierDismissible: false, // 禁止点空白关闭
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text("完成"),
-          content: const Text("题目对错数量统计完成，建议重启应用以完成更新"),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-              child: const Text("OK"),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
   /// 检查应用更新，如果有新版本则弹窗提示
   Future<void> _checkForAppUpdate() async {
     final prefs = await SharedPreferences.getInstance();
     // 用户关闭「接受应用更新」时跳过更新弹窗
     if (!(prefs.getBool('accept_update') ?? true)) return;
     if (!mounted) return;
-
-    if (prefs.getBool('needToRebuildQuestionCount') ?? false) {
-      if (await rebuildQuestionCount()) {
-        prefs.setBool('needToRebuildQuestionCount', false);
-      }
-      if (!mounted) return;
-      showRestartDialog(context);
-    }
 
     final newUpdate = await AppUpdateService().checkUpdate();
     if (newUpdate != null && mounted) {

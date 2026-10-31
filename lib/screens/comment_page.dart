@@ -33,7 +33,7 @@ class CommentPage extends StatefulWidget {
   });
 
   @override
-  _CommentPageState createState() => _CommentPageState();
+  State<CommentPage> createState() => _CommentPageState();
 }
 
 class _CommentPageState extends State<CommentPage>
@@ -83,7 +83,9 @@ class _CommentPageState extends State<CommentPage>
       'page': page.toString(),
       'app_id': widget.question.appId,
     });
-    if (response['code'] == 309) {
+    final dynamic code = response['code'];
+    final bool isTokenExpired = code == 309 || code == '309';
+    if (isTokenExpired) {
       // 登录过期，重新登录
       clearUserInfo();
       return CommentData.fromJson({
@@ -91,7 +93,16 @@ class _CommentPageState extends State<CommentPage>
         'time_line': [],
       });
     }
-    return CommentData.fromJson(response['data']);
+    final dynamic rawData = response['data'];
+    if (rawData is Map<String, dynamic>) {
+      return CommentData.fromJson(rawData);
+    } else if (rawData is Map) {
+      return CommentData.fromJson(Map<String, dynamic>.from(rawData));
+    }
+    return CommentData.fromJson({
+      'hot': [],
+      'time_line': [],
+    });
   }
 
   List<Comment> _currentList() => _tab == 0 ? _latest : _hot;

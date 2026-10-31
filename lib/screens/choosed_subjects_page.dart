@@ -46,7 +46,7 @@ class ChoosedSubjectsPage extends StatefulWidget {
   const ChoosedSubjectsPage({super.key});
 
   @override
-  _ChoosedSubjectsPageState createState() => _ChoosedSubjectsPageState();
+  State<ChoosedSubjectsPage> createState() => _ChoosedSubjectsPageState();
 }
 
 /// 题库页面，展示用户现在正在刷的题库
@@ -108,16 +108,10 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
     final prefs = await SharedPreferences.getInstance();
     final activeBankId = prefs.getString('activeBankId') ?? 'dental_final';
     await prefs.setString('lastProgressBankId', activeBankId);
-    if (prefs.containsKey('lastSubjectId')) {
-      await prefs.setString('lastSubjectId', lastSubjectId);
-    }
-    if (prefs.containsKey('lastChapterId')) {
-      await prefs.setString('lastChapterId', lastChapterId);
-    }
+    await prefs.setString('lastSubjectId', lastSubjectId);
+    await prefs.setString('lastChapterId', lastChapterId);
     // 重置题目索引
-    if (prefs.containsKey('lastQIndex')) {
-      await prefs.setInt('lastQIndex', -1);
-    }
+    await prefs.setInt('lastQIndex', -1);
     debugPrint('保存上次做题记录: $lastSubjectId, $lastChapterId');
   }
 

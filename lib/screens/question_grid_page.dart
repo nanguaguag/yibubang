@@ -29,7 +29,7 @@ class QuestionGridPage extends StatefulWidget {
   });
 
   @override
-  _QuestionGridPageState createState() => _QuestionGridPageState();
+  State<QuestionGridPage> createState() => _QuestionGridPageState();
 }
 
 class _QuestionGridPageState extends State<QuestionGridPage> {
