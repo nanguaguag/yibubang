@@ -240,11 +240,22 @@ class UserDBHelper {
       version: 11,
       onConfigure: (db) async {
         // 用户库为高频写库：WAL 提升并发写性能，同时保证导出前关闭连接即可完整落盘。
-        await db.execute('PRAGMA journal_mode = WAL');
-        // 显式开启外键约束（Android 上 SQLite 默认关闭）：
-        // 否则 Notes.question_id -> Question.id 的 FOREIGN KEY 形同虚设。
-        // 写入侧已配合在 saveNote 中先补 Question 兜底行。
-        await db.execute('PRAGMA foreign_keys = ON');
+        // 注意：Android 原生 SQLiteDatabase.execSQL 禁止执行有返回值的 PRAGMA（如 journal_mode），
+        // 否则会抛出 "Queries can be performed using SQLiteDatabase query or rawQuery methods only."
+        // 必须统一使用 rawQuery 执行。
+        try {
+          await db.rawQuery('PRAGMA journal_mode = WAL');
+        } catch (e) {
+          debugPrint('[UserDBHelper] 配置 WAL 失败: $e');
+        }
+        try {
+          // 显式开启外键约束（Android 上 SQLite 默认关闭）：
+          // 否则 Notes.question_id -> Question.id 的 FOREIGN KEY 形同虚设。
+          // 写入侧已配合在 saveNote 中先补 Question 兜底行。
+          await db.rawQuery('PRAGMA foreign_keys = ON');
+        } catch (e) {
+          debugPrint('[UserDBHelper] 配置 foreign_keys 失败: $e');
+        }
       },
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,

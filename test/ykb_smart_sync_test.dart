@@ -148,4 +148,12 @@ void main() {
       },
     );
   }
+
+  test('onConfigure pragma configuration succeeds with rawQuery', () async {
+    // 验证 PRAGMA journal_mode 和 foreign_keys 在 rawQuery 下正常执行不抛异常
+    final wal = await db.rawQuery('PRAGMA journal_mode = WAL');
+    expect(wal, isNotEmpty);
+    final fk = await db.rawQuery('PRAGMA foreign_keys = ON');
+    expect(fk, isEmpty);
+  });
 }

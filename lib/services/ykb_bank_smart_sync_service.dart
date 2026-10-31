@@ -984,7 +984,9 @@ class YkbBankSmartSyncService {
     var updated = 0;
     var extra = 0;
     try {
-      await db.execute('PRAGMA busy_timeout = 5000');
+      try {
+        await db.rawQuery('PRAGMA busy_timeout = 5000');
+      } catch (_) {}
       await db.transaction((txn) async {
         for (final item in items) {
           final m = item.mapping;
