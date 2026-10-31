@@ -16,10 +16,34 @@ permissions:
 
 jobs:
   # -------------------------------------------------------------
+  # 0. 代码静态分析与自动化测试门禁
+  # -------------------------------------------------------------
+  verify:
+    name: Run Static Analysis & Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze Dart code
+        run: flutter analyze --no-fatal-infos
+
+      - name: Run unit & widget tests
+        run: flutter test
+
+  # -------------------------------------------------------------
   # 1. Android 构建
   # -------------------------------------------------------------
   build-android:
     name: Build Android APK
+    needs: [verify]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -76,6 +100,7 @@ jobs:
   # -------------------------------------------------------------
   build-windows:
     name: Build Windows App
+    needs: [verify]
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
@@ -120,6 +145,7 @@ jobs:
   # -------------------------------------------------------------
   build-macos:
     name: Build macOS App
+    needs: [verify]
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -159,6 +185,7 @@ jobs:
   # -------------------------------------------------------------
   build-linux:
     name: Build Linux App
+    needs: [verify]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
