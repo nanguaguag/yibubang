@@ -151,7 +151,10 @@ class DatabaseHelper {
 
   // Get records by condition
   Future<List<Map<String, dynamic>>> getByCondition(
-      String table, String condition, List<dynamic> args) async {
+    String table,
+    String condition,
+    List<dynamic> args,
+  ) async {
     final db = await database;
     return await db.query(table, where: condition, whereArgs: args);
   }
@@ -165,7 +168,10 @@ class DatabaseHelper {
   }
 
   Future<int> getCountByCondition(
-      String table, String condition, List<dynamic> args) async {
+    String table,
+    String condition,
+    List<dynamic> args,
+  ) async {
     final db = await database;
     // 使用rawQuery来查询符合条件的记录数
     final count = await db.rawQuery(
@@ -177,8 +183,12 @@ class DatabaseHelper {
   }
 
   // Update a record
-  Future<int> update(String table, Map<String, dynamic> data, String condition,
-      List<dynamic> args) async {
+  Future<int> update(
+    String table,
+    Map<String, dynamic> data,
+    String condition,
+    List<dynamic> args,
+  ) async {
     final db = await database;
     return await db.update(table, data, where: condition, whereArgs: args);
   }
@@ -227,21 +237,17 @@ class UserDBHelper {
     String path = join(await getDatabasesPath(), 'user_data.sqlite');
     return await openDatabase(
       path,
-      version: 10,
+      version: 11,
+      onConfigure: (db) async {
+        // 用户库为高频写库：WAL 提升并发写性能，同时保证导出前关闭连接即可完整落盘。
+        await db.execute('PRAGMA journal_mode = WAL');
+        // 显式开启外键约束（Android 上 SQLite 默认关闭）：
+        // 否则 Notes.question_id -> Question.id 的 FOREIGN KEY 形同虚设。
+        // 写入侧已配合在 saveNote 中先补 Question 兜底行。
+        await db.execute('PRAGMA foreign_keys = ON');
+      },
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
-      onOpen: (db) async {
-        try {
-          final noteCols = await _columns(db, 'NoteSyncQueue');
-          if (noteCols.isNotEmpty && !noteCols.contains('last_response')) {
-            await db.execute('ALTER TABLE NoteSyncQueue ADD COLUMN last_response TEXT');
-          }
-          final ykbCols = await _columns(db, 'YkbSyncQueue');
-          if (ykbCols.isNotEmpty && !ykbCols.contains('last_response')) {
-            await db.execute('ALTER TABLE YkbSyncQueue ADD COLUMN last_response TEXT');
-          }
-        } catch (_) {}
-      },
     );
   }
 
@@ -258,22 +264,15 @@ class UserDBHelper {
     }
   }
 
+  @visibleForTesting
+  Future<void> upgradeForTesting(Database db, int oldVersion) =>
+      _onUpgrade(db, oldVersion, 11);
+
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     await db.transaction((txn) async {
       if (oldVersion < 2) {
         await _migrateStatisticsTables(txn);
         await _createQuestionBankTable(txn);
-        if (oldVersion < 10) {
-        final noteCols = await _columns(txn, 'NoteSyncQueue');
-        if (!noteCols.contains('last_response')) {
-          await txn.execute('ALTER TABLE NoteSyncQueue ADD COLUMN last_response TEXT');
-        }
-        final ykbCols = await _columns(txn, 'YkbSyncQueue');
-        if (!ykbCols.contains('last_response')) {
-          await txn.execute('ALTER TABLE YkbSyncQueue ADD COLUMN last_response TEXT');
-        }
-      }
-      await _createMigrationStateTable(txn);
       }
       if (oldVersion < 3) {
         final columns = await _columns(txn, 'Activities');
@@ -381,15 +380,67 @@ class UserDBHelper {
       if (oldVersion < 10) {
         final noteCols = await _columns(txn, 'NoteSyncQueue');
         if (!noteCols.contains('last_response')) {
-          await txn.execute('ALTER TABLE NoteSyncQueue ADD COLUMN last_response TEXT');
+          await txn.execute(
+            'ALTER TABLE NoteSyncQueue ADD COLUMN last_response TEXT',
+          );
         }
         final ykbCols = await _columns(txn, 'YkbSyncQueue');
         if (!ykbCols.contains('last_response')) {
-          await txn.execute('ALTER TABLE YkbSyncQueue ADD COLUMN last_response TEXT');
+          await txn.execute(
+            'ALTER TABLE YkbSyncQueue ADD COLUMN last_response TEXT',
+          );
         }
+      }
+      if (oldVersion < 11) {
+        await _createBankSmartSyncTables(txn);
       }
       await _createMigrationStateTable(txn);
     });
+  }
+
+  /// 医考帮题库「智能增量同步」状态表（v11）。
+  ///
+  /// 只记录同步游标/哈希/远端章节到本地章节的映射，不改变题库内容表。
+  Future<void> _createBankSmartSyncTables(DatabaseExecutor db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS YkbBankSyncState (
+        bank_id TEXT PRIMARY KEY,
+        manifest_hash TEXT NOT NULL DEFAULT '',
+        manifest_fetched_at INTEGER NOT NULL DEFAULT 0,
+        manifest_json TEXT,
+        pending_json TEXT,
+        last_sync_at INTEGER NOT NULL DEFAULT 0,
+        last_success_at INTEGER NOT NULL DEFAULT 0,
+        next_retry_at INTEGER NOT NULL DEFAULT 0,
+        failure_count INTEGER NOT NULL DEFAULT 0,
+        last_error TEXT,
+        last_bank_hash TEXT NOT NULL DEFAULT '',
+        installed_at INTEGER NOT NULL DEFAULT 0
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS YkbBankChapterState (
+        bank_id TEXT NOT NULL,
+        remote_chapter_id TEXT NOT NULL,
+        remote_identity_id TEXT NOT NULL DEFAULT '',
+        remote_subject_id TEXT NOT NULL DEFAULT '',
+        remote_title TEXT NOT NULL DEFAULT '',
+        remote_count INTEGER NOT NULL DEFAULT 0,
+        remote_updated_at TEXT NOT NULL DEFAULT '',
+        remote_hash TEXT NOT NULL DEFAULT '',
+        local_chapter_id TEXT NOT NULL DEFAULT '',
+        local_subject_id TEXT NOT NULL DEFAULT '',
+        local_title TEXT NOT NULL DEFAULT '',
+        match_method TEXT NOT NULL DEFAULT '',
+        extra_count INTEGER NOT NULL DEFAULT 0,
+        last_synced_at INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (bank_id, remote_chapter_id)
+      )
+    ''');
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_ykb_bank_chapter_state_local
+        ON YkbBankChapterState(bank_id, local_chapter_id)
+    ''');
   }
 
   Future<List<String>> _columns(DatabaseExecutor db, String table) async {
@@ -437,7 +488,8 @@ class UserDBHelper {
     final subjectColumns = await _columns(db, 'IdentitySubject');
     if (!subjectColumns.contains('bank_id')) {
       await db.execute(
-          'ALTER TABLE IdentitySubject RENAME TO IdentitySubject_legacy');
+        'ALTER TABLE IdentitySubject RENAME TO IdentitySubject_legacy',
+      );
       await db.execute('''
         CREATE TABLE IdentitySubject (
           bank_id TEXT NOT NULL,
@@ -466,7 +518,8 @@ class UserDBHelper {
     final chapterColumns = await _columns(db, 'IdentityChapter');
     if (!chapterColumns.contains('bank_id')) {
       await db.execute(
-          'ALTER TABLE IdentityChapter RENAME TO IdentityChapter_legacy');
+        'ALTER TABLE IdentityChapter RENAME TO IdentityChapter_legacy',
+      );
       await db.execute('''
         CREATE TABLE IdentityChapter (
           bank_id TEXT NOT NULL,
@@ -634,6 +687,7 @@ class UserDBHelper {
     ''');
 
     await _createQuestionBankTable(db);
+    await _createBankSmartSyncTables(db);
     await _createMigrationStateTable(db);
 
     // 给 Question 表按 chapter_id 建表
@@ -677,7 +731,10 @@ class UserDBHelper {
 
   // Get records by condition
   Future<List<Map<String, dynamic>>> getByCondition(
-      String table, String condition, List<dynamic> args) async {
+    String table,
+    String condition,
+    List<dynamic> args,
+  ) async {
     final db = await database;
     return await db.query(table, where: condition, whereArgs: args);
   }
@@ -691,7 +748,10 @@ class UserDBHelper {
   }
 
   Future<int> getCountByCondition(
-      String table, String condition, List<dynamic> args) async {
+    String table,
+    String condition,
+    List<dynamic> args,
+  ) async {
     final db = await database;
     // 使用rawQuery来查询符合条件的记录数
     final count = await db.rawQuery(
@@ -703,8 +763,12 @@ class UserDBHelper {
   }
 
   // Update a record
-  Future<int> update(String table, Map<String, dynamic> data, String condition,
-      List<dynamic> args) async {
+  Future<int> update(
+    String table,
+    Map<String, dynamic> data,
+    String condition,
+    List<dynamic> args,
+  ) async {
     final db = await database;
     return await db.update(table, data, where: condition, whereArgs: args);
   }

@@ -92,7 +92,16 @@ Future<void> initSettings() async {
     await prefs.setBool('sync_redo_to_ykb', true); // 章节重做同步到医考帮默认开启
   }
   if (!prefs.containsKey('sync_ykb_progress_enabled')) {
-    await prefs.setBool('sync_ykb_progress_enabled', true); // 自动拉取医考帮做题记录默认开启
+    await prefs.setBool('sync_ykb_progress_enabled', true); // 拉取医考帮做题记录默认开启
+  }
+  if (!prefs.containsKey('sync_ykb_silent')) {
+    await prefs.setBool('sync_ykb_silent', true); // 保持启动后自动拉取的默认行为
+  }
+  if (!prefs.containsKey('sync_ykb_jitter_enabled')) {
+    await prefs.setBool('sync_ykb_jitter_enabled', false); // 模拟延迟抖动默认关闭
+  }
+  if (!prefs.containsKey('sync_ykb_pacing_enabled')) {
+    await prefs.setBool('sync_ykb_pacing_enabled', false); // 模拟刷题节奏默认关闭
   }
   await QuestionSectionConfig.loadConfig();
 }

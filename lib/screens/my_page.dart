@@ -4,8 +4,11 @@ import 'package:yibubang/db/settings.dart';
 
 import '../common/adaptive_route.dart';
 import '../common/request.dart';
+import '../repositories/question_bank_repository.dart';
 import '../repositories/question_search_repository.dart';
 import '../services/note_service.dart';
+import '../services/ykb_bank_smart_sync_service.dart';
+import '../services/ykb_bank_sync_service.dart';
 import '../services/ykb_pull_service.dart';
 import '../services/ykb_sync_service.dart';
 import '../widgets/common/app_network_image.dart';
@@ -418,7 +421,10 @@ class _LoginPageState extends State<LoginPage> {
           // 登录成功后自动拉起离线同步队列，并拉取云端做题记录
           YkbSyncService.instance.processQueue();
           NoteService.instance.processQueue();
+          // 登录成功后后台拉取一次医考帮做题记录
           YkbPullService.instance.pullForActiveBank(force: true);
+          // 登录后后台同步一批题库增量
+          YkbBankSmartSyncService.instance.run();
 
           if (!mounted) return;
           widget.onLoggedIn?.call();
@@ -631,6 +637,45 @@ class _ProfilePageState extends State<ProfilePage> {
     }
   }
 
+  bool _pullingYkb = false;
+
+  /// 拉取医考帮服务端上的做题进度（例如手机官方 App 上做的题）合并到本地。
+  Future<void> _pullYkbProgress() async {
+    if (_pullingYkb) return;
+    setState(() => _pullingYkb = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (!(prefs.getBool('sync_ykb_progress_enabled') ?? true)) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('「拉取医考帮做题记录」已在设置中关闭，请先开启')),
+        );
+        return;
+      }
+      final bank = await QuestionBankRepository().find(
+        await QuestionBankRepository().activeBankId(),
+      );
+      if (bank == null) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('当前题库未初始化，请先在题库管理中启用题库')),
+        );
+        return;
+      }
+      final result = await YkbPullService.pullForBank(
+        bank,
+        pacing: SyncPacing(
+          jitterEnabled: prefs.getBool('sync_ykb_jitter_enabled') ?? false,
+          pacingEnabled: prefs.getBool('sync_ykb_pacing_enabled') ?? false,
+        ),
+      );
+      messenger.showSnackBar(SnackBar(content: Text(result.summary)));
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('拉取失败：$e')));
+    } finally {
+      if (mounted) setState(() => _pullingYkb = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -645,6 +690,8 @@ class _ProfilePageState extends State<ProfilePage> {
           _buildHeaderCard(context),
           const SizedBox(height: 16),
           _buildInfoCard(context),
+          const SizedBox(height: 16),
+          _buildYkbSyncCard(context),
           const SizedBox(height: 24),
           _buildLogoutButton(context),
         ],
@@ -782,6 +829,42 @@ class _ProfilePageState extends State<ProfilePage> {
         foregroundColor: colorScheme.error,
         backgroundColor: colorScheme.errorContainer,
         minimumSize: const Size.fromHeight(52),
+      ),
+    );
+  }
+
+  Widget _buildYkbSyncCard(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('医考帮进度同步', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 4),
+            Text(
+              '拉取医考帮官方 App 上的做题记录（仅补充本地未做的题，'
+              '不影响本地已有进度）',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 12),
+            FilledButton.tonalIcon(
+              onPressed: _pullingYkb ? null : _pullYkbProgress,
+              icon: _pullingYkb
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.cloud_download_outlined),
+              label: Text(_pullingYkb ? '拉取中…' : '拉取做题进度'),
+            ),
+          ],
+        ),
       ),
     );
   }
