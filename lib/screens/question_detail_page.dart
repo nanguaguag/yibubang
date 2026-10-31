@@ -193,6 +193,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     }
 
     for (final ShortcutAction action in ShortcutAction.values) {
+      if (action == ShortcutAction.toggleFullscreen) continue;
       if (isRepeat && !action.allowsRepeat) continue;
       for (final KeyBinding binding in ShortcutConfig.bindingsFor(action)) {
         if (!binding.matches(event.logicalKey)) continue;
@@ -266,6 +267,8 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
 
   void _runShortcutAction(ShortcutAction action) {
     switch (action) {
+      case ShortcutAction.toggleFullscreen:
+        break; // 由应用级快捷键处理。
       case ShortcutAction.nextQuestion:
         if (_controller.currentPage < _controller.questions.length - 1) {
           _controller.nextPage();

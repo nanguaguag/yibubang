@@ -159,6 +159,12 @@ class KeyBinding {
 /// 仅用户明确要求的动作提供默认键位，其余动作留空，由用户在设置中自行绑定。
 /// 每个动作支持绑定多个按键；同一按键只会绑定到一个动作。
 enum ShortcutAction {
+  toggleFullscreen(
+    id: 'toggle_fullscreen',
+    label: '全屏 / 退出全屏',
+    description: '在应用内切换全屏（Windows），默认 F11',
+    defaultBindings: <KeyBinding>[KeyBinding(LogicalKeyboardKey.f11)],
+  ),
   nextQuestion(
     id: 'next_question',
     label: '下一题',

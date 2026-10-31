@@ -18,6 +18,9 @@ class YkbPullResult {
   final int fetched;
   final int applied;
   final int skipped;
+  final int alreadyAnswered;
+  final int notInBank;
+  final int invalidRecords;
   final String? error;
   final int elapsedMs;
 
@@ -26,6 +29,9 @@ class YkbPullResult {
     this.fetched = 0,
     this.applied = 0,
     this.skipped = 0,
+    this.alreadyAnswered = 0,
+    this.notInBank = 0,
+    this.invalidRecords = 0,
     this.error,
     this.elapsedMs = 0,
   });
@@ -33,8 +39,12 @@ class YkbPullResult {
   bool get isSuccess => error == null;
 
   String get summary {
-    if (error != null) return '拉取失败：$error';
-    return '检查 $identityCount 个身份，远端 $fetched 条，合并 $applied 条，跳过 $skipped 条';
+    final counts =
+        '远端 $fetched 条，新增合并 $applied 条；'
+        '跳过 $skipped 条（本地已作答 $alreadyAnswered、当前题库无此题 $notInBank、记录不完整 $invalidRecords）。'
+        '本地答案优先保留。';
+    if (error != null) return '拉取未全部完成：$error。$counts';
+    return '检查 $identityCount 个身份，$counts';
   }
 }
 
@@ -158,6 +168,9 @@ class YkbPullService {
     var fetched = 0;
     var applied = 0;
     var skipped = 0;
+    var alreadyAnswered = 0;
+    var notInBank = 0;
+    var invalidRecords = 0;
     var tokenExpired = false;
     String? requestError;
 
@@ -200,13 +213,21 @@ class YkbPullService {
       );
 
       for (final raw in list) {
-        if (raw is! Map) continue;
-        final questionId = raw['question_id']?.toString() ?? '';
-        if (questionId.isEmpty) {
+        if (raw is! Map) {
           skipped++;
+          invalidRecords++;
           continue;
         }
+        final questionId = raw['question_id']?.toString() ?? '';
         final answer = raw['answer']?.toString() ?? '';
+        final right = raw['is_right']?.toString() ?? '';
+        if (questionId.isEmpty ||
+            answer.isEmpty ||
+            (right != '0' && right != '1')) {
+          skipped++;
+          invalidRecords++;
+          continue;
+        }
         final isRight = raw['is_right']?.toString() == '1' ? 1 : 2;
 
         final bankQuestionRows = await bankDb.query(
@@ -219,6 +240,7 @@ class YkbPullService {
         if (bankQuestionRows.isEmpty) {
           // 账号里可能包含其他题库的记录，本地题库没有对应题目时跳过。
           skipped++;
+          notInBank++;
           continue;
         }
         final chapterId =
@@ -252,6 +274,7 @@ class YkbPullService {
           if (localStatus != 0) {
             // 本地已作答优先，避免把本地更新的答案覆盖成云端旧记录。
             skipped++;
+            alreadyAnswered++;
             continue;
           }
           await userDb.update(
@@ -308,6 +331,9 @@ class YkbPullService {
       fetched: fetched,
       applied: applied,
       skipped: skipped,
+      alreadyAnswered: alreadyAnswered,
+      notInBank: notInBank,
+      invalidRecords: invalidRecords,
       error: tokenExpired ? '登录已过期，请重新登录' : requestError,
       elapsedMs: sw.elapsedMilliseconds,
     );
