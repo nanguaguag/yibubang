@@ -5,7 +5,7 @@ import '../common/shortcut_config.dart';
 import '../widgets/common/info_card.dart';
 import '../widgets/common/styled_tile.dart';
 
-/// 刷题快捷键设置页
+/// 应用与刷题快捷键设置页
 ///
 /// 集中配置选项键位模式（数字 / 字母）以及刷题页各按钮的快捷键。
 class ShortcutSettingsPage extends StatefulWidget {
@@ -248,8 +248,9 @@ class _ShortcutSettingsPageState extends State<ShortcutSettingsPage> {
             padding: const EdgeInsets.symmetric(horizontal: 8),
             child: Text(
               '← / → 切换上一题 / 下一题；PgUp / PgDn 在当前题目内上下翻页；'
-              '↑ / ↓ 连续滚动（可长按）。快捷键仅在刷题页面生效，'
-              '输入笔记、评论时自动让位给输入框。选项键优先于功能快捷键。',
+              '↑ / ↓ 连续滚动（可长按）。F11 在应用内切换全屏，可在上方改键。'
+              '其余快捷键仅在刷题页面生效，输入笔记、评论时让位给输入框。'
+              '选项键优先于刷题功能快捷键。',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: colorScheme.onSurfaceVariant,
               ),
@@ -410,6 +411,7 @@ class _ShortcutSettingsPageState extends State<ShortcutSettingsPage> {
 
   static IconData _iconFor(ShortcutAction action) {
     return switch (action) {
+      ShortcutAction.toggleFullscreen => Icons.fullscreen,
       ShortcutAction.nextQuestion => Icons.keyboard_arrow_right,
       ShortcutAction.previousQuestion => Icons.keyboard_arrow_left,
       ShortcutAction.submitAnswer => Icons.send_rounded,
