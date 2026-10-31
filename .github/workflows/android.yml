@@ -26,6 +26,12 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Analyze Dart code
+        run: flutter analyze --no-fatal-infos
+
+      - name: Run tests
+        run: flutter test
+
       - name: Build release APK
         run: flutter build apk --release --android-skip-build-dependency-validation
 
