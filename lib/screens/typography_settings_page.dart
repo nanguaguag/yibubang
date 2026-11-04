@@ -32,7 +32,7 @@ class TypographySettingsPage extends StatelessWidget {
             const Text('题目与答案', style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
             const Text(
-              '适用于题干、选项、答案和解析。导航、统计、笔记及评论保持原布局。'
+              '适用于题干、选项、答案、难度统计、来源和解析。导航、笔记及评论保持原布局。'
               '区域居中时，文字仍可保持左对齐。窄屏会自动缩小内容宽度和留白。',
             ),
             SwitchListTile(
