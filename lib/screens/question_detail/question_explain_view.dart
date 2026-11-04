@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../../models/question.dart';
 import '../../models/question_section_config.dart';
+import '../../widgets/reading_layout.dart';
 import '../comment_page.dart';
 import 'analysis_text_with_images.dart';
 import 'question_detail_controller.dart';
@@ -56,46 +57,50 @@ class QuestionExplainView extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       if (question.isSubjective)
-                        Row(
-                          children: [
-                            const Text(
-                              '自评：',
-                              style: TextStyle(fontSize: 14),
-                            ),
-                            Text(
-                              userQuestion.status == 1
-                                  ? '已掌握 (正确)'
-                                  : (userQuestion.status == 2
-                                      ? '未掌握 (待复习)'
-                                      : (userAnswer.isNotEmpty ? userAnswer : '背题浏览')),
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
-                                color: userQuestion.status == 1
-                                    ? Colors.green
-                                    : (userQuestion.status == 2 ? Colors.red : Colors.grey),
+                        ReadingContent(
+                          child: Row(
+                            children: [
+                              const Text(
+                                '自评：',
+                                style: TextStyle(fontSize: 14),
                               ),
-                            ),
-                          ],
+                              Text(
+                                userQuestion.status == 1
+                                    ? '已掌握 (正确)'
+                                    : (userQuestion.status == 2
+                                        ? '未掌握 (待复习)'
+                                        : (userAnswer.isNotEmpty ? userAnswer : '背题浏览')),
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  color: userQuestion.status == 1
+                                      ? Colors.green
+                                      : (userQuestion.status == 2 ? Colors.red : Colors.grey),
+                                ),
+                              ),
+                            ],
+                          ),
                         )
                       else
-                        Row(
-                          children: [
-                            Text(
-                              '答案：正确答案 $answer, 你的答案 ',
-                              style: const TextStyle(fontSize: 14),
-                            ),
-                            Text(
-                              userAnswer,
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
-                                color: userQuestion.status == 1
-                                    ? Colors.green
-                                    : Colors.red,
+                        ReadingContent(
+                          child: Row(
+                            children: [
+                              Text(
+                                '答案：正确答案 $answer, 你的答案 ',
+                                style: const TextStyle(fontSize: 14),
                               ),
-                            ),
-                          ],
+                              Text(
+                                userAnswer,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  color: userQuestion.status == 1
+                                      ? Colors.green
+                                      : Colors.red,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       const SizedBox(height: 6),
                       QuestionStatView(
@@ -178,18 +183,25 @@ class QuestionExplainView extends StatelessWidget {
             shrinkWrap: true,
             physics: const ClampingScrollPhysics(),
             children: [
-              QuestionHeaderView(
-                question: question,
-                index: index,
-                totalCount: controller.questions.length,
-              ),
-              const SizedBox(height: 12),
-              QuestionOptionsView(
-                question: question,
-                userQuestion: userQuestion,
-                index: index,
-                controller: controller,
-                onStateChanged: onStateChanged,
+              ReadingContent(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    QuestionHeaderView(
+                      question: question,
+                      index: index,
+                      totalCount: controller.questions.length,
+                    ),
+                    const SizedBox(height: 12),
+                    QuestionOptionsView(
+                      question: question,
+                      userQuestion: userQuestion,
+                      index: index,
+                      controller: controller,
+                      onStateChanged: onStateChanged,
+                    ),
+                  ],
+                ),
               ),
               const SizedBox(height: 10),
               ...sectionWidgets,
@@ -212,9 +224,10 @@ class QuestionExplainView extends StatelessWidget {
       Clipboard.setData(ClipboardData(text: analysisText));
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
+    return ReadingContent(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
         const SizedBox(height: 10),
         Row(
           crossAxisAlignment: CrossAxisAlignment.center,
@@ -262,7 +275,8 @@ class QuestionExplainView extends StatelessWidget {
         ),
         const SizedBox(height: 10),
         const Divider(color: Color(0x22888888)),
-      ],
+        ],
+      ),
     );
   }
 

@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../common/app_strings.dart';
 import '../common/shortcut_config.dart';
+import '../widgets/navigation_shortcuts.dart';
 import '../models/chapter.dart';
 import '../models/question.dart';
 import 'question_detail/chapter_cross_indicator.dart';
@@ -611,13 +612,11 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
       }
     }
 
-    for (final ShortcutAction action in ShortcutAction.values) {
-      if (action == ShortcutAction.toggleFullscreen) continue;
+    for (final ShortcutAction action in ShortcutConfig.actionsByPriority) {
       if (isRepeat && !action.allowsRepeat) continue;
       for (final KeyBinding binding in ShortcutConfig.bindingsFor(action)) {
         if (!binding.matches(event.logicalKey)) continue;
-        _runShortcutAction(action);
-        return KeyEventResult.handled;
+        if (_runShortcutAction(action)) return KeyEventResult.handled;
       }
     }
     return KeyEventResult.ignored;
@@ -686,39 +685,43 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     return null;
   }
 
-  void _runShortcutAction(ShortcutAction action) {
+  bool _runShortcutAction(ShortcutAction action) {
     switch (action) {
+      case ShortcutAction.goBack:
       case ShortcutAction.toggleFullscreen:
-        break; // 由应用级快捷键处理。
+        return runGlobalShortcut(context, action);
+      case ShortcutAction.homeCourses:
+      case ShortcutAction.homeStatistics:
+      case ShortcutAction.homeMyPage:
+        return false; // 首页切换仅在首页生效。
       case ShortcutAction.nextQuestion:
         if (_controller.currentPage < _questions.length - 1) {
           _controller.nextPage();
+          return true;
         } else if (_nextChapter != null) {
           _switchToChapter(_nextChapter!, toFirstQuestion: true);
+          return true;
         }
-        break;
+        return false;
       case ShortcutAction.previousQuestion:
         if (_controller.currentPage > 0) {
           _controller.previousPage();
+          return true;
         } else if (_prevChapter != null) {
           _switchToChapter(_prevChapter!, toFirstQuestion: false);
+          return true;
         }
-        break;
+        return false;
       case ShortcutAction.submitAnswer:
-        _controller.submitCurrentAnswer(context);
-        break;
+        return _controller.submitCurrentAnswer(context);
       case ShortcutAction.scrollPageDown:
-        _controller.scrollCurrentPage(1);
-        break;
+        return _controller.scrollCurrentPage(1);
       case ShortcutAction.scrollPageUp:
-        _controller.scrollCurrentPage(-1);
-        break;
+        return _controller.scrollCurrentPage(-1);
       case ShortcutAction.scrollLineDown:
-        _controller.scrollCurrentPage(1, byPage: false);
-        break;
+        return _controller.scrollCurrentPage(1, byPage: false);
       case ShortcutAction.scrollLineUp:
-        _controller.scrollCurrentPage(-1, byPage: false);
-        break;
+        return _controller.scrollCurrentPage(-1, byPage: false);
       case ShortcutAction.toggleCut:
         _controller.toggleCut(context);
         break;
@@ -729,12 +732,16 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
         _controller.copyQuestion(context);
         break;
       case ShortcutAction.toggleCutContent:
+        final userQuestion = _controller.userQuestions[_controller.currentPage];
+        if (!userQuestion.isCut && userQuestion.status != 3) return false;
         _controller.toggleCutContentReveal(_controller.currentPage);
         break;
       case ShortcutAction.submitTest:
+        if (_controller.mode != 2) return false;
         _controller.submitTest(context);
         break;
     }
+    return true;
   }
 
   /// tooltip 中附带当前快捷键，便于发现键位。

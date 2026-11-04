@@ -154,11 +154,44 @@ class KeyBinding {
   int get hashCode => Object.hash(key, ctrl, alt, shift, meta);
 }
 
-/// 刷题页可绑定快捷键的动作。
+/// 应用导航与刷题页可绑定快捷键的动作。
 ///
 /// 仅用户明确要求的动作提供默认键位，其余动作留空，由用户在设置中自行绑定。
-/// 每个动作支持绑定多个按键；同一按键只会绑定到一个动作。
+/// 每个动作支持绑定多个按键；同一按键按优先级尝试可用动作。
 enum ShortcutAction {
+  goBack(
+    id: 'go_back',
+    label: '返回',
+    description: '返回上一页，默认 Esc',
+    defaultBindings: <KeyBinding>[KeyBinding(LogicalKeyboardKey.escape)],
+  ),
+  homeCourses(
+    id: 'home_courses',
+    label: '我的课程',
+    description: '主页面切换到我的课程，默认 1',
+    defaultBindings: <KeyBinding>[
+      KeyBinding(LogicalKeyboardKey.digit1),
+      KeyBinding(LogicalKeyboardKey.numpad1),
+    ],
+  ),
+  homeStatistics(
+    id: 'home_statistics',
+    label: '统计',
+    description: '主页面切换到统计，默认 2',
+    defaultBindings: <KeyBinding>[
+      KeyBinding(LogicalKeyboardKey.digit2),
+      KeyBinding(LogicalKeyboardKey.numpad2),
+    ],
+  ),
+  homeMyPage(
+    id: 'home_my_page',
+    label: '我的',
+    description: '主页面切换到我的，默认 3',
+    defaultBindings: <KeyBinding>[
+      KeyBinding(LogicalKeyboardKey.digit3),
+      KeyBinding(LogicalKeyboardKey.numpad3),
+    ],
+  ),
   toggleFullscreen(
     id: 'toggle_fullscreen',
     label: '全屏 / 退出全屏',
@@ -169,7 +202,10 @@ enum ShortcutAction {
     id: 'next_question',
     label: '下一题',
     description: '切换到下一道题目',
-    defaultBindings: <KeyBinding>[KeyBinding(LogicalKeyboardKey.arrowRight)],
+    defaultBindings: <KeyBinding>[
+      KeyBinding(LogicalKeyboardKey.arrowRight),
+      KeyBinding(LogicalKeyboardKey.space),
+    ],
   ),
   previousQuestion(
     id: 'previous_question',
@@ -180,8 +216,11 @@ enum ShortcutAction {
   submitAnswer(
     id: 'submit_answer',
     label: '提交答案',
-    description: '提交多选题答案（单选题按选项键后自动判题）',
-    defaultBindings: <KeyBinding>[KeyBinding(LogicalKeyboardKey.enter)],
+    description: 'Enter / Space 提交多选题；Space 在无需提交时切换下一题',
+    defaultBindings: <KeyBinding>[
+      KeyBinding(LogicalKeyboardKey.enter),
+      KeyBinding(LogicalKeyboardKey.space),
+    ],
   ),
   scrollPageDown(
     id: 'scroll_page_down',
@@ -249,6 +288,29 @@ class ShortcutConfig {
 
   static const String _bindingsPrefsKey = 'shortcut_bindings_v1';
   static const String _optionModePrefsKey = 'shortcut_option_key_mode';
+  static const String _priorityPrefsKey = 'shortcut_action_priority_v1';
+  static final List<ShortcutAction> _defaultPriority = [
+    ShortcutAction.submitAnswer,
+    ...ShortcutAction.values.where((a) => a != ShortcutAction.submitAnswer),
+  ];
+  static List<ShortcutAction> _priority = List.of(_defaultPriority);
+
+  static List<ShortcutAction> get actionsByPriority =>
+      List.unmodifiable(_priority);
+
+  static Future<void> moveAction(ShortcutAction action, int offset) async {
+    final oldIndex = _priority.indexOf(action);
+    final newIndex = oldIndex + offset;
+    if (oldIndex < 0 || newIndex < 0 || newIndex >= _priority.length) return;
+    _priority.removeAt(oldIndex);
+    _priority.insert(newIndex, action);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(
+      _priorityPrefsKey,
+      _priority.map((a) => a.id).toList(),
+    );
+  }
+
   static const String _pageScrollPercentPrefsKey =
       'shortcut_page_scroll_percent';
   static const String _lineScrollPixelsPrefsKey = 'shortcut_line_scroll_pixels';
@@ -309,6 +371,24 @@ class ShortcutConfig {
       }
     }
 
+    if (prefs.getBool('shortcut_shared_keys_v1') != true &&
+        !_overrides.containsKey(ShortcutAction.submitAnswer) &&
+        (_overrides[ShortcutAction.nextQuestion]?.contains(
+              const KeyBinding(LogicalKeyboardKey.space),
+            ) ??
+            false)) {
+      _overrides[ShortcutAction.submitAnswer] = [
+        const KeyBinding(LogicalKeyboardKey.enter),
+      ];
+    }
+    await _persist();
+    final savedPriority = prefs.getStringList(_priorityPrefsKey) ?? [];
+    _priority = <ShortcutAction>{
+      for (final id in savedPriority)
+        ...ShortcutAction.values.where((a) => a.id == id),
+    }.toList();
+    _priority.addAll(_defaultPriority.where((a) => !_priority.contains(a)));
+
     _loaded = true;
   }
 
@@ -353,7 +433,7 @@ class ShortcutConfig {
     KeyBinding binding, {
     ShortcutAction? except,
   }) {
-    return ShortcutAction.values.where((ShortcutAction action) {
+    return actionsByPriority.where((ShortcutAction action) {
       if (action == except) return false;
       return bindingsFor(action).contains(binding);
     }).toList();
@@ -361,17 +441,11 @@ class ShortcutConfig {
 
   /// 为 [action] 新增 [binding]。
   ///
-  /// 同一键位在其它动作上的绑定会被自动移除，避免一次按键触发多个动作。
+  /// 保留其它动作上的同键绑定，由触发时的优先级决定执行哪个动作。
   static Future<void> assignBinding(
     ShortcutAction action,
     KeyBinding binding,
   ) async {
-    for (final ShortcutAction other in ShortcutAction.values) {
-      if (other == action) continue;
-      final List<KeyBinding> otherBindings = bindingsFor(other);
-      if (!otherBindings.contains(binding)) continue;
-      _overrides[other] = List<KeyBinding>.of(otherBindings)..remove(binding);
-    }
     final List<KeyBinding> current = List<KeyBinding>.of(bindingsFor(action));
     if (!current.contains(binding)) current.add(binding);
     _overrides[action] = current;
@@ -398,6 +472,9 @@ class ShortcutConfig {
   /// 恢复全部默认键位。
   static Future<void> resetAll() async {
     _overrides.clear();
+    _priority = [..._defaultPriority];
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_priorityPrefsKey);
     await _persist();
   }
 
@@ -451,6 +528,7 @@ class ShortcutConfig {
             .toList(),
     };
     await prefs.setString(_bindingsPrefsKey, jsonEncode(data));
+    await prefs.setBool('shortcut_shared_keys_v1', true);
   }
 
   // ------------------------------------------------------------------

@@ -41,7 +41,7 @@ class QuestionHeaderView extends StatelessWidget {
     final publicTitle = question.publicTitle;
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Row(
           children: [

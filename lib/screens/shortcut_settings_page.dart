@@ -83,7 +83,7 @@ class _ShortcutSettingsPageState extends State<ShortcutSettingsPage> {
 
     final String conflictText = conflicts.isEmpty
         ? ''
-        : '，已从「${conflicts.map((ShortcutAction a) => a.label).join('、')}」移除';
+        : '，与「${conflicts.map((ShortcutAction a) => a.label).join('、')}」共用，按优先级执行';
     _showMessage(
       '「${action.label}」新增 ${binding.label}$conflictText${_optionKeyWarning(binding)}',
     );
@@ -107,7 +107,7 @@ class _ShortcutSettingsPageState extends State<ShortcutSettingsPage> {
 
     final String conflictText = conflicts.isEmpty
         ? ''
-        : '，已从「${conflicts.map((ShortcutAction a) => a.label).join('、')}」移除';
+        : '，与「${conflicts.map((ShortcutAction a) => a.label).join('、')}」共用，按优先级执行';
     _showMessage(
       '「${action.label}」按键 ${oldBinding.label} 已改为 ${binding.label}'
       '$conflictText${_optionKeyWarning(binding)}',
@@ -140,7 +140,7 @@ class _ShortcutSettingsPageState extends State<ShortcutSettingsPage> {
       builder: (context) => AlertDialog(
         title: const Text('恢复默认快捷键'),
         content: const Text(
-          '将清除所有自定义键位，恢复默认按键映射'
+          '将清除所有自定义键位和优先级，恢复默认按键映射'
           '（选项键位模式与滚动步长不受影响）。确定继续吗？',
         ),
         actions: [
@@ -172,7 +172,7 @@ class _ShortcutSettingsPageState extends State<ShortcutSettingsPage> {
 
   @override
   Widget build(BuildContext context) {
-    Theme.of(context);
+    final ThemeData theme = Theme.of(context);
 
     return Scaffold(
       appBar: AppBar(title: const Text('快捷键')),
@@ -222,7 +222,18 @@ class _ShortcutSettingsPageState extends State<ShortcutSettingsPage> {
           _sectionTitle('功能快捷键'),
           InfoCard(
             children: [
-              for (final ShortcutAction action in ShortcutAction.values)
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  '默认 Space：多选题先提交，判题后下一题；未作答时会提示选择答案。'
+                  '同一个键可以绑定多个动作，由上到下尝试，执行一个后停止。'
+                  '想直接浏览时，可将「下一题」移到「提交答案」前面。'
+                  '不同页面仅响应当前页面可用的动作，选项键优先。',
+                  style: theme.textTheme.bodySmall,
+                ),
+              ),
+              for (final ShortcutAction action
+                  in ShortcutConfig.actionsByPriority)
                 _buildActionTile(action),
               IconTile(
                 icon: Icons.restart_alt,
@@ -236,7 +247,8 @@ class _ShortcutSettingsPageState extends State<ShortcutSettingsPage> {
             message:
                 '← / → 切换上一题 / 下一题；PgUp / PgDn 在当前题目内上下翻页；'
                 '↑ / ↓ 连续滚动（可长按）。F11 在应用内切换全屏，可在上方改键。'
-                '其余快捷键仅在刷题页面生效，输入笔记、评论时让位给输入框。'
+                'Esc 返回；首页 1 / 2 / 3 切换我的课程、统计、我的。'
+                '刷题快捷键在输入笔记、评论时让位给输入框。'
                 '选项键优先于刷题功能快捷键。',
           ),
           const SizedBox(height: 14),
@@ -291,6 +303,8 @@ class _ShortcutSettingsPageState extends State<ShortcutSettingsPage> {
   Widget _buildActionTile(ShortcutAction action) {
     final ThemeData theme = Theme.of(context);
     final List<KeyBinding> bindings = ShortcutConfig.bindingsFor(action);
+    final priority = ShortcutConfig.actionsByPriority;
+    final position = priority.indexOf(action);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
@@ -315,6 +329,20 @@ class _ShortcutSettingsPageState extends State<ShortcutSettingsPage> {
                     ),
                   ],
                 ),
+              ),
+              IconButton(
+                tooltip: '提高优先级',
+                onPressed: position == 0 ? null : () => _moveAction(action, -1),
+                icon: const Icon(Icons.arrow_upward, size: 18),
+                visualDensity: VisualDensity.compact,
+              ),
+              IconButton(
+                tooltip: '降低优先级',
+                onPressed: position == priority.length - 1
+                    ? null
+                    : () => _moveAction(action, 1),
+                icon: const Icon(Icons.arrow_downward, size: 18),
+                visualDensity: VisualDensity.compact,
               ),
               TextButton.icon(
                 onPressed: () => _addBinding(action),
@@ -356,6 +384,11 @@ class _ShortcutSettingsPageState extends State<ShortcutSettingsPage> {
     );
   }
 
+  Future<void> _moveAction(ShortcutAction action, int offset) async {
+    await ShortcutConfig.moveAction(action, offset);
+    if (mounted) setState(() {});
+  }
+
   Widget _buildScrollStepTile({
     required IconData icon,
     required String label,
@@ -395,6 +428,10 @@ class _ShortcutSettingsPageState extends State<ShortcutSettingsPage> {
 
   static IconData _iconFor(ShortcutAction action) {
     return switch (action) {
+      ShortcutAction.goBack => Icons.arrow_back,
+      ShortcutAction.homeCourses => Icons.book_outlined,
+      ShortcutAction.homeStatistics => Icons.insights,
+      ShortcutAction.homeMyPage => Icons.person_outline,
       ShortcutAction.toggleFullscreen => Icons.fullscreen,
       ShortcutAction.nextQuestion => Icons.keyboard_arrow_right,
       ShortcutAction.previousQuestion => Icons.keyboard_arrow_left,
