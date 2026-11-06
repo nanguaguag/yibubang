@@ -44,62 +44,72 @@ Future<bool> rebuildQuestionCount({String? bankId}) async {
     await userDb.rawQuery("ATTACH DATABASE '$escaped' AS qbank;");
     attached = true;
 
-    await userDb.transaction((txn) async {
-      await txn.rawUpdate(
-        'UPDATE IdentitySubject SET correct = 0, incorrect = 0 WHERE bank_id = ?',
-        [targetBankId],
-      );
-      await txn.rawUpdate(
-        'UPDATE IdentityChapter SET correct = 0, incorrect = 0 WHERE bank_id = ?',
-        [targetBankId],
-      );
-
-      // IdentityQuestion 是题库中唯一的 identity/课程/章节关系真相。
-      // 不使用 SharedPreferences.identityId 过滤，以覆盖题库中的完整
-      // Identity 子树，并保持显式 bankId 的统计边界。
-      await txn.rawInsert('''
-        INSERT INTO IdentityChapter
-          (bank_id, identity_id, subject_id, chapter_id, correct, incorrect)
-        SELECT ?, iq.identity_id, iq.subject_id, iq.chapter_id,
-          SUM(CASE WHEN uq.status = 1 THEN 1 ELSE 0 END),
-          SUM(CASE WHEN uq.status = 2 THEN 1 ELSE 0 END)
-        FROM Question AS uq
-        JOIN qbank.IdentityQuestion AS iq ON uq.id = iq.question_id
-        WHERE uq.status IN (1, 2)
-        GROUP BY iq.identity_id, iq.subject_id, iq.chapter_id
-        ON CONFLICT(bank_id, identity_id, subject_id, chapter_id) DO UPDATE SET
-          correct = excluded.correct,
-          incorrect = excluded.incorrect;
-      ''', [targetBankId]);
-
-      await txn.rawInsert('''
-        INSERT INTO IdentitySubject
-          (bank_id, identity_id, subject_id, correct, incorrect, selected)
-        SELECT ?, sq.identity_id, sq.subject_id,
-          SUM(CASE WHEN sq.status = 1 THEN 1 ELSE 0 END),
-          SUM(CASE WHEN sq.status = 2 THEN 1 ELSE 0 END),
-          COALESCE((SELECT selected FROM IdentitySubject old
-            WHERE old.bank_id = ?
-              AND old.identity_id = sq.identity_id
-              AND old.subject_id = sq.subject_id), 0)
-        FROM (
-          SELECT DISTINCT iq.identity_id, iq.subject_id, uq.id, uq.status
-          FROM Question AS uq
-          JOIN qbank.IdentityQuestion AS iq ON uq.id = iq.question_id
-          WHERE uq.status IN (1, 2)
-        ) AS sq
-        GROUP BY sq.identity_id, sq.subject_id
-        ON CONFLICT(bank_id, identity_id, subject_id) DO UPDATE SET
-          correct = excluded.correct,
-          incorrect = excluded.incorrect;
-      ''', [targetBankId, targetBankId]);
-    });
+    await userDb.transaction((txn) => rebuildAttachedQuestionCount(
+      txn, targetBankId, alias: 'qbank',
+    ));
   } finally {
     if (attached) {
       await userDb.execute('DETACH DATABASE qbank;');
     }
   }
   return true;
+}
+
+/// 在调用方用户库事务内重算；题库已通过原生 ATTACH 关联且仅参与读取。
+Future<void> rebuildAttachedQuestionCount(
+  DatabaseExecutor txn, String targetBankId, {required String alias}
+) async {
+  if (!RegExp(r'^[a-zA-Z_][a-zA-Z0-9_]*$').hasMatch(alias)) {
+    throw ArgumentError.value(alias, 'alias');
+  }
+  await txn.rawUpdate(
+    'UPDATE IdentitySubject SET correct = 0, incorrect = 0 WHERE bank_id = ?',
+    [targetBankId],
+  );
+  await txn.rawUpdate(
+    'UPDATE IdentityChapter SET correct = 0, incorrect = 0 WHERE bank_id = ?',
+    [targetBankId],
+  );
+
+  // IdentityQuestion 是题库中唯一的 identity/课程/章节关系真相。
+  // 不使用 SharedPreferences.identityId 过滤，以覆盖题库中的完整
+  // Identity 子树，并保持显式 bankId 的统计边界。
+  await txn.rawInsert('''
+    INSERT INTO IdentityChapter
+      (bank_id, identity_id, subject_id, chapter_id, correct, incorrect)
+    SELECT ?, iq.identity_id, iq.subject_id, iq.chapter_id,
+      SUM(CASE WHEN uq.status = 1 THEN 1 ELSE 0 END),
+      SUM(CASE WHEN uq.status = 2 THEN 1 ELSE 0 END)
+    FROM Question AS uq
+    JOIN $alias.IdentityQuestion AS iq ON uq.id = iq.question_id
+    WHERE uq.status IN (1, 2)
+    GROUP BY iq.identity_id, iq.subject_id, iq.chapter_id
+    ON CONFLICT(bank_id, identity_id, subject_id, chapter_id) DO UPDATE SET
+      correct = excluded.correct,
+      incorrect = excluded.incorrect;
+  ''', [targetBankId]);
+
+  await txn.rawInsert('''
+    INSERT INTO IdentitySubject
+      (bank_id, identity_id, subject_id, correct, incorrect, selected)
+    SELECT ?, sq.identity_id, sq.subject_id,
+      SUM(CASE WHEN sq.status = 1 THEN 1 ELSE 0 END),
+      SUM(CASE WHEN sq.status = 2 THEN 1 ELSE 0 END),
+      COALESCE((SELECT selected FROM IdentitySubject old
+        WHERE old.bank_id = ?
+          AND old.identity_id = sq.identity_id
+          AND old.subject_id = sq.subject_id), 0)
+    FROM (
+      SELECT DISTINCT iq.identity_id, iq.subject_id, uq.id, uq.status
+      FROM Question AS uq
+      JOIN $alias.IdentityQuestion AS iq ON uq.id = iq.question_id
+      WHERE uq.status IN (1, 2)
+    ) AS sq
+    GROUP BY sq.identity_id, sq.subject_id
+    ON CONFLICT(bank_id, identity_id, subject_id) DO UPDATE SET
+      correct = excluded.correct,
+      incorrect = excluded.incorrect;
+  ''', [targetBankId, targetBankId]);
 }
 
 /// 修复刷题统计误差。

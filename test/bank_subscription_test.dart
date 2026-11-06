@@ -15,11 +15,16 @@ void main() {
   });
 
   test('manifest preserves subscription origin and requires download integrity', () {
-    final entry = {'bank_id': 'bank', 'url': 'https://example.org/bank.zip', 'sha256': 'a' * 64};
+    final entry = {'bank_id': 'bank', 'identity_id': '38', 'version': '1.0.0', 'schema_version': 1,
+      'url': 'https://example.org/bank.zip', 'sha256': 'a' * 64};
     final result = BankSubscriptionService.parseManifest({'question_banks': {'banks': [entry]}}, 'https://example.org/manifest.json');
     expect(result.single['subscription_url'], 'https://example.org/manifest.json');
     expect(() => BankSubscriptionService.parseManifest({'banks': [{...entry, 'sha256': ''}]}, ''), throwsFormatException);
     expect(() => BankSubscriptionService.parseManifest({'banks': [entry, entry]}, ''), throwsFormatException);
     expect(() => BankSubscriptionService.parseManifest({'banks': [{...entry, 'bank_id': '../bad'}]}, ''), throwsFormatException);
+    expect(() => BankSubscriptionService.parseManifest({'banks': [{...entry, 'identity_id': 'unknown'}]}, ''), throwsFormatException);
+    expect(() => BankSubscriptionService.parseManifest({'banks': [{...entry, 'schema_version': 2}]}, ''), throwsFormatException);
+    expect(() => BankSubscriptionService.parseManifest({'banks': [{...entry, 'version': ''}]}, ''), throwsFormatException);
+    expect(() => BankSubscriptionService.parseManifest({'banks': [{...entry, 'sqlite_sha256': 'bad'}]}, ''), throwsFormatException);
   });
 }

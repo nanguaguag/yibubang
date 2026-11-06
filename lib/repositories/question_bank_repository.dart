@@ -84,6 +84,7 @@ class QuestionBankRepository {
   final QuestionBankDatabaseManager _databaseManager =
       QuestionBankDatabaseManager();
   Future<void>? _initializationFuture;
+  final Set<String> _installing = {};
 
   /// 初始化题库目录只允许同时执行一次，避免启动入口和页面重复扫描题库。
   /// 初始化失败时清空 Future，后续进入题库管理页面仍可以重试。
@@ -352,16 +353,20 @@ class QuestionBankRepository {
       }
       final metadata = validation.metadata!;
       final bankId = metadata['bank_id'] as String;
-      final existing = await find(bankId);
-      final addedCount = existing?.isInstalled == true
-          ? await QuestionBankFileService.countNewQuestions(existing!.localPath, databasePath)
-          : (metadata['question_count'] as num?)?.toInt() ?? 0;
-      final mode = existing?.isInstalled == true && onConflict != null
-          ? await onConflict(existing!)
-          : BankImportMode.replace;
-      if (mode == null) throw BankImportCancelled();
+      // Reserve before awaiting the user choice; installations share a user DB
+      // connection and must not race file replacement or ATTACH aliases.
+      if (_installing.isNotEmpty) throw StateError('已有题库正在安装或更新');
+      _installing.add(bankId);
       Directory? mergeDirectory;
       try {
+        final existing = await find(bankId);
+        final mode = existing?.isInstalled == true && onConflict != null
+            ? await onConflict(existing!)
+            : BankImportMode.replace;
+        if (mode == null) throw BankImportCancelled();
+        final addedCount = existing?.isInstalled == true
+            ? await QuestionBankFileService.countNewQuestions(existing!.localPath, databasePath)
+            : (metadata['question_count'] as num?)?.toInt() ?? 0;
         if (mode == BankImportMode.merge) {
           final localValidation = await validatePath(existing!.localPath);
           if (!localValidation.isValid ||
@@ -388,9 +393,9 @@ class QuestionBankRepository {
             databasePath,
             mergedValidation.metadata!,
             updateEnabled: false,
+            historyAction: '增量合并',
+            addedCount: addedCount,
           );
-          await _recordInstallation(installed, '增量合并', addedCount, mergedValidation.metadata!);
-          await rebuildQuestionCount(bankId: bankId);
           return installed;
         }
         final installed = await _installValidatedFile(
@@ -398,11 +403,12 @@ class QuestionBankRepository {
           metadata,
           versionOverride: versionOverride,
           updateEnabled: updateEnabled,
+          historyAction: existing?.isInstalled == true ? '更新题库' : '创建/导入',
+          addedCount: addedCount,
         );
-        await _recordInstallation(installed, existing?.isInstalled == true ? '更新题库' : '创建/导入', addedCount, metadata);
-        await rebuildQuestionCount(bankId: bankId);
         return installed;
       } finally {
+        _installing.remove(bankId);
         if (mergeDirectory != null && await mergeDirectory.exists()) {
           await mergeDirectory.delete(recursive: true);
         }
@@ -419,6 +425,8 @@ class QuestionBankRepository {
     Map<String, dynamic> metadata, {
     String? versionOverride,
     bool? updateEnabled,
+    required String historyAction,
+    required int addedCount,
   }) async {
     final bankId = metadata['bank_id'] as String;
     if (!RegExp(r'^[A-Za-z0-9_-]+$').hasMatch(bankId)) {
@@ -461,6 +469,7 @@ class QuestionBankRepository {
 
     final target = File(targetPath);
     var hadBackup = false;
+    Database? attachedDb;
     try {
       if (await target.exists()) {
         if (await File(backupPath).exists()) await File(backupPath).delete();
@@ -470,6 +479,8 @@ class QuestionBankRepository {
       await staging.rename(targetPath);
 
       final userDb = await UserDBHelper().database;
+      await userDb.execute('ATTACH DATABASE ? AS install_bank', [targetPath]);
+      attachedDb = userDb;
       final existing = await find(bankId);
       final bank = QuestionBank(
         bankId: bankId,
@@ -494,13 +505,25 @@ class QuestionBankRepository {
             '',
         updatedAt: DateTime.now().millisecondsSinceEpoch,
       );
-      await userDb.insert(
-        'QuestionBank',
-        bank.toMap(),
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
+      await userDb.transaction((txn) async {
+        await txn.insert(
+          'QuestionBank', bank.toMap(),
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+        await txn.insert('BankHistory', {
+          'id': generateSimpleId(), 'bank_id': bank.bankId,
+          'timestamp': DateTime.now().millisecondsSinceEpoch,
+          'action': historyAction, 'version': bank.version, 'added': addedCount,
+          'question_count': (metadata['question_count'] as num?)?.toInt() ?? 0,
+        });
+        await rebuildAttachedQuestionCount(txn, bankId, alias: 'install_bank');
+      });
       return bank;
     } catch (error) {
+      if (attachedDb != null) {
+        await attachedDb.execute('DETACH DATABASE install_bank');
+        attachedDb = null;
+      }
       // 目录记录写入失败或进程在替换阶段失败时，尽量恢复旧文件。
       if (await target.exists()) await target.delete();
       final backup = File(backupPath);
@@ -509,6 +532,10 @@ class QuestionBankRepository {
       }
       if (await staging.exists()) await staging.delete();
       rethrow;
+    } finally {
+      if (attachedDb != null) {
+        await attachedDb.execute('DETACH DATABASE install_bank');
+      }
     }
   }
 
@@ -743,15 +770,19 @@ class QuestionBankRepository {
     }
   }
 
-  Future<void> _recordInstallation(QuestionBank bank, String action, int addedCount, Map<String, dynamic> metadata) async {
-    final count = (metadata['question_count'] as num?)?.toInt() ?? 0;
-    await (await UserDBHelper().database).insert('BankHistory', {
-      'id': generateSimpleId(), 'bank_id': bank.bankId,
-      'timestamp': DateTime.now().millisecondsSinceEpoch,
-      'action': action, 'version': bank.version,
-      'added': addedCount,
-      'question_count': count,
-    });
+  Future<void> removeRemoteEntries(List<Map<String, dynamic>> entries) async {
+    final db = await UserDBHelper().database;
+    for (final entry in entries) {
+      final id = entry['bank_id'] as String;
+      final bank = await find(id);
+      if (bank == null || bank.remoteUrl != entry['url']) continue;
+      if (!bank.isInstalled && !bank.builtIn) {
+        await db.delete('QuestionBank', where: 'bank_id = ?', whereArgs: [id]);
+      } else {
+        await db.update('QuestionBank', {'remote_url': configuredRemoteBanks[id]?['url']},
+          where: 'bank_id = ?', whereArgs: [id]);
+      }
+    }
   }
 
   Future<List<Map<String, dynamic>>> history(String bankId) async =>

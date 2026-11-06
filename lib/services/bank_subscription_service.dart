@@ -31,12 +31,16 @@ class BankSubscriptionService {
   }
 
   Future<void> save(List<String> values, bool auto) async {
+    if (_running) throw StateError('订阅正在检查，请稍后保存');
     final normalized = values.map(validateUrl).toSet().toList();
     final prefs = await SharedPreferences.getInstance();
+    final previousEntries = await cached();
+    final removed = previousEntries.where((entry) => !normalized.contains(entry['subscription_url'])).toList();
+    if (removed.isNotEmpty) await QuestionBankRepository().removeRemoteEntries(removed);
     await prefs.setStringList(_urlsKey, normalized);
     await prefs.setBool(_autoKey, auto);
     // Removed subscriptions must not leave cached download entries behind.
-    await prefs.remove(_cacheKey);
+    await prefs.setString(_cacheKey, jsonEncode(previousEntries.where((entry) => normalized.contains(entry['subscription_url'])).toList()));
   }
 
   Future<List<Map<String, dynamic>>> cached() async {
@@ -63,7 +67,20 @@ class BankSubscriptionService {
       if (!RegExp(r'^[A-Za-z0-9_-]+$').hasMatch(id) || !seen.add(id)) {
         throw const FormatException('题库标识非法或重复');
       }
-      validateUrl(entry['url']?.toString() ?? '');
+      entry['url'] = validateUrl(entry['url']?.toString() ?? '');
+      entry['bank_id'] = id;
+      if (entry['identity_id'] == null || !RegExp(r'^\d+$').hasMatch(entry['identity_id'].toString())) {
+        throw const FormatException('订阅清单缺少根 identity');
+      }
+      if (entry['version']?.toString().isNotEmpty != true ||
+          int.tryParse('${entry['schema_version'] ?? ''}') != 1) {
+        throw const FormatException('订阅题库缺少版本或不支持的结构版本');
+      }
+      final sqliteHash = entry['sqlite_sha256'];
+      if (sqliteHash != null && !RegExp(r'^[a-fA-F0-9]{64}$').hasMatch(sqliteHash.toString())) {
+        throw const FormatException('SQLite SHA-256 格式无效');
+      }
+      if (sqliteHash != null) entry['sqlite_sha256'] = sqliteHash.toString().toLowerCase();
       if (!RegExp(r'^[a-fA-F0-9]{64}$').hasMatch(entry['sha256']?.toString() ?? '')) {
         throw const FormatException('订阅题库缺少有效 SHA-256');
       }
@@ -89,6 +106,9 @@ class BankSubscriptionService {
       }
       final result = entries.values.toList();
       final repository = QuestionBankRepository();
+      final previousEntries = await cached();
+      final removed = previousEntries.where((entry) => !entries.containsKey(entry['bank_id'])).toList();
+      if (removed.isNotEmpty) await repository.removeRemoteEntries(removed);
       await repository.registerRemoteEntries(result);
       await (await SharedPreferences.getInstance()).setString(_cacheKey, jsonEncode(result));
       if (installUpdates) {

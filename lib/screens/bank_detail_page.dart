@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:sqflite/sqflite.dart';
+
 import '../db/question_bank_manager.dart';
 import '../models/question_bank.dart';
 import '../repositories/question_bank_repository.dart';
@@ -24,18 +26,27 @@ class _BankDetailPageState extends State<BankDetailPage> {
     final subscriptions = await BankSubscriptionService.instance.cached();
     final subscription = subscriptions.where((r) => r['bank_id'] == bank.bankId).firstOrNull;
     if (!bank.isInstalled) return _BankDetails({}, [], [], [], history, subscription?['subscription_url']?.toString());
-    final db = await QuestionBankDatabaseManager().openBank(bank.bankId, filePath: bank.localPath);
-    final meta = bank.bankId == 'legacy_combined' ? <String, dynamic>{} : (await db.query('BankMeta')).first;
-    final identities = await db.query('Identity');
-    final subjects = await db.rawQuery('''
-      SELECT s.id, s.name, x.identity_id, x.total FROM IdentitySubject x
-      JOIN Subject s ON s.id = x.subject_id
-    ''');
-    final chapters = await db.rawQuery('''
-      SELECT c.id, c.name, x.identity_id, x.subject_id, x.total
-      FROM IdentityChapter x JOIN Chapter c ON c.id = x.chapter_id
-    ''');
-    return _BankDetails(meta, identities, subjects, chapters, history, subscription?['subscription_url']?.toString());
+    // Legacy combined files predate BankMeta and cannot pass schema-v1 validation.
+    final db = bank.bankId == 'legacy_combined'
+        ? await openDatabase(bank.localPath, readOnly: true, singleInstance: false)
+        : await QuestionBankDatabaseManager().openBank(bank.bankId, filePath: bank.localPath);
+    try {
+      final meta = bank.bankId == 'legacy_combined'
+          ? <String, dynamic>{'question_count': Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM Question'))}
+          : (await db.query('BankMeta')).first;
+      final identities = await db.query('Identity');
+      final subjects = await db.rawQuery('''
+        SELECT s.id, s.name, x.identity_id, x.total FROM IdentitySubject x
+        JOIN Subject s ON s.id = x.subject_id
+      ''');
+      final chapters = await db.rawQuery('''
+        SELECT c.id, c.name, x.identity_id, x.subject_id, x.total
+        FROM IdentityChapter x JOIN Chapter c ON c.id = x.chapter_id
+      ''');
+      return _BankDetails(meta, identities, subjects, chapters, history, subscription?['subscription_url']?.toString());
+    } finally {
+      if (bank.bankId == 'legacy_combined') await db.close();
+    }
   }
 
   Widget _identity(Map<String, dynamic> identity, _BankDetails details, Set<String> visited) {
