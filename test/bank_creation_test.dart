@@ -2,6 +2,10 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:archive/archive.dart';
+import 'package:yibubang/models/question_bank.dart';
+import 'package:yibubang/services/bank_export_service.dart';
 import 'package:yibubang/models/bank_progress.dart';
 import 'package:yibubang/services/bank_creation_service.dart';
 import 'package:yibubang/services/ykb_bank_sync_service.dart';
@@ -17,7 +21,10 @@ void main() {
       }],
     }, {'identity_id': '201011', 'title': '大二', 'category': 'chapter'}],
   }]);
-  setUp(() async { directory = await Directory.systemTemp.createTemp('bank-create-test-'); });
+  setUp(() async {
+    SharedPreferences.setMockInitialValues({});
+    directory = await Directory.systemTemp.createTemp('bank-create-test-');
+  });
   tearDown(() => directory.delete(recursive: true));
 
   BankCreationService service({bool restricted = false}) => BankCreationService(
@@ -58,5 +65,38 @@ void main() {
     final cancellation = BankTaskCancellation()..cancelled = true;
     await expectLater(service().build(root: roots.single, bankId: 'custom', name: '期末', version: '1.0.0', directory: directory, cancellation: cancellation), throwsA(isA<BankTaskCancelled>()));
     expect(await directory.list().toList(), isEmpty);
+  });
+
+  test('export produces a validated single bank ZIP without changing source', () async {
+    final file = await service().build(root: roots.single, bankId: 'custom', name: '期末', version: '1.0.0', directory: directory);
+    final db = await openDatabase(file.path);
+    await db.update('Question', {'user_answer': 'B', 'cut_question': '1'});
+    await db.close();
+    final sourceBytes = await file.readAsBytes();
+    final bank = QuestionBank.fromMap({'bank_id': 'custom', 'name': '期末', 'version': '1.0.0', 'local_path': file.path});
+    final exportDirectory = await directory.createTemp('export-');
+    final output = await BankExportService.prepare(bank, exportDirectory);
+    final exported = await openDatabase(output.path, readOnly: true);
+    expect((await exported.query('Question')).single['user_answer'], '');
+    expect((await exported.query('Question')).single['cut_question'], '0');
+    expect((await exported.query('IdentityQuestion')).length, 2);
+    await exported.close();
+    final zip = await BankExportService.zip(output, exportDirectory);
+    final archive = ZipDecoder().decodeBytes(await zip.readAsBytes());
+    expect(archive.files.map((f) => f.name), ['custom.sqlite', 'manifest.json']);
+    expect(await file.readAsBytes(), sourceBytes);
+  });
+
+  test('legacy export derives one standard root bank and keeps leaf relationships', () async {
+    final file = await service().build(root: roots.single, bankId: 'custom', name: '期末', version: '1.0.0', directory: directory);
+    final bank = QuestionBank.fromMap({'bank_id': 'legacy_combined', 'name': '合并库', 'local_path': file.path});
+    final exportDirectory = await directory.createTemp('export-');
+    final output = await BankExportService.prepare(bank, exportDirectory, rootId: '201010');
+    final db = await openDatabase(output.path, readOnly: true);
+    expect((await db.query('BankMeta')).single['bank_id'], 'legacy_201010');
+    expect((await db.query('Identity')).length, 2);
+    expect((await db.query('IdentityQuestion')).single['identity_id'], '2010101');
+    expect((await db.query('BankMeta')).single['question_count'], 1);
+    await db.close();
   });
 }

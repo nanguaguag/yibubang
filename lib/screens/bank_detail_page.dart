@@ -4,6 +4,7 @@ import '../db/question_bank_manager.dart';
 import '../models/question_bank.dart';
 import '../repositories/question_bank_repository.dart';
 import '../services/bank_subscription_service.dart';
+import '../services/bank_export_service.dart';
 
 class BankDetailPage extends StatefulWidget {
   const BankDetailPage({super.key, required this.bank});
@@ -14,6 +15,7 @@ class BankDetailPage extends StatefulWidget {
 }
 
 class _BankDetailPageState extends State<BankDetailPage> {
+  bool _exporting = false;
   late final Future<_BankDetails> _details = _load();
 
   Future<_BankDetails> _load() async {
@@ -49,6 +51,33 @@ class _BankDetailPageState extends State<BankDetailPage> {
     ]);
   }
 
+  Future<void> _export(_BankDetails details) async {
+    final roots = details.identities.where((r) => r['parent_id'] == '-1').toList();
+    String? rootId = roots.firstOrNull?['id']?.toString();
+    final asZip = await showDialog<bool>(context: context, builder: (ctx) => StatefulBuilder(
+      builder: (ctx, update) => AlertDialog(title: const Text('导出题库'), content: Column(mainAxisSize: MainAxisSize.min, children: [
+        const Text('导出完整内容，可在其他设备导入。个人做题记录不包含在题库中。'),
+        if (widget.bank.bankId == 'legacy_combined') DropdownButton<String>(value: rootId,
+          items: roots.map((r) => DropdownMenuItem(value: r['id'] as String, child: Text('${r['name']}'))).toList(),
+          onChanged: (value) => update(() => rootId = value)),
+      ]), actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('SQLite')),
+        FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('ZIP')),
+      ]),
+    ));
+    if (asZip == null || !mounted) return;
+    setState(() => _exporting = true);
+    try {
+      final path = await BankExportService.save(widget.bank, asZip: asZip, rootId: rootId);
+      if (path != null && mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('已导出：$path')));
+    } catch (error) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('导出失败：$error')));
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: Text(widget.bank.name)),
@@ -58,6 +87,10 @@ class _BankDetailPageState extends State<BankDetailPage> {
       final details = snapshot.data!;
       final bank = widget.bank;
       return ListView(padding: const EdgeInsets.all(20), children: [
+        if (bank.isInstalled) FilledButton.tonalIcon(
+          onPressed: _exporting ? null : () => _export(details),
+          icon: const Icon(Icons.file_download_outlined), label: Text(_exporting ? '正在打包…' : '导出题库')),
+        if (_exporting) const LinearProgressIndicator(),
         Wrap(spacing: 8, children: [Chip(label: Text('v${bank.version}')),
           if (details.meta['question_count'] != null) Chip(label: Text('${details.meta['question_count']} 题'))]),
         ListTile(title: const Text('来源'), subtitle: Text(details.subscription != null ? '订阅题库' :
