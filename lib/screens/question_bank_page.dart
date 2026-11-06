@@ -52,11 +52,11 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
   }
 
   Future<void> _editSubscriptions() async {
-    final changed = await pushAdaptiveModalPage<bool>(
+    await pushAdaptiveModalPage<bool>(
       context,
       builder: (_) => const BankSubscriptionsPage(),
     );
-    if (changed == true && mounted) {
+    if (mounted) {
       setState(() {
         _remoteBanks = Map<String, dynamic>.from(QuestionBankRepository.configuredRemoteBanks);
         _reload();
@@ -66,9 +66,10 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
   }
 
   Future<void> _createBank() async {
-    final changed = await pushAdaptiveModalPage<bool>(context,
+    await pushAdaptiveModalPage<bool>(context,
       builder: (_) => const BankCreationPage());
-    if (changed == true && mounted) setState(_reload);
+    // A cancelled multi-bank task may have completed some banks already.
+    if (mounted) setState(_reload);
   }
 
   // 「同步题库」开关开启时，进入题库管理页自动拉取远程清单。
@@ -148,16 +149,6 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
           '完全覆盖用新文件替换题库。两种方式均保留个人作答、收藏和笔记。',
         ),
         actions: [
-          IconButton(
-            tooltip: '创建题库',
-            onPressed: _controlsDisabled ? null : _createBank,
-            icon: const Icon(Icons.add_box_outlined),
-          ),
-          IconButton(
-            tooltip: '管理订阅',
-            onPressed: _controlsDisabled ? null : _editSubscriptions,
-            icon: const Icon(Icons.rss_feed),
-          ),
           TextButton(
             onPressed: () => Navigator.pop(ctx),
             child: const Text('取消'),
@@ -406,6 +397,16 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
       appBar: AppBar(
         title: const Text('题库管理'),
         actions: [
+          IconButton(
+            tooltip: '创建题库',
+            onPressed: _controlsDisabled ? null : _createBank,
+            icon: const Icon(Icons.add_box_outlined),
+          ),
+          IconButton(
+            tooltip: '管理订阅',
+            onPressed: _controlsDisabled ? null : _editSubscriptions,
+            icon: const Icon(Icons.rss_feed),
+          ),
           IconButton(
             tooltip: '检查题库更新',
             onPressed: _controlsDisabled ? null : _refreshManifest,
