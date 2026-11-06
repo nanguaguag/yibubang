@@ -132,8 +132,7 @@ class CourseSyncActions extends ChangeNotifier {
               jitterEnabled: prefs.getBool('sync_ykb_jitter_enabled') ?? false,
               pacingEnabled: prefs.getBool('sync_ykb_pacing_enabled') ?? false,
             ),
-            onProgress: (stage, done, total) =>
-                progress.value = BankProgress(stage: stage, completed: done, total: total),
+            onBankProgress: (value) => progress.value = value,
           );
           message = '题库「${bank.name}」重建完成';
       }

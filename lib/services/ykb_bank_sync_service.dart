@@ -3,13 +3,13 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
 
 import '../common/request.dart';
 import '../models/question_bank.dart';
+import '../models/bank_progress.dart';
+import 'bank_creation_service.dart';
+import 'question_bank_file_service.dart';
 import '../repositories/question_bank_repository.dart';
 import 'ykb_crypto.dart';
 
@@ -89,227 +89,34 @@ class YkbBankSyncService {
     QuestionBank bank, {
     SyncPacing pacing = const SyncPacing(),
     void Function(String stage, int done, int total)? onProgress,
+    void Function(BankProgress)? onBankProgress,
+    BankCreationService? creationService,
   }) async {
-    final prefs = await SharedPreferences.getInstance();
-    if (!(prefs.getBool('loggedin') ?? false)) {
-      throw StateError('未登录医考帮，请先在「我的」页面登录');
+    final creation = creationService ?? BankCreationService();
+    void report(BankProgress progress) {
+      onProgress?.call(progress.stage, progress.completed, progress.total);
+      onBankProgress?.call(progress);
     }
-
-    onProgress?.call('拉取身份树…', 0, 1);
-
-    // 1) 身份树：bank 身份及其刷题入口。
-    final identityResp = await basicReq('/allQuestion/question/subjectV2', {
-      'user_id': prefs.getString('user_id') ?? '',
-    }, method: 'GET');
-    final tree = _asList(identityResp['data']);
-    final identityNode = _findNode(tree, bank.identityId);
-    if (identityNode == null) {
-      throw StateError('身份树中找不到 identity ${bank.identityId}');
-    }
-    final entries = _asList(
-      identityNode['children'],
-    ).where((c) => (c['identity_id']?.toString() ?? '0') != '0').toList();
-    if (entries.isEmpty) {
-      throw StateError('身份 ${bank.identityId} 没有可用刷题入口');
-    }
-    debugPrint('[ykb-bank-sync] ${bank.bankId} 入口数: ${entries.length}');
-
-    // 2) 逐入口拉章节（明文）。
-    final subjects = <Map<String, dynamic>>[];
-    final chapters = <Map<String, dynamic>>[];
-    for (final entry in entries) {
-      await pacing.requestDelay();
-      final entryId = entry['identity_id'].toString();
-      final chapterResp = await basicReq('/allquestion/question/chapter', {
-        'identity_id': entryId,
-        'category': 'chapter',
-        'type': 'all',
-        'module_type': (entry['module_type'] ?? '1').toString(),
-        'am_pm': '',
-        'search_where': '[]',
-        'app_id': (entry['app_id'] ?? '40').toString(),
-      });
-      for (final node in _asList(chapterResp['data'])) {
-        _collectChapterTree(node, subjects, chapters);
-      }
-    }
-    if (chapters.isEmpty) {
-      throw StateError('章节列表为空，无法构建题库');
-    }
-    debugPrint(
-      '[ykb-bank-sync] subjects=${subjects.length}, chapters=${chapters.length}',
-    );
-
-    // 3) 逐章拉题（解密）并写库。
-    final tmpDir = await getTemporaryDirectory();
-    final stagingPath = p.join(
-      tmpDir.path,
-      'ykb_sync_${bank.bankId}_${DateTime.now().millisecondsSinceEpoch}.sqlite',
-    );
-    final db = await openDatabase(stagingPath);
-    var questionCount = 0;
-    var relationCount = 0;
-    final total = chapters.length;
+    report(const BankProgress(stage: '拉取身份树'));
+    final nodes = await creation.identities();
+    final root = BankIdentityNode.find(nodes, bank.identityId);
+    if (root == null) throw StateError('身份树中找不到 identity ${bank.identityId}');
+    final directory = await Directory.systemTemp.createTemp('bank-rebuild-');
     try {
-      await createSchema(db);
-      await db.transaction((txn) async {
-        // BankMeta 先插占位，收尾更新计数。
-        await txn.insert('BankMeta', {
-          'bank_id': bank.bankId,
-          'name': bank.name,
-          'version': 'sync-${DateTime.now().millisecondsSinceEpoch}',
-          'schema_version': 1,
-          'generated_at': DateTime.now().millisecondsSinceEpoch,
-          'source': 'ykb-api-sync',
-          'question_count': 0,
-          'subject_count': 0,
-          'chapter_count': 0,
-          'relation_count': 0,
-        });
-
-        // Identity：根身份 + 入口。
-        await txn.insert('Identity', {
-          'id': bank.identityId,
-          'parent_id': '-1',
-          'name': identityNode['title']?.toString() ?? bank.identityId,
-        });
-        for (final entry in entries) {
-          await txn.insert('Identity', {
-            'id': entry['identity_id'].toString(),
-            'parent_id': bank.identityId,
-            'name': entry['title']?.toString() ?? '',
-          });
-        }
-
-        for (final subject in subjects) {
-          await txn.insert('Subject', {
-            'id': subject['id'].toString(),
-            'name': subject['title']?.toString() ?? '',
-          });
-        }
-        for (final chapter in chapters) {
-          await txn.insert('Chapter', {
-            'id': chapter['id'].toString(),
-            'name': chapter['title']?.toString() ?? '',
-          });
-        }
-        // 章节统计占位表（题库库内为 (identity_id, subject_id, total) 结构）
-        for (final subject in subjects) {
-          await txn.insert('IdentitySubject', {
-            'identity_id': bank.identityId,
-            'subject_id': subject['id'].toString(),
-            'total': 0,
-          });
-        }
-        for (final chapter in chapters) {
-          await txn.insert('IdentityChapter', {
-            'identity_id': bank.identityId,
-            'subject_id': chapter['parentId'].toString(),
-            'chapter_id': chapter['id'].toString(),
-            'total': 0,
-          });
-        }
-      });
-
-      for (var i = 0; i < total; i++) {
-        final chapter = chapters[i];
-        onProgress?.call('拉取章节题目', i + 1, total);
-        await pacing.requestDelay();
-        final listResp = await _fetchChapterQuestions(
-          entries,
-          chapter['id'].toString(),
-        );
-        if (listResp == null) continue;
-
-        final batch = db.batch();
-        for (final q in listResp) {
-          final row = questionRow(q, bank.identityId, chapter);
-          batch.insert(
-            'Question',
-            row,
-            conflictAlgorithm: ConflictAlgorithm.replace,
-          );
-          batch.insert('IdentityQuestion', {
-            'identity_id': bank.identityId,
-            'subject_id': chapter['parentId'].toString(),
-            'chapter_id': chapter['id'].toString(),
-            'question_id': row['id'] as String,
-          }, conflictAlgorithm: ConflictAlgorithm.replace);
-          questionCount++;
-          relationCount++;
-        }
-        await batch.commit(noResult: true);
-        await pacing.chapterDelay();
-      }
-      debugPrint(
-        '[ykb-bank-sync] questions=$questionCount, relations=$relationCount',
+      final file = await creation.build(
+        root: root, bankId: bank.bankId, name: bank.name,
+        version: QuestionBankFileService.nextVersion(bank.version),
+        directory: directory, pacing: pacing, onProgress: report,
       );
-
-      // 更新 BankMeta 计数 + 章节统计。
-      await db.transaction((txn) async {
-        await txn.update(
-          'BankMeta',
-          {
-            'question_count': questionCount,
-            'subject_count': subjects.length,
-            'chapter_count': chapters.length,
-            'relation_count': relationCount,
-          },
-          where: 'bank_id = ?',
-          whereArgs: [bank.bankId],
-        );
-        // IdentitySubject/IdentityChapter 的计数按实际分布回填。
-        await txn.rawUpdate('''
-          UPDATE IdentitySubject SET total = (
-            SELECT COUNT(*) FROM IdentityQuestion iq
-            WHERE iq.identity_id = IdentitySubject.identity_id
-              AND iq.subject_id = IdentitySubject.subject_id)
-        ''');
-        await txn.rawUpdate('''
-          UPDATE IdentityChapter SET total = (
-            SELECT COUNT(*) FROM IdentityQuestion iq
-            WHERE iq.identity_id = IdentityChapter.identity_id
-              AND iq.subject_id = IdentityChapter.subject_id
-              AND iq.chapter_id = IdentityChapter.chapter_id)
-        ''');
-      });
-    } catch (e) {
-      await db.close();
-      try {
-        if (await File(stagingPath).exists()) await File(stagingPath).delete();
-      } catch (_) {}
-      rethrow;
+      report(const BankProgress(stage: '校验并安装题库'));
+      final installed = await QuestionBankRepository().importFile(
+        file.path, expectedBankId: bank.bankId, updateEnabled: false,
+      );
+      report(const BankProgress(stage: '重建完成', finished: true));
+      return installed;
+    } finally {
+      await directory.delete(recursive: true);
     }
-    await db.close();
-
-    onProgress?.call('校验并安装题库', total, total);
-
-    // 4) 通过既有校验/安装流程原子替换。
-    final installed = await QuestionBankRepository().importFile(
-      stagingPath,
-      expectedBankId: bank.bankId,
-      updateEnabled: true,
-    );
-    try {
-      if (await File(stagingPath).exists()) await File(stagingPath).delete();
-    } catch (_) {}
-    debugPrint('[ykb-bank-sync] 安装完成: ${installed.bankId}');
-    return installed;
-  }
-
-  /// 拉取某章节的题目（解密）。失败重试一次，仍失败返回 null 并跳过。
-  static Future<List<Map<String, dynamic>>?> _fetchChapterQuestions(
-    List<Map<String, dynamic>> entries,
-    String chapterId,
-  ) {
-    // 各入口共享章节归属，取第一个入口即可（身份树中入口 category=chapter）。
-    final entry = entries.first;
-    return fetchChapterQuestions(
-      identityId: entry['identity_id'].toString(),
-      appId: (entry['app_id'] ?? '40').toString(),
-      moduleType: (entry['module_type'] ?? '1').toString(),
-      chapterId: chapterId,
-    );
   }
 
   /// 拉取指定入口/章节的题目，保留接口 code/message（不重试）。
@@ -385,31 +192,6 @@ class YkbBankSyncService {
       }
     }
     return null;
-  }
-
-  /// 章节树 -> Subject(顶层) 与 Chapter(叶子，附 parentId)。
-  static void _collectChapterTree(
-    Map<String, dynamic> node,
-    List<Map<String, dynamic>> subjects,
-    List<Map<String, dynamic>> chapters,
-  ) {
-    final children = _asList(node['children']);
-    final id = (node['id'] ?? node['chapter_id'])?.toString() ?? '';
-    final title = node['title']?.toString() ?? '';
-    if (children.isEmpty) {
-      final parentId =
-          (node['parent_id'] ?? node['chapter_parent_id'])?.toString() ?? '';
-      if (id.isNotEmpty) {
-        chapters.add({'id': id, 'title': title, 'parentId': parentId});
-      }
-      return;
-    }
-    if (id.isNotEmpty) {
-      subjects.add({'id': id, 'title': title});
-    }
-    for (final child in children) {
-      _collectChapterTree(child, subjects, chapters);
-    }
   }
 
   /// 官方题目字段 -> 本地题库 Question 行（忽略超出 schema 的新字段）。
@@ -547,21 +329,6 @@ class YkbBankSyncService {
     ''');
     await db.execute('CREATE INDEX idx_identity_question_question ON IdentityQuestion(question_id)');
     await db.execute('CREATE INDEX idx_identity_question_chapter ON IdentityQuestion(identity_id, subject_id, chapter_id)');
-  }
-
-  static Map<String, dynamic>? _findNode(
-    List<Map<String, dynamic>> tree,
-    String id,
-  ) {
-    for (final node in tree) {
-      if (node['identity_id']?.toString() == id) return node;
-      final children = _asList(node['children']);
-      if (children.isNotEmpty) {
-        final found = _findNode(children, id);
-        if (found != null) return found;
-      }
-    }
-    return null;
   }
 
   static List<Map<String, dynamic>> _asList(dynamic data) {

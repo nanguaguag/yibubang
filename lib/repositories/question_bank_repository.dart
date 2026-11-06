@@ -516,6 +516,20 @@ class QuestionBankRepository {
           'action': historyAction, 'version': bank.version, 'added': addedCount,
           'question_count': (metadata['question_count'] as num?)?.toInt() ?? 0,
         });
+        // A full rebuild may move courses from the former root to their actual
+        // leaf identities. Preserve choices when the old ownership disappeared.
+        await txn.rawInsert('''
+          INSERT INTO IdentitySubject
+            (bank_id, identity_id, subject_id, correct, incorrect, selected)
+          SELECT ?, x.identity_id, x.subject_id, 0, 0,
+            COALESCE((SELECT MAX(old.selected) FROM IdentitySubject old
+              WHERE old.bank_id = ? AND old.subject_id = x.subject_id
+                AND NOT EXISTS (SELECT 1 FROM install_bank.IdentitySubject kept
+                  WHERE kept.identity_id = old.identity_id
+                    AND kept.subject_id = old.subject_id)), 0)
+          FROM install_bank.IdentitySubject x WHERE 1
+          ON CONFLICT(bank_id, identity_id, subject_id) DO NOTHING
+        ''', [bankId, bankId]);
         await rebuildAttachedQuestionCount(txn, bankId, alias: 'install_bank');
       });
       return bank;

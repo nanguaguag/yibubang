@@ -31,7 +31,7 @@ class QuestionBankFileService {
         final incomingColumns = await db.rawQuery('PRAGMA incoming.table_info($table)');
         final names = incomingColumns.map((r) => r['name']).toSet();
         final columns = localColumns.map((r) => r['name'] as String)
-            .where((name) => names.contains(name) && name != 'cut_question' && name != 'user_answer')
+            .where((name) => names.contains(name) && name != 'cut_question' && name != 'user_answer' && name != 'is_collection_question')
             .map((name) => '"${name.replaceAll('"', '""')}"').join(',');
         final changes = await db.rawQuery('''
           SELECT $columns FROM incoming.$table
@@ -89,6 +89,7 @@ class QuestionBankFileService {
               .map((name) {
                 if (table == 'Question' && name == 'cut_question') return "'0'";
                 if (table == 'Question' && name == 'user_answer') return "''";
+                if (table == 'Question' && name == 'is_collection_question') return "'0'";
                 return quoted(name);
               })
               .join(',');

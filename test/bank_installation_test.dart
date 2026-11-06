@@ -91,4 +91,48 @@ void main() {
     await cancelled;
     await repository.importFile(first.path);
   });
+
+  test('full rebuild preserves deep identities, increments version and rejects incomplete access', () async {
+    final first = await artifact('1.0.0', ['old']);
+    final bank = await repository.importFile(first.path);
+    await (await UserDBHelper().database).update('IdentitySubject', {'selected': 1});
+    final progress = <String>[];
+    final rebuilt = await YkbBankSyncService.syncBank(bank,
+      creationService: _CatalogService(), onBankProgress: (value) => progress.add(value.stage));
+    expect(rebuilt!.version, '1.0.1');
+    final db = await openDatabase(rebuilt.localPath, readOnly: true, singleInstance: false);
+    expect((await db.query('Identity')).length, 3);
+    expect((await db.query('IdentityQuestion')).single['identity_id'], '3801');
+    expect((await db.query('Question')).single['id'], 'new');
+    await db.close();
+    final choices = await (await UserDBHelper().database).query('IdentitySubject',
+      where: 'identity_id = ?', whereArgs: ['3801']);
+    expect(choices.single['selected'], 1);
+    expect(progress.last, '重建完成');
+    final bytes = await File(rebuilt.localPath).readAsBytes();
+    await expectLater(YkbBankSyncService.syncBank(rebuilt,
+      creationService: _CatalogService(restricted: true)), throwsStateError);
+    expect(await File(rebuilt.localPath).readAsBytes(), bytes);
+    expect((await repository.history('fixture')).length, 2);
+  });
+}
+
+class _CatalogService extends BankCreationService {
+  _CatalogService({bool restricted = false}) : super(
+    request: (_, __) async => {'code': 200, 'data': [{
+      'chapter_id': 's', 'children': [{'chapter_id': 'c', 'count': 1}],
+    }]},
+    fetchChapter: (_, __) async => restricted
+        ? const YkbChapterFetchResult(code: '203', message: '无权限')
+        : const YkbChapterFetchResult(code: '200', message: '', questions: [{'id': 'new'}]),
+  );
+
+  @override
+  Future<List<BankIdentityNode>> identities() async => BankIdentityNode.parse([{
+    'identity_id': '0', 'children': [{
+      'identity_id': '38', 'children': [{
+        'identity_id': '380', 'children': [{'identity_id': '3801', 'category': 'chapter'}],
+      }],
+    }],
+  }]);
 }

@@ -179,42 +179,6 @@ class YkbBankSmartSyncService {
       if (resolvedBank == null || !resolvedBank.isInstalled) {
         return const YkbBankSmartSyncResult(error: '当前题库未安装');
       }
-      if (resolvedBank.bankId.startsWith('custom_')) {
-        final creation = BankCreationService();
-        final nodes = await creation.identities();
-        BankIdentityNode? find(List<BankIdentityNode> items) {
-          for (final node in items) {
-            if (node.id == resolvedBank.identityId) return node;
-            final found = find(node.children);
-            if (found != null) return found;
-          }
-          return null;
-        }
-        final root = find(nodes);
-        if (root == null) throw StateError('远端身份不存在');
-        final directory = await Directory.systemTemp.createTemp('bank-refresh-');
-        try {
-          final file = await creation.build(root: root, bankId: resolvedBank.bankId,
-            name: resolvedBank.name, version: QuestionBankFileService.nextVersion(resolvedBank.version),
-            directory: directory, onProgress: onProgress);
-          final added = await _addedBetween(resolvedBank.localPath, file.path);
-          if (!await QuestionBankFileService.hasChanges(resolvedBank.localPath, file.path)) {
-            onProgress?.call(const BankProgress(stage: '题库内容已是最新', finished: true));
-            return YkbBankSmartSyncResult(elapsedMs: sw.elapsedMilliseconds);
-          }
-          onProgress?.call(const BankProgress(stage: '比较与合并题库'));
-          await QuestionBankRepository().importFile(file.path,
-            onConflict: (_) async => BankImportMode.merge);
-          onProgress?.call(const BankProgress(stage: '同步完成', finished: true));
-          return YkbBankSmartSyncResult(installed: true, elapsedMs: sw.elapsedMilliseconds,
-            addedQuestions: added);
-        } finally {
-          await directory.delete(recursive: true);
-        }
-      }
-
-      onProgress?.call(const BankProgress(stage: '检查远端章节目录'));
-
       final userDb = await UserDBHelper().database;
       await _ensureBankState(userDb, resolvedBank.bankId);
       final bankState = await _loadBankState(userDb, resolvedBank.bankId);
@@ -229,6 +193,50 @@ class YkbBankSmartSyncService {
           );
         }
       }
+
+      var completeTreeBank = resolvedBank.bankId.startsWith('custom_');
+      if (!completeTreeBank && resolvedBank.bankId != 'legacy_combined') {
+        final contentDb = await QuestionBankDatabaseManager().openBank(resolvedBank.bankId);
+        completeTreeBank = (await contentDb.query('BankMeta')).first['source'] == 'ykb-created';
+      }
+      if (completeTreeBank) {
+        final creation = BankCreationService();
+        final nodes = await creation.identities();
+        final root = BankIdentityNode.find(nodes, resolvedBank.identityId);
+        if (root == null) throw StateError('远端身份不存在');
+        final directory = await Directory.systemTemp.createTemp('bank-refresh-');
+        try {
+          final file = await creation.build(root: root, bankId: resolvedBank.bankId,
+            name: resolvedBank.name, version: QuestionBankFileService.nextVersion(resolvedBank.version),
+            directory: directory, onProgress: onProgress,
+            pacing: SyncPacing(
+              jitterEnabled: prefs.getBool('sync_ykb_jitter_enabled') ?? false,
+              pacingEnabled: prefs.getBool('sync_ykb_pacing_enabled') ?? false,
+            ));
+          final added = await _addedBetween(resolvedBank.localPath, file.path);
+          Future<void> markChecked() => _saveBankState(userDb, resolvedBank.bankId, {
+            'last_sync_at': nowMs, 'last_success_at': nowMs, 'failure_count': 0,
+            'next_retry_at': nowMs + const Duration(hours: 6).inMilliseconds,
+            'last_error': null,
+          });
+          if (!await QuestionBankFileService.hasChanges(resolvedBank.localPath, file.path)) {
+            await markChecked();
+            onProgress?.call(const BankProgress(stage: '题库内容已是最新', finished: true));
+            return YkbBankSmartSyncResult(elapsedMs: sw.elapsedMilliseconds);
+          }
+          onProgress?.call(const BankProgress(stage: '比较与合并题库'));
+          await QuestionBankRepository().importFile(file.path,
+            onConflict: (_) async => BankImportMode.merge);
+          await markChecked();
+          onProgress?.call(const BankProgress(stage: '同步完成', finished: true));
+          return YkbBankSmartSyncResult(installed: true, elapsedMs: sw.elapsedMilliseconds,
+            addedQuestions: added);
+        } finally {
+          await directory.delete(recursive: true);
+        }
+      }
+
+      onProgress?.call(const BankProgress(stage: '检查远端章节目录'));
 
       final chapterStates = await _loadChapterStates(
         userDb,
@@ -300,6 +308,7 @@ class YkbBankSmartSyncService {
           'last_error': null,
         });
         await _upsertChapterStates(userDb, chapterStateUpdates);
+        onProgress?.call(const BankProgress(stage: '题库内容已是最新', finished: true));
         return YkbBankSmartSyncResult(
           manifestChapters: manifest?.leaves.length ?? 0,
           queuedChapters: pending.length,
@@ -428,6 +437,13 @@ class YkbBankSmartSyncService {
           'failure_count': failed.isEmpty ? 0 : 1,
           'last_error': failed.isEmpty ? null : '${failed.length} 个章节待重试',
         });
+        onProgress?.call(BankProgress(
+          stage: failed.isNotEmpty ? '${failed.length} 章失败，已安排重试'
+              : restricted > 0 ? '$restricted 章无权限，其余内容已检查'
+              : remaining.isNotEmpty ? '本批检查完成，还有 ${remaining.length} 章待处理' : '题库内容已是最新',
+          completed: stateOnly.length + restricted, total: batch.length,
+          questions: fetchedQuestions, expectedQuestions: expectedQuestions, finished: true,
+        ));
         return YkbBankSmartSyncResult(
           manifestChapters: manifest?.leaves.length ?? 0,
           queuedChapters: pending.length,
@@ -520,7 +536,11 @@ class YkbBankSmartSyncService {
         '剩余=${failed.length + remaining.length} '
         '请求=$_requestsUsed',
       );
-      onProgress?.call(const BankProgress(stage: '同步完成', finished: true));
+      onProgress?.call(BankProgress(stage: failed.isNotEmpty
+          ? '本批已安装，${failed.length} 章待重试'
+          : '本批同步完成，剩余 ${remaining.length} 章',
+        completed: fetched.length + stateOnly.length + restricted, total: batch.length,
+        questions: fetchedQuestions, expectedQuestions: expectedQuestions, finished: true));
       return YkbBankSmartSyncResult(
         installed: true,
         manifestChapters: manifest?.leaves.length ?? 0,
@@ -537,6 +557,7 @@ class YkbBankSmartSyncService {
         error: failed.isEmpty ? null : '${failed.length} 个章节待重试',
       );
     } catch (e, stack) {
+      onProgress?.call(BankProgress(stage: '同步失败：$e'));
       debugPrint('[ykb-smart-sync] 失败: $e');
       debugPrint('$stack');
       try {

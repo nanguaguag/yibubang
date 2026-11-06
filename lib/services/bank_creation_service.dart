@@ -23,11 +23,22 @@ class BankIdentityNode {
   BankIdentityNode(this.data, this.children);
 
   static List<BankIdentityNode> parse(Object? value) => value is List
-      ? value.whereType<Map>().map((r) {
+      ? value.whereType<Map>().expand((r) {
           final data = Map<String, dynamic>.from(r);
-          return BankIdentityNode(data, parse(data['children']));
-        }).where((n) => n.id.isNotEmpty && n.id != '0').toList()
+          final node = BankIdentityNode(data, parse(data['children']));
+          // Nonselectable grouping nodes can still contain valid identities.
+          return node.id.isEmpty || node.id == '0' ? node.children : [node];
+        }).toList()
       : [];
+
+  static BankIdentityNode? find(List<BankIdentityNode> nodes, String id) {
+    for (final node in nodes) {
+      if (node.id == id) return node;
+      final match = find(node.children, id);
+      if (match != null) return match;
+    }
+    return null;
+  }
 
   List<BankIdentityNode> selectedRoots(Set<String> selected) {
     if (selected.contains(id)) return [this];
@@ -52,7 +63,7 @@ class BankCreationService {
     if (!(prefs.getBool('loggedin') ?? false)) throw StateError('请先登录医考帮');
     final response = await basicReq('/allQuestion/question/subjectV2', {
       'user_id': prefs.getString('user_id') ?? '',
-    }, method: 'GET');
+    }, method: 'GET').timeout(const Duration(seconds: 30));
     if (response['code']?.toString() != '200') throw StateError('身份目录获取失败');
     return BankIdentityNode.parse(response['data']);
   }
@@ -94,7 +105,7 @@ class BankCreationService {
         'module_type': (entry.data['module_type'] ?? '1').toString(),
         'app_id': (entry.data['app_id'] ?? '40').toString(),
         'am_pm': (entry.data['am_pm'] ?? '').toString(),
-      });
+      }).timeout(const Duration(seconds: 30));
       if (response['code']?.toString() != '200') throw StateError('${entry.name}目录获取失败');
       final nodes = response['data'];
       if (nodes is! List) throw const FormatException('课程目录格式无效');
@@ -126,8 +137,10 @@ class BankCreationService {
       }
     }
     if (chapters.isEmpty) throw StateError('没有可用章节');
-    final totalQuestions = chapters.fold<int>(0, (sum, c) => sum + (c.count ?? 0));
+    final totalQuestions = chapters.every((c) => c.count != null)
+        ? chapters.fold<int>(0, (sum, c) => sum + c.count!) : 0;
     final output = File(p.join(directory.path, '$bankId.sqlite'));
+    if (await output.exists()) throw StateError('暂存输出文件已存在');
     final db = await openDatabase(output.path, singleInstance: false);
     var fetchedQuestions = 0;
     try {
@@ -145,7 +158,17 @@ class BankCreationService {
         onProgress?.call(BankProgress(stage: '抓取题目', chapter: '${chapter.entry.name} · ${chapter.title}',
           completed: i, total: chapters.length, questions: fetchedQuestions, expectedQuestions: totalQuestions));
         await pacing.requestDelay();
-        final result = await fetchChapter(chapter.entry.data, chapter.id);
+        var result = await fetchChapter(chapter.entry.data, chapter.id)
+            .timeout(const Duration(seconds: 45));
+        if (!result.isOk && !result.isRestricted && result.code != '309') {
+          onProgress?.call(BankProgress(stage: '章节请求失败，正在重试',
+            chapter: '${chapter.entry.name} · ${chapter.title}', completed: i,
+            total: chapters.length, questions: fetchedQuestions, expectedQuestions: totalQuestions));
+          cancellation?.check();
+          await pacing.requestDelay();
+          result = await fetchChapter(chapter.entry.data, chapter.id)
+              .timeout(const Duration(seconds: 45));
+        }
         cancellation?.check();
         if (!result.isOk || result.questions == null) {
           throw StateError('${chapter.title}抓取失败：${result.code} ${result.message}');

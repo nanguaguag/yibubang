@@ -77,14 +77,20 @@ class _BankCreationPageState extends State<BankCreationPage> {
           ]));
           }
           if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-          return ListView(padding: const EdgeInsets.all(16), children: [
-            const Text('勾选身份后，将抓取其全部章节并保存为独立题库。父子重叠选择只制作一次；多个根分别制作。'),
-            const SizedBox(height: 12),
-            ...snapshot.data!.map(_node),
-            if (_progress != null) Padding(padding: const EdgeInsets.symmetric(vertical: 16), child: BankProgressView(progress: _progress!)),
-            if (_error != null) Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-            if (_busy) TextButton(onPressed: () => setState(() { _cancellation?.cancelled = true; }), child: const Text('取消抓取'))
-            else FilledButton(onPressed: _selected.isEmpty ? null : () => _create(snapshot.data!), child: const Text('开始创建')),
+          return Column(children: [
+            Expanded(child: ListView(padding: const EdgeInsets.all(16), children: [
+              const Text('勾选身份后，将抓取其全部章节并保存为独立题库。父子重叠选择只制作一次；多个根分别制作。'),
+              const SizedBox(height: 12),
+              ...snapshot.data!.map(_node),
+            ])),
+            SafeArea(top: false, child: Padding(padding: const EdgeInsets.all(16), child: Column(
+              mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                if (_progress != null) Padding(padding: const EdgeInsets.only(bottom: 12), child: BankProgressView(progress: _progress!)),
+                if (_error != null) Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                if (_busy) TextButton(onPressed: () => setState(() { _cancellation?.cancelled = true; }), child: const Text('取消抓取'))
+                else FilledButton(onPressed: _selected.isEmpty ? null : () => _create(snapshot.data!), child: const Text('开始创建')),
+              ],
+            ))),
           ]);
         },
       ),
