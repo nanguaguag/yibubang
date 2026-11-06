@@ -9,6 +9,7 @@ import '../services/bank_subscription_service.dart';
 import '../common/platform_adaptive.dart';
 import 'bank_subscriptions_page.dart';
 import 'bank_creation_page.dart';
+import 'bank_detail_page.dart';
 
 class QuestionBankPage extends StatefulWidget {
   const QuestionBankPage({super.key});
@@ -350,6 +351,12 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
+                  IconButton(
+                    tooltip: '题库详情',
+                    onPressed: _controlsDisabled ? null : () => pushAdaptiveModalPage<void>(context,
+                      builder: (_) => BankDetailPage(bank: bank)),
+                    icon: const Icon(Icons.info_outline),
+                  ),
                   if (bank.isInstalled)
                     Switch(
                       value: bank.enabled,

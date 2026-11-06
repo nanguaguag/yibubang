@@ -9,6 +9,19 @@ class BankImportCancelled implements Exception {}
 
 /// Only edits a disposable copy; both input files remain unchanged.
 class QuestionBankFileService {
+  static Future<int> countNewQuestions(String localPath, String incomingPath) async {
+    final db = await openDatabase(localPath, readOnly: true, singleInstance: false);
+    try {
+      await db.execute('ATTACH DATABASE ? AS incoming', [incomingPath]);
+      return Sqflite.firstIntValue(await db.rawQuery('''
+        SELECT COUNT(*) FROM incoming.Question r
+        WHERE NOT EXISTS (SELECT 1 FROM Question l WHERE l.id = r.id)
+      ''')) ?? 0;
+    } finally {
+      await db.close();
+    }
+  }
+
   static Future<bool> hasChanges(String localPath, String incomingPath) async {
     final db = await openDatabase(localPath, readOnly: true, singleInstance: false);
     try {

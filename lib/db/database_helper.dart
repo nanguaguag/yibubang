@@ -237,7 +237,7 @@ class UserDBHelper {
     String path = join(await getDatabasesPath(), 'user_data.sqlite');
     return await openDatabase(
       path,
-      version: 11,
+      version: 12,
       onConfigure: (db) async {
         // 用户库为高频写库：WAL 提升并发写性能，同时保证导出前关闭连接即可完整落盘。
         // 注意：Android 原生 SQLiteDatabase.execSQL 禁止执行有返回值的 PRAGMA（如 journal_mode），
@@ -277,7 +277,7 @@ class UserDBHelper {
 
   @visibleForTesting
   Future<void> upgradeForTesting(Database db, int oldVersion) =>
-      _onUpgrade(db, oldVersion, 11);
+      _onUpgrade(db, oldVersion, 12);
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     await db.transaction((txn) async {
@@ -405,6 +405,9 @@ class UserDBHelper {
       if (oldVersion < 11) {
         await _createBankSmartSyncTables(txn);
       }
+      if (oldVersion < 12) {
+        await _createBankHistoryTable(txn);
+      }
       await _createMigrationStateTable(txn);
     });
   }
@@ -452,6 +455,18 @@ class UserDBHelper {
       CREATE INDEX IF NOT EXISTS idx_ykb_bank_chapter_state_local
         ON YkbBankChapterState(bank_id, local_chapter_id)
     ''');
+  }
+
+  Future<void> _createBankHistoryTable(DatabaseExecutor db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS BankHistory (
+        id TEXT PRIMARY KEY, bank_id TEXT NOT NULL,
+        timestamp INTEGER NOT NULL, action TEXT NOT NULL,
+        version TEXT NOT NULL, added INTEGER NOT NULL DEFAULT 0,
+        question_count INTEGER NOT NULL DEFAULT 0
+      )
+    ''');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_bank_history ON BankHistory(bank_id, timestamp)');
   }
 
   Future<List<String>> _columns(DatabaseExecutor db, String table) async {
@@ -690,6 +705,7 @@ class UserDBHelper {
 
     await _createQuestionBankTable(db);
     await _createBankSmartSyncTables(db);
+    await _createBankHistoryTable(db);
     await _createMigrationStateTable(db);
 
     // 给 Question 表按 chapter_id 建表

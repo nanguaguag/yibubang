@@ -353,6 +353,9 @@ class QuestionBankRepository {
       final metadata = validation.metadata!;
       final bankId = metadata['bank_id'] as String;
       final existing = await find(bankId);
+      final addedCount = existing?.isInstalled == true
+          ? await QuestionBankFileService.countNewQuestions(existing!.localPath, databasePath)
+          : (metadata['question_count'] as num?)?.toInt() ?? 0;
       final mode = existing?.isInstalled == true && onConflict != null
           ? await onConflict(existing!)
           : BankImportMode.replace;
@@ -386,6 +389,7 @@ class QuestionBankRepository {
             mergedValidation.metadata!,
             updateEnabled: false,
           );
+          await _recordInstallation(installed, '增量合并', addedCount, mergedValidation.metadata!);
           await rebuildQuestionCount(bankId: bankId);
           return installed;
         }
@@ -395,6 +399,7 @@ class QuestionBankRepository {
           versionOverride: versionOverride,
           updateEnabled: updateEnabled,
         );
+        await _recordInstallation(installed, existing?.isInstalled == true ? '更新题库' : '创建/导入', addedCount, metadata);
         await rebuildQuestionCount(bankId: bankId);
         return installed;
       } finally {
@@ -737,6 +742,21 @@ class QuestionBankRepository {
       }
     }
   }
+
+  Future<void> _recordInstallation(QuestionBank bank, String action, int addedCount, Map<String, dynamic> metadata) async {
+    final count = (metadata['question_count'] as num?)?.toInt() ?? 0;
+    await (await UserDBHelper().database).insert('BankHistory', {
+      'id': generateSimpleId(), 'bank_id': bank.bankId,
+      'timestamp': DateTime.now().millisecondsSinceEpoch,
+      'action': action, 'version': bank.version,
+      'added': addedCount,
+      'question_count': count,
+    });
+  }
+
+  Future<List<Map<String, dynamic>>> history(String bankId) async =>
+      (await UserDBHelper().database).query('BankHistory',
+        where: 'bank_id = ?', whereArgs: [bankId], orderBy: 'timestamp DESC');
 
   bool hasUpdate(QuestionBank bank, Map<String, dynamic> remote) {
     if (!bank.updateEnabled) return false;

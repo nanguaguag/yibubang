@@ -80,6 +80,7 @@ void main() {
     () async {
       final original = await File(localPath).readAsBytes();
       final imported = await File(incomingPath).readAsBytes();
+    expect(await QuestionBankFileService.countNewQuestions(localPath, incomingPath), 1);
       final output = await QuestionBankFileService.merge(
         localPath: localPath,
         incomingPath: incomingPath,

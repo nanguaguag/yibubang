@@ -156,4 +156,15 @@ void main() {
     final fk = await db.rawQuery('PRAGMA foreign_keys = ON');
     expect(fk, isEmpty);
   });
+
+  test('v11 installs bank history without changing shared user records', () async {
+    await db.insert('Question', {'id': 'answered'});
+    await UserDBHelper().upgradeForTesting(db, 11);
+    await db.insert('BankHistory', {
+      'id': 'event', 'bank_id': 'bank', 'timestamp': 123,
+      'action': '增量合并', 'version': '1.0.1', 'added': 2, 'question_count': 12,
+    });
+    expect((await db.query('BankHistory')).single['added'], 2);
+    expect((await db.query('Question')).single['id'], 'answered');
+  });
 }
