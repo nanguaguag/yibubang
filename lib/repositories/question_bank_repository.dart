@@ -612,7 +612,9 @@ class QuestionBankRepository {
           'install_state': existing?.installState ?? 'available',
           'remote_url': raw['url']?.toString(),
           'identity_id':
-              raw['identity_id']?.toString() ?? spec?.identityId ?? '',
+              existing?.isInstalled == true
+                  ? existing!.identityId
+                  : raw['identity_id']?.toString() ?? existing?.identityId ?? spec?.identityId ?? '',
           'updated_at': DateTime.now().millisecondsSinceEpoch,
         },
         conflictAlgorithm: ConflictAlgorithm.replace,
@@ -707,6 +709,31 @@ class QuestionBankRepository {
       client.close();
       if (temporary != null && await temporary.exists()) {
         await temporary.delete();
+      }
+    }
+  }
+
+  Future<void> registerRemoteEntries(List<Map<String, dynamic>> entries) async {
+    final userDb = await UserDBHelper().database;
+    for (final entry in entries) {
+      final bankId = entry['bank_id'] as String;
+      final existing = await find(bankId);
+      if (existing == null) {
+        await userDb.insert('QuestionBank', {
+          'bank_id': bankId,
+          'name': entry['name']?.toString() ?? bankId,
+          'description': entry['description']?.toString() ?? '',
+          'identity_id': entry['identity_id']?.toString() ?? '',
+          'remote_url': entry['url']?.toString(),
+        });
+      } else {
+        // An installed file owns its root and content version. A subscription
+        // supplies download information, not replacement identity metadata.
+        await userDb.update('QuestionBank', {
+          'remote_url': entry['url']?.toString(),
+          if (!existing.isInstalled)
+            'identity_id': entry['identity_id']?.toString() ?? existing.identityId,
+        }, where: 'bank_id = ?', whereArgs: [bankId]);
       }
     }
   }

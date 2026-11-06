@@ -17,6 +17,7 @@ import 'services/cloud_sync_service.dart';
 import 'services/note_service.dart';
 import 'services/ykb_pull_service.dart';
 import 'services/ykb_sync_service.dart';
+import 'services/bank_subscription_service.dart';
 import 'widgets/theme_controller.dart';
 import 'widgets/app_fullscreen_shortcut.dart';
 import 'package:flutter/foundation.dart';
@@ -66,6 +67,7 @@ Future<void> _initializeQuestionBank() async {
   final sw = Stopwatch()..start();
   try {
     await QuestionBankRepository().initialize();
+    BankSubscriptionService.instance.start();
     debugPrint('[startup] 题库目录初始化完成(${sw.elapsedMilliseconds}ms)');
 
     // 题库初始化完成后，静默进行云端增量同步 (不阻塞主线程)

@@ -5,6 +5,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/question_bank.dart';
 import '../repositories/question_bank_repository.dart';
 import '../services/question_bank_file_service.dart';
+import '../services/bank_subscription_service.dart';
+import '../common/platform_adaptive.dart';
+import 'bank_subscriptions_page.dart';
 
 class QuestionBankPage extends StatefulWidget {
   const QuestionBankPage({super.key});
@@ -32,7 +35,32 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
         entry.key: Map<String, dynamic>.from(entry.value),
     };
     _reload();
+    _loadSubscriptions();
     _maybeAutoSync();
+  }
+
+  Future<void> _loadSubscriptions() async {
+    final entries = await BankSubscriptionService.instance.cached();
+    if (!mounted) return;
+    setState(() {
+      for (final entry in entries) {
+        _remoteBanks[entry['bank_id'] as String] = entry;
+      }
+    });
+  }
+
+  Future<void> _editSubscriptions() async {
+    final changed = await pushAdaptiveModalPage<bool>(
+      context,
+      builder: (_) => const BankSubscriptionsPage(),
+    );
+    if (changed == true && mounted) {
+      setState(() {
+        _remoteBanks = Map<String, dynamic>.from(QuestionBankRepository.configuredRemoteBanks);
+        _reload();
+      });
+      await _loadSubscriptions();
+    }
   }
 
   // 「同步题库」开关开启时，进入题库管理页自动拉取远程清单。
@@ -62,6 +90,10 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
         if (raw is Map && raw['bank_id'] != null) {
           entries[raw['bank_id'].toString()] = Map<String, dynamic>.from(raw);
         }
+      }
+      final subscriptions = await BankSubscriptionService.instance.refresh();
+      for (final entry in subscriptions) {
+        entries[entry['bank_id'] as String] = entry;
       }
       if (!mounted) return;
       setState(() {
@@ -108,6 +140,11 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
           '完全覆盖用新文件替换题库。两种方式均保留个人作答、收藏和笔记。',
         ),
         actions: [
+          IconButton(
+            tooltip: '管理订阅',
+            onPressed: _controlsDisabled ? null : _editSubscriptions,
+            icon: const Icon(Icons.rss_feed),
+          ),
           TextButton(
             onPressed: () => Navigator.pop(ctx),
             child: const Text('取消'),
