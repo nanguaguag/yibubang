@@ -248,6 +248,12 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
                       spacing: 8,
                       runSpacing: 4,
                       children: [
+                        if (RegExp(r'^\d+$').hasMatch(bank.identityId))
+                          Chip(
+                            label: Text(bank.identityId),
+                            shape: const StadiumBorder(),
+                            visualDensity: VisualDensity.compact,
+                          ),
                         _status(bank),
                         if (hasUpdate) const Chip(label: Text('有更新')),
                         if (!bank.isInstalled && !canDownload)
