@@ -12,8 +12,10 @@ import 'package:sqflite/sqflite.dart';
 import '../common/github_proxy.dart';
 import '../common/version_utils.dart';
 import '../db/database_helper.dart';
+import '../db/data_transfer.dart';
 import '../db/question_bank_manager.dart';
 import '../models/question_bank.dart';
+import '../services/question_bank_file_service.dart';
 
 typedef DownloadProgressCallback = void Function(
   int receivedBytes,
@@ -316,6 +318,7 @@ class QuestionBankRepository {
     String? expectedBankId,
     String? versionOverride,
     bool? updateEnabled,
+    Future<BankImportMode?> Function(QuestionBank existing)? onConflict,
   }) async {
     final source = File(sourcePath);
     if (!await source.exists()) throw const FormatException('选择的文件不存在');
@@ -347,12 +350,58 @@ class QuestionBankRepository {
       if (!validation.isValid || validation.metadata == null) {
         throw FormatException(validation.message);
       }
-      return await _installValidatedFile(
-        databasePath,
-        validation.metadata!,
-        versionOverride: versionOverride,
-        updateEnabled: updateEnabled,
-      );
+      final metadata = validation.metadata!;
+      final bankId = metadata['bank_id'] as String;
+      final existing = await find(bankId);
+      final mode = existing?.isInstalled == true && onConflict != null
+          ? await onConflict(existing!)
+          : BankImportMode.replace;
+      if (mode == null) throw BankImportCancelled();
+      Directory? mergeDirectory;
+      try {
+        if (mode == BankImportMode.merge) {
+          final localValidation = await validatePath(existing!.localPath);
+          if (!localValidation.isValid ||
+              localValidation.metadata?['identity_id'] !=
+                  metadata['identity_id']) {
+            throw const FormatException('题库根 identity 不一致，无法增量合并');
+          }
+          mergeDirectory = await Directory.systemTemp.createTemp('bank-merge-');
+          final merged = await QuestionBankFileService.merge(
+            localPath: existing.localPath,
+            incomingPath: databasePath,
+            temporaryDirectory: mergeDirectory,
+            version: QuestionBankFileService.nextVersion(existing.version),
+          );
+          databasePath = merged.path;
+          final mergedValidation = await validatePath(
+            databasePath,
+            expectedBankId: bankId,
+          );
+          if (!mergedValidation.isValid) {
+            throw FormatException(mergedValidation.message);
+          }
+          final installed = await _installValidatedFile(
+            databasePath,
+            mergedValidation.metadata!,
+            updateEnabled: false,
+          );
+          await rebuildQuestionCount(bankId: bankId);
+          return installed;
+        }
+        final installed = await _installValidatedFile(
+          databasePath,
+          metadata,
+          versionOverride: versionOverride,
+          updateEnabled: updateEnabled,
+        );
+        await rebuildQuestionCount(bankId: bankId);
+        return installed;
+      } finally {
+        if (mergeDirectory != null && await mergeDirectory.exists()) {
+          await mergeDirectory.delete(recursive: true);
+        }
+      }
     } finally {
       if (temporaryDatabase != null && await temporaryDatabase.exists()) {
         await temporaryDatabase.delete();
@@ -434,8 +483,8 @@ class QuestionBankRepository {
         updateEnabled: resolvedUpdateEnabled,
         installState: 'installed',
         remoteUrl: existing?.remoteUrl,
-        identityId: spec?.identityId ??
-            (metadata['identity_id'] as String?) ??
+        identityId: (metadata['identity_id'] as String?) ??
+            spec?.identityId ??
             existing?.identityId ??
             '',
         updatedAt: DateTime.now().millisecondsSinceEpoch,

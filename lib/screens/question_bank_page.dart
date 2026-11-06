@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/question_bank.dart';
 import '../repositories/question_bank_repository.dart';
+import '../services/question_bank_file_service.dart';
 
 class QuestionBankPage extends StatefulWidget {
   const QuestionBankPage({super.key});
@@ -89,7 +90,39 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
     );
     final filePath = result?.files.single.path;
     if (filePath == null || filePath.isEmpty) return;
-    await _runOperation(() => _repository.importFile(filePath), '题库导入成功');
+    if (!mounted) return;
+    await _runOperation(
+      () => _repository.importFile(filePath, onConflict: _chooseImportMode),
+      '题库导入成功',
+    );
+  }
+
+  Future<BankImportMode?> _chooseImportMode(QuestionBank existing) async {
+    if (!mounted) return null;
+    return showDialog<BankImportMode>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('「${existing.name}」已安装'),
+        content: const Text(
+          '增量合并保留本地额外题目，并采用导入文件的题目内容。'
+          '完全覆盖用新文件替换题库。两种方式均保留个人作答、收藏和笔记。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, BankImportMode.replace),
+            child: const Text('完全覆盖'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, BankImportMode.merge),
+            child: const Text('增量合并'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _download(QuestionBank bank) async {
@@ -147,6 +180,8 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(successMessage)),
       );
+    } on BankImportCancelled {
+      // Closing the import choice is a normal cancellation.
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
