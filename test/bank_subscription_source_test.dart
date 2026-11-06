@@ -203,6 +203,8 @@ void main() {
       expect(await BankSubscriptionService.instance.intervalMinutes(), 45);
       expect(find.text('每 45 分钟'), findsOneWidget);
       expect(tester.takeException(), isNull);
+      // Stop the application-wide timer before widget-test invariant checks.
+      BankSubscriptionService.instance.stop();
     },
   );
 }

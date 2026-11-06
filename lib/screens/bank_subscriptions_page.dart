@@ -47,8 +47,9 @@ class _BankSubscriptionsPageState extends State<BankSubscriptionsPage> {
         final url = BankSubscriptionService.validateUrl(result);
         if (index != null) {
           _urls[index] = url;
-        } else if (!_urls.contains(url))
+        } else if (!_urls.contains(url)) {
           _urls.add(url);
+        }
         _error = null;
       });
     }
