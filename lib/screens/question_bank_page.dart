@@ -7,6 +7,7 @@ import '../repositories/question_bank_repository.dart';
 import '../services/question_bank_file_service.dart';
 import '../services/bank_subscription_service.dart';
 import '../common/platform_adaptive.dart';
+import '../widgets/bank_export_button.dart';
 import 'bank_subscriptions_page.dart';
 import 'bank_creation_page.dart';
 import 'bank_detail_page.dart';
@@ -26,8 +27,9 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
   final Set<String> _downloading = <String>{};
   final Map<String, double?> _downloadProgress = <String, double?>{};
   bool _busy = false;
+  bool _exporting = false;
 
-  bool get _controlsDisabled => _busy || _downloading.isNotEmpty;
+  bool get _controlsDisabled => _busy || _exporting || _downloading.isNotEmpty;
 
   @override
   void initState() {
@@ -58,7 +60,9 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
     );
     if (mounted) {
       setState(() {
-        _remoteBanks = Map<String, dynamic>.from(QuestionBankRepository.configuredRemoteBanks);
+        _remoteBanks = Map<String, dynamic>.from(
+          QuestionBankRepository.configuredRemoteBanks,
+        );
         _reload();
       });
       await _loadSubscriptions();
@@ -66,10 +70,65 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
   }
 
   Future<void> _createBank() async {
-    await pushAdaptiveModalPage<bool>(context,
-      builder: (_) => const BankCreationPage());
+    await pushAdaptiveModalPage<bool>(
+      context,
+      builder: (_) => const BankCreationPage(),
+    );
     // A cancelled multi-bank task may have completed some banks already.
     if (mounted) setState(_reload);
+  }
+
+  Future<void> _details(QuestionBank bank) async {
+    await pushAdaptiveModalPage<void>(
+      context,
+      builder: (_) => BankDetailPage(bank: bank),
+    );
+    if (!mounted) return;
+    setState(() {
+      _remoteBanks = Map<String, dynamic>.from(
+        QuestionBankRepository.configuredRemoteBanks,
+      );
+      _reload();
+    });
+    await _loadSubscriptions();
+  }
+
+  Future<void> _updateSubscription(QuestionBank bank) async {
+    if (_controlsDisabled) return;
+    setState(() {
+      _downloading.add(bank.bankId);
+      _downloadProgress[bank.bankId] = null;
+    });
+    try {
+      await BankSubscriptionService.instance.refresh(
+        bankId: bank.bankId,
+        installUpdates: true,
+      );
+      final updated = await _repository.find(bank.bankId);
+      if (!mounted) return;
+      setState(_reload);
+      await _loadSubscriptions();
+      if (!mounted) return;
+      final changed =
+          updated?.version != bank.version ||
+          updated?.contentHash != bank.contentHash;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(changed ? '题库更新成功' : '题库已是最新版本')));
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('更新失败：$error')));
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _downloading.remove(bank.bankId);
+          _downloadProgress.remove(bank.bankId);
+        });
+      }
+    }
   }
 
   // 「同步题库」开关开启时，进入题库管理页自动拉取远程清单。
@@ -109,14 +168,14 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
         _remoteBanks = entries;
         _reload();
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('题库清单已更新')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('题库清单已更新')));
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('暂时无法获取远程题库清单：$error')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('暂时无法获取远程题库清单：$error')));
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -189,15 +248,13 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
       if (!mounted) return;
       setState(_reload);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(bank.isInstalled ? '题库更新成功' : '题库下载成功'),
-        ),
+        SnackBar(content: Text(bank.isInstalled ? '题库更新成功' : '题库下载成功')),
       );
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('操作失败：$error')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('操作失败：$error')));
       }
     } finally {
       if (mounted) {
@@ -218,16 +275,16 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
       await operation();
       if (!mounted) return;
       setState(_reload);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(successMessage)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(successMessage)));
     } on BankImportCancelled {
       // Closing the import choice is a normal cancellation.
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('操作失败：$error')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('操作失败：$error')));
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -245,9 +302,9 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
       //);
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('切换失败：$error')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('切换失败：$error')));
       }
     }
   }
@@ -258,9 +315,9 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
       if (mounted) setState(_reload);
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('无法修改题库状态：$error')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('无法修改题库状态：$error')));
       }
     }
   }
@@ -283,70 +340,74 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
 
   Widget _bankCard(QuestionBank bank) {
     final remote = _remoteBanks[bank.bankId] as Map<String, dynamic>?;
-    final hasUpdate = bank.isInstalled &&
+    final hasUpdate =
+        bank.isInstalled &&
         remote != null &&
         _repository.hasUpdate(bank, remote);
-    final canDownload = !bank.isInstalled &&
+    final canDownload =
+        !bank.isInstalled &&
         (remote?['url']?.toString().isNotEmpty == true ||
             bank.remoteUrl?.isNotEmpty == true);
     final canUpdate = bank.isInstalled && hasUpdate;
+    final hasSubscription =
+        bank.isInstalled &&
+        (remote?['subscription_url']?.toString().isNotEmpty == true ||
+            bank.remoteUrl?.isNotEmpty == true);
     final downloading = _downloading.contains(bank.bankId);
     final downloadProgress = _downloadProgress[bank.bankId];
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        onTap: () => _select(bank),
+        onTap: _controlsDisabled ? null : () => _select(bank),
         child: Padding(
           padding: const EdgeInsets.all(16),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              CircleAvatar(
-                backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-                child: Icon(bankSpec(bank.bankId)?.icon ?? Icons.menu_book),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(bank.name,
-                        style: Theme.of(context).textTheme.titleMedium),
-                    const SizedBox(height: 4),
-                    Text(
-                      bank.description.isEmpty
-                          ? '独立 SQLite 题库'
-                          : bank.description,
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 4,
+              Row(
+                children: [
+                  CircleAvatar(
+                    backgroundColor: Theme.of(
+                      context,
+                    ).colorScheme.primaryContainer,
+                    child: Icon(bankSpec(bank.bankId)?.icon ?? Icons.menu_book),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        if (RegExp(r'^\d+$').hasMatch(bank.identityId))
-                          Chip(
-                            label: Text(bank.identityId),
-                            shape: const StadiumBorder(),
-                            visualDensity: VisualDensity.compact,
-                          ),
-                        _status(bank),
-                        if (hasUpdate) const Chip(label: Text('有更新')),
-                        if (!bank.isInstalled && !canDownload)
-                          const Chip(label: Text('等待远程直链')),
+                        Text(
+                          bank.name,
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          bank.description.isEmpty
+                              ? '独立 SQLite 题库'
+                              : bank.description,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 4,
+                          children: [
+                            if (RegExp(r'^\d+$').hasMatch(bank.identityId))
+                              Chip(
+                                label: Text(bank.identityId),
+                                shape: const StadiumBorder(),
+                                visualDensity: VisualDensity.compact,
+                              ),
+                            _status(bank),
+                            if (hasUpdate) const Chip(label: Text('有更新')),
+                            if (!bank.isInstalled && !canDownload)
+                              const Chip(label: Text('暂无下载链接')),
+                          ],
+                        ),
                       ],
                     ),
-                  ],
-                ),
-              ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  IconButton(
-                    tooltip: '题库详情',
-                    onPressed: _controlsDisabled ? null : () => pushAdaptiveModalPage<void>(context,
-                      builder: (_) => BankDetailPage(bank: bank)),
-                    icon: const Icon(Icons.info_outline),
                   ),
                   if (bank.isInstalled)
                     Switch(
@@ -355,10 +416,37 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
                           ? null
                           : (value) => _toggle(bank, value),
                     ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  IconButton(
+                    tooltip: '题库详情',
+                    onPressed: _controlsDisabled ? null : () => _details(bank),
+                    icon: const Icon(Icons.info_outline),
+                  ),
+                  if (hasSubscription)
+                    IconButton(
+                      tooltip: '更新订阅题库',
+                      onPressed: _controlsDisabled
+                          ? null
+                          : () => _updateSubscription(bank),
+                      icon: const Icon(Icons.sync_rounded),
+                    ),
+                  if (bank.isInstalled)
+                    BankExportButton(
+                      bank: bank,
+                      enabled: !_controlsDisabled,
+                      onBusyChanged: (busy) {
+                        if (mounted) setState(() => _exporting = busy);
+                      },
+                    ),
                   if (downloading)
                     SizedBox(
-                      width: 58,
-                      height: 58,
+                      width: 48,
+                      height: 48,
                       child: Stack(
                         alignment: Alignment.center,
                         children: [
@@ -372,12 +460,13 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
                         ],
                       ),
                     )
-                  else if (canDownload || canUpdate)
-                    TextButton.icon(
-                      onPressed:
-                          _controlsDisabled ? null : () => _download(bank),
+                  else if (canDownload || (canUpdate && !hasSubscription))
+                    IconButton(
+                      tooltip: canUpdate ? '更新题库' : '下载题库',
+                      onPressed: _controlsDisabled
+                          ? null
+                          : () => _download(bank),
                       icon: Icon(canUpdate ? Icons.update : Icons.download),
-                      label: Text(canUpdate ? '更新' : '下载'),
                     ),
                 ],
               ),

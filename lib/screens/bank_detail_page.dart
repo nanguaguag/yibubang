@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
-
 import 'package:sqflite/sqflite.dart';
 
 import '../db/question_bank_manager.dart';
 import '../models/question_bank.dart';
 import '../repositories/question_bank_repository.dart';
 import '../services/bank_subscription_service.dart';
-import '../services/bank_export_service.dart';
+import '../widgets/bank_export_button.dart';
+import '../widgets/bank_link_dialog.dart';
+import '../widgets/common/info_card.dart';
+import '../widgets/common/styled_tile.dart';
 
 class BankDetailPage extends StatefulWidget {
   const BankDetailPage({super.key, required this.bank});
@@ -17,108 +19,377 @@ class BankDetailPage extends StatefulWidget {
 }
 
 class _BankDetailPageState extends State<BankDetailPage> {
-  bool _exporting = false;
-  late final Future<_BankDetails> _details = _load();
+  bool _saving = false;
+  late Future<_BankDetails> _details = _load();
 
   Future<_BankDetails> _load() async {
     final bank = widget.bank;
     final history = await QuestionBankRepository().history(bank.bankId);
-    final subscriptions = await BankSubscriptionService.instance.cached();
-    final subscription = subscriptions.where((r) => r['bank_id'] == bank.bankId).firstOrNull;
-    if (!bank.isInstalled) return _BankDetails({}, [], [], [], history, subscription?['subscription_url']?.toString());
+    final source = await BankSubscriptionService.instance.sourceFor(bank);
+    if (!bank.isInstalled) return _BankDetails({}, [], [], [], history, source);
     // Legacy combined files predate BankMeta and cannot pass schema-v1 validation.
     final db = bank.bankId == 'legacy_combined'
-        ? await openDatabase(bank.localPath, readOnly: true, singleInstance: false)
-        : await QuestionBankDatabaseManager().openBank(bank.bankId, filePath: bank.localPath);
+        ? await openDatabase(
+            bank.localPath,
+            readOnly: true,
+            singleInstance: false,
+          )
+        : await QuestionBankDatabaseManager().openBank(
+            bank.bankId,
+            filePath: bank.localPath,
+          );
     try {
       final meta = bank.bankId == 'legacy_combined'
-          ? <String, dynamic>{'question_count': Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM Question'))}
+          ? <String, dynamic>{
+              'question_count': Sqflite.firstIntValue(
+                await db.rawQuery('SELECT COUNT(*) FROM Question'),
+              ),
+            }
           : (await db.query('BankMeta')).first;
       final identities = await db.query('Identity');
+      // Shared questions may belong to several chapters. Count distinct IDs.
       final subjects = await db.rawQuery('''
-        SELECT s.id, s.name, x.identity_id, x.total FROM IdentitySubject x
-        JOIN Subject s ON s.id = x.subject_id
+        SELECT s.id, s.name, x.identity_id, COALESCE(q.total, 0) AS total
+        FROM IdentitySubject x JOIN Subject s ON s.id = x.subject_id
+        LEFT JOIN (
+          SELECT identity_id, subject_id, COUNT(DISTINCT question_id) AS total
+          FROM IdentityQuestion GROUP BY identity_id, subject_id
+        ) q ON q.identity_id = x.identity_id AND q.subject_id = x.subject_id
       ''');
       final chapters = await db.rawQuery('''
-        SELECT c.id, c.name, x.identity_id, x.subject_id, x.total
+        SELECT c.id, c.name, x.identity_id, x.subject_id, COALESCE(q.total, 0) AS total
         FROM IdentityChapter x JOIN Chapter c ON c.id = x.chapter_id
+        LEFT JOIN (
+          SELECT identity_id, subject_id, chapter_id, COUNT(DISTINCT question_id) AS total
+          FROM IdentityQuestion GROUP BY identity_id, subject_id, chapter_id
+        ) q ON q.identity_id = x.identity_id AND q.subject_id = x.subject_id AND q.chapter_id = x.chapter_id
       ''');
-      return _BankDetails(meta, identities, subjects, chapters, history, subscription?['subscription_url']?.toString());
+      return _BankDetails(
+        meta,
+        identities,
+        subjects,
+        chapters,
+        history,
+        source,
+      );
     } finally {
       if (bank.bankId == 'legacy_combined') await db.close();
     }
   }
 
-  Widget _identity(Map<String, dynamic> identity, _BankDetails details, Set<String> visited) {
-    final id = identity['id'] as String;
-    if (!visited.add(id)) return const SizedBox.shrink();
-    return ExpansionTile(title: Text('${identity['name']} · $id'), children: [
-      for (final subject in details.subjects.where((r) => r['identity_id'] == id))
-        ExpansionTile(title: Text('${subject['name']}'), subtitle: Text('${subject['total']} 道章节关系'), children: [
-          for (final chapter in details.chapters.where((r) => r['identity_id'] == id && r['subject_id'] == subject['id']))
-            ListTile(title: Text('${chapter['name']}'), trailing: Text('${chapter['total']} 题')),
-        ]),
-      for (final child in details.identities.where((r) => r['parent_id'] == id)) _identity(child, details, visited),
-    ]);
+  List<Widget> _identity(
+    Map<String, dynamic> identity,
+    _BankDetails details,
+    Set<String> visited,
+  ) {
+    final id = identity['id'].toString();
+    if (!visited.add(id)) return [];
+    final subjects = details.subjects
+        .where((r) => r['identity_id'] == id)
+        .toList();
+    final children = details.identities
+        .where((r) => r['parent_id'] == id)
+        .expand((child) => _identity(child, details, visited))
+        .toList();
+    // Hide empty grouping subjects while retaining descendants with courses.
+    if (subjects.isEmpty) return children;
+    return [
+      ExpansionTile(
+        key: PageStorageKey('identity-$id'),
+        leading: const TileIcon(icon: Icons.school_outlined),
+        title: Text('${identity['name']}'),
+        subtitle: Text('${subjects.length} 门课程 · $id'),
+        tilePadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+        children: [
+          for (final subject in subjects)
+            ExpansionTile(
+              key: PageStorageKey('subject-$id-${subject['id']}'),
+              title: Text('${subject['name']}'),
+              subtitle: Text('${subject['total']} 道题'),
+              tilePadding: const EdgeInsets.only(left: 32, right: 20),
+              children: [
+                for (final chapter in details.chapters.where(
+                  (r) =>
+                      r['identity_id'] == id &&
+                      r['subject_id'] == subject['id'],
+                ))
+                  ListTile(
+                    contentPadding: const EdgeInsets.only(left: 44, right: 20),
+                    title: Text(
+                      '${chapter['name']}',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                    trailing: Text(
+                      '${chapter['total']} 题',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+              ],
+            ),
+          ...children,
+        ],
+      ),
+    ];
   }
 
-  Future<void> _export(_BankDetails details) async {
-    final roots = details.identities.where((r) => r['parent_id'] == '-1').toList();
-    String? rootId = roots.firstOrNull?['id']?.toString();
-    final asZip = await showDialog<bool>(context: context, builder: (ctx) => StatefulBuilder(
-      builder: (ctx, update) => AlertDialog(title: const Text('导出题库'), content: Column(mainAxisSize: MainAxisSize.min, children: [
-        const Text('导出完整内容，可在其他设备导入。个人做题记录不包含在题库中。'),
-        if (widget.bank.bankId == 'legacy_combined') DropdownButton<String>(value: rootId,
-          items: roots.map((r) => DropdownMenuItem(value: r['id'] as String, child: Text('${r['name']}'))).toList(),
-          onChanged: (value) => update(() => rootId = value)),
-      ]), actions: [
-        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
-        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('SQLite')),
-        FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('ZIP')),
-      ]),
-    ));
-    if (asZip == null || !mounted) return;
-    setState(() => _exporting = true);
+  Future<void> _editSubscription(String? source) async {
+    final url = await showDialog<String>(
+      context: context,
+      builder: (_) =>
+          BankLinkDialog(title: '修改订阅链接', initialValue: source ?? ''),
+    );
+    if (url == null || !mounted) return;
+    setState(() => _saving = true);
     try {
-      final path = await BankExportService.save(widget.bank, asZip: asZip, rootId: rootId);
-      if (path != null && mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('已导出：$path')));
+      await BankSubscriptionService.instance.setBankSource(widget.bank, url);
+      if (mounted) {
+        setState(() => _details = _load());
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('订阅链接已修改')));
+      }
     } catch (error) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('导出失败：$error')));
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('修改失败：$error')));
+      }
     } finally {
-      if (mounted) setState(() => _exporting = false);
+      if (mounted) setState(() => _saving = false);
     }
+  }
+
+  Widget _heading(String text) => Padding(
+    padding: const EdgeInsets.fromLTRB(4, 24, 4, 12),
+    child: Text(
+      text,
+      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+        color: Theme.of(context).colorScheme.primary,
+      ),
+    ),
+  );
+
+  Widget _history(Map<String, dynamic> event, bool last) {
+    final theme = Theme.of(context);
+    final time = DateTime.fromMillisecondsSinceEpoch(
+      event['timestamp'] as int,
+    ).toLocal();
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            width: 20,
+            child: Column(
+              children: [
+                const SizedBox(height: 5),
+                Icon(Icons.circle, size: 10, color: theme.colorScheme.primary),
+                if (!last)
+                  Expanded(
+                    child: VerticalDivider(
+                      width: 1,
+                      color: theme.colorScheme.outlineVariant,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Padding(
+              padding: EdgeInsets.only(bottom: last ? 0 : 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('${event['action']}', style: theme.textTheme.titleSmall),
+                  const SizedBox(height: 4),
+                  Text(
+                    '新增 ${event['added']} 道题 · 共 ${event['question_count']} 道题',
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${time.toIso8601String().substring(0, 16).replaceAll('T', ' ').replaceAll('-', '/')} · v${event['version']}',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: Text(widget.bank.name)),
-    body: FutureBuilder<_BankDetails>(future: _details, builder: (context, snapshot) {
-      if (snapshot.hasError) return Center(child: Text('详情读取失败：${snapshot.error}'));
-      if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-      final details = snapshot.data!;
-      final bank = widget.bank;
-      return ListView(padding: const EdgeInsets.all(20), children: [
-        if (bank.isInstalled) FilledButton.tonalIcon(
-          onPressed: _exporting ? null : () => _export(details),
-          icon: const Icon(Icons.file_download_outlined), label: Text(_exporting ? '正在打包…' : '导出题库')),
-        if (_exporting) const LinearProgressIndicator(),
-        Wrap(spacing: 8, children: [Chip(label: Text('v${bank.version}')),
-          if (details.meta['question_count'] != null) Chip(label: Text('${details.meta['question_count']} 题'))]),
-        ListTile(title: const Text('来源'), subtitle: Text(details.subscription != null ? '订阅题库' :
-          details.meta['source'] == 'ykb-created' ? '医考帮自建题库' : bank.builtIn ? '内置题库' : '文件导入')),
-        if (details.subscription != null) ListTile(title: const Text('订阅地址'), subtitle: SelectableText(details.subscription!)),
-        if (bank.remoteUrl != null) ListTile(title: const Text('下载地址'), subtitle: SelectableText(bank.remoteUrl!)),
-        const Divider(), const Text('覆盖课程', style: TextStyle(fontSize: 18)),
-        for (final root in details.identities.where((r) => r['parent_id'] == '-1')) _identity(root, details, {}),
-        const Divider(), const Text('变更时间轴', style: TextStyle(fontSize: 18)),
-        if (details.history.isEmpty) const ListTile(title: Text('暂无历史记录'), subtitle: Text('此功能启用前的更新不会补造历史。')),
-        for (final event in details.history) IntrinsicHeight(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          const SizedBox(width: 24, child: Column(children: [Icon(Icons.circle, size: 12), Expanded(child: VerticalDivider())])),
-          Expanded(child: ListTile(title: Text('${event['action']} · +${event['added']} 题'),
-            subtitle: Text('${DateTime.fromMillisecondsSinceEpoch(event['timestamp'] as int).toLocal()}\nv${event['version']} · 共 ${event['question_count']} 题'))),
-        ])),
-      ]);
-    }),
+    appBar: AppBar(
+      title: const Text('题库详情'),
+      actions: [
+        if (widget.bank.isInstalled)
+          BankExportButton(bank: widget.bank, enabled: !_saving),
+      ],
+    ),
+    body: FutureBuilder<_BankDetails>(
+      future: _details,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Center(child: Text('详情读取失败：${snapshot.error}'));
+        }
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final details = snapshot.data!;
+        final bank = widget.bank;
+        final courses = details.identities
+            .where((r) => r['parent_id'] == '-1')
+            .expand((root) => _identity(root, details, {}))
+            .toList();
+        final source = details.subscription != null
+            ? '订阅题库'
+            : details.meta['source'] == 'ykb-created'
+            ? '医考帮自建题库'
+            : bank.builtIn
+            ? '内置题库'
+            : '文件导入';
+        return ListView(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+          children: [
+            InfoCard(
+              children: [
+                BaseTile(
+                  child: Row(
+                    children: [
+                      const TileIcon(icon: Icons.menu_book_rounded),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              bank.name,
+                              style: Theme.of(context).textTheme.titleLarge,
+                            ),
+                            if (bank.description.isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                bank.description,
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            ],
+                            const SizedBox(height: 12),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 4,
+                              children: [
+                                Chip(
+                                  label: Text(
+                                    bank.isInstalled
+                                        ? '${details.meta['question_count'] ?? 0} 道题'
+                                        : '未安装',
+                                  ),
+                                  shape: const StadiumBorder(),
+                                ),
+                                if (bank.identityId.isNotEmpty)
+                                  Chip(
+                                    label: Text(bank.identityId),
+                                    shape: const StadiumBorder(),
+                                  ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            _heading('题库信息'),
+            InfoCard(
+              children: [
+                IconTile(
+                  icon: Icons.layers_outlined,
+                  label: '版本',
+                  value: 'v${bank.version}',
+                ),
+                IconTile(
+                  icon: Icons.source_outlined,
+                  label: '来源',
+                  value: source,
+                ),
+                if (details.subscription != null)
+                  BaseTile(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const TileIcon(icon: Icons.link_rounded),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '订阅链接',
+                                style: Theme.of(context).textTheme.bodyLarge,
+                              ),
+                              const SizedBox(height: 4),
+                              SelectableText(
+                                details.subscription!,
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurfaceVariant,
+                                    ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: '修改订阅链接',
+                          onPressed: _saving
+                              ? null
+                              : () => _editSubscription(details.subscription),
+                          icon: const Icon(Icons.edit_outlined),
+                        ),
+                      ],
+                    ),
+                  ),
+                if (_saving) const LinearProgressIndicator(),
+              ],
+            ),
+            _heading('覆盖课程'),
+            InfoCard(
+              children: courses.isEmpty
+                  ? [const IconTile(icon: Icons.school_outlined, label: '暂无课程')]
+                  : courses,
+            ),
+            _heading('更新记录'),
+            InfoCard(
+              children: [
+                if (details.history.isEmpty)
+                  const IconTile(icon: Icons.history_rounded, label: '暂无更新记录')
+                else
+                  BaseTile(
+                    child: Column(
+                      children: [
+                        for (var i = 0; i < details.history.length; i++)
+                          _history(
+                            details.history[i],
+                            i == details.history.length - 1,
+                          ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        );
+      },
+    ),
   );
 }
 
@@ -126,5 +397,12 @@ class _BankDetails {
   final Map<String, dynamic> meta;
   final List<Map<String, dynamic>> identities, subjects, chapters, history;
   final String? subscription;
-  _BankDetails(this.meta, this.identities, this.subjects, this.chapters, this.history, this.subscription);
+  _BankDetails(
+    this.meta,
+    this.identities,
+    this.subjects,
+    this.chapters,
+    this.history,
+    this.subscription,
+  );
 }
