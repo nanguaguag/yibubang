@@ -151,7 +151,7 @@ class YkbBankSyncService {
     var relationCount = 0;
     final total = chapters.length;
     try {
-      await _createSchema(db);
+      await createSchema(db);
       await db.transaction((txn) async {
         // BankMeta 先插占位，收尾更新计数。
         await txn.insert('BankMeta', {
@@ -480,7 +480,8 @@ class YkbBankSyncService {
     };
   }
 
-  static Future<void> _createSchema(Database db) async {
+  /// Creates content tables in a new disposable database, never a live bank.
+  static Future<void> createSchema(Database db) async {
     await db.execute('''
       CREATE TABLE BankMeta (
         bank_id TEXT PRIMARY KEY, name TEXT NOT NULL, version TEXT NOT NULL,
@@ -544,6 +545,8 @@ class YkbBankSyncService {
         FOREIGN KEY (subject_id) REFERENCES Subject(id),
         FOREIGN KEY (chapter_id) REFERENCES Chapter(id))
     ''');
+    await db.execute('CREATE INDEX idx_identity_question_question ON IdentityQuestion(question_id)');
+    await db.execute('CREATE INDEX idx_identity_question_chapter ON IdentityQuestion(identity_id, subject_id, chapter_id)');
   }
 
   static Map<String, dynamic>? _findNode(

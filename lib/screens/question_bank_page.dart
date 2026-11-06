@@ -8,6 +8,7 @@ import '../services/question_bank_file_service.dart';
 import '../services/bank_subscription_service.dart';
 import '../common/platform_adaptive.dart';
 import 'bank_subscriptions_page.dart';
+import 'bank_creation_page.dart';
 
 class QuestionBankPage extends StatefulWidget {
   const QuestionBankPage({super.key});
@@ -61,6 +62,12 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
       });
       await _loadSubscriptions();
     }
+  }
+
+  Future<void> _createBank() async {
+    final changed = await pushAdaptiveModalPage<bool>(context,
+      builder: (_) => const BankCreationPage());
+    if (changed == true && mounted) setState(_reload);
   }
 
   // 「同步题库」开关开启时，进入题库管理页自动拉取远程清单。
@@ -140,6 +147,11 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
           '完全覆盖用新文件替换题库。两种方式均保留个人作答、收藏和笔记。',
         ),
         actions: [
+          IconButton(
+            tooltip: '创建题库',
+            onPressed: _controlsDisabled ? null : _createBank,
+            icon: const Icon(Icons.add_box_outlined),
+          ),
           IconButton(
             tooltip: '管理订阅',
             onPressed: _controlsDisabled ? null : _editSubscriptions,
