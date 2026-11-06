@@ -317,6 +317,8 @@ class QuestionBankRepository {
   Future<QuestionBank> importFile(
     String sourcePath, {
     String? expectedBankId,
+    String? expectedIdentityId,
+    String? expectedSqliteHash,
     String? versionOverride,
     bool? updateEnabled,
     Future<BankImportMode?> Function(QuestionBank existing)? onConflict,
@@ -352,6 +354,13 @@ class QuestionBankRepository {
         throw FormatException(validation.message);
       }
       final metadata = validation.metadata!;
+      if (expectedIdentityId != null && metadata['identity_id'] != expectedIdentityId) {
+        throw const FormatException('下载题库的根 identity 与订阅清单不一致');
+      }
+      if (expectedSqliteHash != null &&
+          sha256.convert(await File(databasePath).readAsBytes()).toString() != expectedSqliteHash.toLowerCase()) {
+        throw const FormatException('SQLite SHA-256 与订阅清单不一致');
+      }
       final bankId = metadata['bank_id'] as String;
       // Reserve before awaiting the user choice; installations share a user DB
       // connection and must not race file replacement or ATTACH aliases.
@@ -695,6 +704,10 @@ class QuestionBankRepository {
     if (remoteBankId != null && remoteBankId != bankId) {
       throw FormatException('远程题库标识不匹配：清单为 $remoteBankId，目标为 $bankId');
     }
+    final remoteIdentity = remote?['identity_id']?.toString();
+    if (local?.isInstalled == true && remoteIdentity != null && local!.identityId != remoteIdentity) {
+      throw const FormatException('订阅清单不能更改已安装题库的根 identity');
+    }
 
     final client = http.Client();
     File? temporary;
@@ -748,6 +761,8 @@ class QuestionBankRepository {
       return await importFile(
         temporaryPath,
         expectedBankId: bankId,
+        expectedIdentityId: remoteIdentity,
+        expectedSqliteHash: remote?['sqlite_sha256']?.toString(),
         versionOverride: remote?['version']?.toString(),
         updateEnabled: true,
       );

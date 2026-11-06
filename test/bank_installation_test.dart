@@ -4,11 +4,13 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:crypto/crypto.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:yibubang/db/database_helper.dart';
 import 'package:yibubang/db/question_bank_manager.dart';
 import 'package:yibubang/repositories/question_bank_repository.dart';
 import 'package:yibubang/services/bank_creation_service.dart';
+import 'package:yibubang/services/bank_export_service.dart';
 import 'package:yibubang/services/question_bank_file_service.dart';
 import 'package:yibubang/services/ykb_bank_sync_service.dart';
 
@@ -113,6 +115,21 @@ void main() {
     await expectLater(YkbBankSyncService.syncBank(rebuilt,
       creationService: _CatalogService(restricted: true)), throwsStateError);
     expect(await File(rebuilt.localPath).readAsBytes(), bytes);
+    expect((await repository.history('fixture')).length, 2);
+  });
+
+  test('portable ZIP imports and mismatched root or SQLite hash cannot replace an installed bank', () async {
+    final first = await artifact('1.0.0', ['1']);
+    final installed = await repository.importFile(first.path);
+    final exportDirectory = await directory.createTemp('export-');
+    final sqlite = await BankExportService.prepare(installed, exportDirectory);
+    final zip = await BankExportService.zip(sqlite, exportDirectory);
+    final hash = sha256.convert(await sqlite.readAsBytes()).toString();
+    await repository.importFile(zip.path, expectedIdentityId: '38', expectedSqliteHash: hash);
+    final originalBytes = await File(installed.localPath).readAsBytes();
+    await expectLater(repository.importFile(zip.path, expectedIdentityId: '39'), throwsFormatException);
+    await expectLater(repository.importFile(zip.path, expectedSqliteHash: '0' * 64), throwsFormatException);
+    expect(await File(installed.localPath).readAsBytes(), originalBytes);
     expect((await repository.history('fixture')).length, 2);
   });
 }
