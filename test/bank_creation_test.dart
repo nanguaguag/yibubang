@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:path/path.dart' as p;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -98,5 +99,28 @@ void main() {
     expect((await db.query('IdentityQuestion')).single['identity_id'], '2010101');
     expect((await db.query('BankMeta')).single['question_count'], 1);
     await db.close();
+  });
+
+  test('export refuses live databases, aliases and new files beneath linked database directories', () async {
+    final dbDirectory = Directory(p.join(directory.path, 'databases'));
+    await dbDirectory.create();
+    final source = File(p.join(dbDirectory.path, 'user_data.sqlite'));
+    await source.writeAsString('protected');
+    final targets = [source.path, p.join(dbDirectory.path, 'new.sqlite')];
+    // Windows link creation can require privileges unavailable on CI runners.
+    if (!Platform.isWindows) {
+      final alias = Link(p.join(directory.path, 'alias.sqlite'));
+      await alias.create(source.path);
+      final linkedDirectory = Link(p.join(directory.path, 'linked'));
+      await linkedDirectory.create(dbDirectory.path);
+      targets.addAll([alias.path, p.join(linkedDirectory.path, 'new.sqlite')]);
+    }
+    for (final target in targets) {
+      await expectLater(BankExportService.validateDestination(target,
+        protectedPaths: [source.path], databaseDirectory: dbDirectory.path), throwsStateError);
+    }
+    await BankExportService.validateDestination(p.join(directory.path, 'export.sqlite'),
+      protectedPaths: [source.path], databaseDirectory: dbDirectory.path);
+    expect(await source.readAsString(), 'protected');
   });
 }

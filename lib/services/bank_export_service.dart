@@ -5,15 +5,44 @@ import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 
 import '../db/question_bank_manager.dart';
 import '../models/question_bank.dart';
+import '../repositories/question_bank_repository.dart';
 import 'question_bank_file_service.dart';
 import 'ykb_bank_sync_service.dart';
 
 class BankExportService {
+  /// Resolves links in existing ancestors too, protecting new target files.
+  static Future<String> _resolvedPath(String path) async {
+    final absolute = p.normalize(p.absolute(path));
+    if (await FileSystemEntity.type(absolute) != FileSystemEntityType.notFound) {
+      return File(absolute).resolveSymbolicLinks();
+    }
+    final parent = p.dirname(absolute);
+    if (parent == absolute) return absolute;
+    return p.join(await _resolvedPath(parent), p.basename(absolute));
+  }
+
+  static Future<void> validateDestination(String destination, {
+    required Iterable<String> protectedPaths,
+    String? databaseDirectory,
+  }) async {
+    final resolved = await _resolvedPath(destination);
+    final databaseRoot = await _resolvedPath(databaseDirectory ?? await getDatabasesPath());
+    if (p.equals(databaseRoot, resolved) || p.isWithin(databaseRoot, resolved)) {
+      throw StateError('导出位置不能位于应用数据库目录');
+    }
+    for (final protected in protectedPaths.where((path) => path.isNotEmpty)) {
+      if (p.equals(await _resolvedPath(protected), resolved) ||
+          (await File(destination).exists() && await File(protected).exists() &&
+            await FileSystemEntity.identical(destination, protected))) {
+        throw StateError('不能覆盖题库或用户数据库文件');
+      }
+    }
+  }
+
   static Future<File> prepare(QuestionBank bank, Directory directory, {String? rootId}) async {
     final legacy = bank.bankId == 'legacy_combined';
     final id = legacy ? 'legacy_$rootId' : bank.bankId;
@@ -21,6 +50,8 @@ class BankExportService {
       throw const FormatException('导出题库标识无效');
     }
     final output = File(p.join(directory.path, '$id.sqlite'));
+    await validateDestination(output.path, protectedPaths: [bank.localPath]);
+    if (await output.exists()) throw StateError('导出暂存文件已存在');
     if (!legacy) await File(bank.localPath).copy(output.path);
     final db = await openDatabase(output.path, singleInstance: false);
     try {
@@ -109,18 +140,21 @@ class BankExportService {
       final file = asZip ? await zip(sqlite, directory) : sqlite;
       String? destination;
       if (Platform.isAndroid || Platform.isIOS) {
-        final target = Platform.isAndroid ? await getExternalStorageDirectory() : null;
-        final documents = target ?? await getApplicationDocumentsDirectory();
-        destination = p.join(documents.path, p.basename(file.path));
+        // The mobile picker writes the bytes through the system document API;
+        // its return value may be a content URI, not a Dart filesystem path.
+        return await FilePicker.platform.saveFile(dialogTitle: '导出题库',
+          fileName: p.basename(file.path), type: FileType.custom,
+          allowedExtensions: [asZip ? 'zip' : 'sqlite'], bytes: await file.readAsBytes());
       } else {
         destination = await FilePicker.platform.saveFile(dialogTitle: '导出题库',
           fileName: p.basename(file.path), type: FileType.custom,
           allowedExtensions: [asZip ? 'zip' : 'sqlite']);
       }
       if (destination == null || destination.isEmpty) return null;
-      if (p.equals(p.normalize(destination), p.normalize(bank.localPath))) {
-        throw StateError('不能覆盖正在使用的题库文件');
-      }
+      final installed = await QuestionBankRepository().listBanks();
+      await validateDestination(destination, protectedPaths: [
+        bank.localPath, ...installed.map((bank) => bank.localPath),
+      ]);
       await file.copy(destination);
       return destination;
     } finally {
