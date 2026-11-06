@@ -19,6 +19,7 @@ import '../services/ykb_sync_service.dart';
 import '../widgets/common/info_card.dart';
 import '../widgets/common/styled_tile.dart';
 import '../widgets/theme_controller.dart';
+import '../widgets/bank_subscription_settings.dart';
 import 'about_page.dart';
 import 'cloud_sync_page.dart';
 import 'developer_page.dart';
@@ -797,6 +798,9 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             ],
           ),
+          const SizedBox(height: 14),
+          const _SectionTitle(title: '题库更新'),
+          const BankSubscriptionSettings(),
           const SizedBox(height: 14),
           const _SectionTitle(title: '做题记录'),
           InfoCard(

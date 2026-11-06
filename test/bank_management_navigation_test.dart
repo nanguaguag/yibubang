@@ -72,6 +72,8 @@ void main() {
       await tester.tap(find.byTooltip('管理订阅'));
       await tester.pumpAndSettle();
       expect(find.byType(BankSubscriptionsPage), findsOneWidget);
+      await tester.tap(find.text('添加订阅'));
+      await tester.pumpAndSettle();
       expect(find.text('HTTPS 订阅地址'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
