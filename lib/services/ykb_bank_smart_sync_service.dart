@@ -13,6 +13,9 @@ import '../common/request.dart';
 import '../db/database_helper.dart';
 import '../db/question_bank_manager.dart';
 import '../models/question_bank.dart';
+import '../models/bank_progress.dart';
+import 'bank_creation_service.dart';
+import 'question_bank_file_service.dart';
 import '../repositories/question_bank_repository.dart';
 import 'ykb_bank_sync_service.dart';
 
@@ -153,6 +156,7 @@ class YkbBankSmartSyncService {
     bool manual = false,
     bool forceManifest = false,
     int? maxChapters,
+    void Function(BankProgress)? onProgress,
   }) async {
     if (_running) {
       return const YkbBankSmartSyncResult(error: '正在同步中');
@@ -175,6 +179,41 @@ class YkbBankSmartSyncService {
       if (resolvedBank == null || !resolvedBank.isInstalled) {
         return const YkbBankSmartSyncResult(error: '当前题库未安装');
       }
+      if (resolvedBank.bankId.startsWith('custom_')) {
+        final creation = BankCreationService();
+        final nodes = await creation.identities();
+        BankIdentityNode? find(List<BankIdentityNode> items) {
+          for (final node in items) {
+            if (node.id == resolvedBank.identityId) return node;
+            final found = find(node.children);
+            if (found != null) return found;
+          }
+          return null;
+        }
+        final root = find(nodes);
+        if (root == null) throw StateError('远端身份不存在');
+        final directory = await Directory.systemTemp.createTemp('bank-refresh-');
+        try {
+          final file = await creation.build(root: root, bankId: resolvedBank.bankId,
+            name: resolvedBank.name, version: QuestionBankFileService.nextVersion(resolvedBank.version),
+            directory: directory, onProgress: onProgress);
+          final added = await _addedBetween(resolvedBank.localPath, file.path);
+          if (!await QuestionBankFileService.hasChanges(resolvedBank.localPath, file.path)) {
+            onProgress?.call(const BankProgress(stage: '题库内容已是最新', finished: true));
+            return YkbBankSmartSyncResult(elapsedMs: sw.elapsedMilliseconds);
+          }
+          onProgress?.call(const BankProgress(stage: '比较与合并题库'));
+          await QuestionBankRepository().importFile(file.path,
+            onConflict: (_) async => BankImportMode.merge);
+          onProgress?.call(const BankProgress(stage: '同步完成', finished: true));
+          return YkbBankSmartSyncResult(installed: true, elapsedMs: sw.elapsedMilliseconds,
+            addedQuestions: added);
+        } finally {
+          await directory.delete(recursive: true);
+        }
+      }
+
+      onProgress?.call(const BankProgress(stage: '检查远端章节目录'));
 
       final userDb = await UserDBHelper().database;
       await _ensureBankState(userDb, resolvedBank.bankId);
@@ -276,8 +315,14 @@ class YkbBankSmartSyncService {
       final restrictedStates = <Map<String, dynamic>>[];
       final failed = <_RemoteChapter>[];
       var restricted = 0;
+      var completed = 0;
+      var fetchedQuestions = 0;
+      final expectedQuestions = batch.fold<int>(0, (sum, c) => sum + c.count);
 
       for (final rc in batch) {
+        onProgress?.call(BankProgress(stage: '拉取并比较章节', chapter: rc.title,
+          completed: completed++, total: batch.length,
+          questions: fetchedQuestions, expectedQuestions: expectedQuestions));
         if (_requestsUsed >= _maxRequestsPerRun) {
           remaining.insert(0, rc);
           continue;
@@ -318,6 +363,7 @@ class YkbBankSmartSyncService {
           continue;
         }
         final questions = fetchResult.questions!;
+        fetchedQuestions += questions.length;
         if (questions.length != rc.count) {
           // count 与列表不一致：宁可留到下一轮，不把半章数据写进题库。
           debugPrint(
@@ -396,6 +442,8 @@ class YkbBankSmartSyncService {
       }
 
       // 3) 复制当前题库 -> staging，事务内应用增量。
+      onProgress?.call(BankProgress(stage: '写入暂存题库', completed: batch.length,
+        total: batch.length, questions: fetchedQuestions, expectedQuestions: expectedQuestions));
       final baseVersion =
           RegExp(
             r'^\d+\.\d+\.\d+',
@@ -419,6 +467,8 @@ class YkbBankSmartSyncService {
       );
 
       // 4) 校验 + 原子替换。importFile 内部会做 SHA-256、备份和 rename。
+      onProgress?.call(BankProgress(stage: '校验与安装', completed: batch.length,
+        total: batch.length, questions: fetchedQuestions, expectedQuestions: expectedQuestions));
       // 同步后的题库不再跟随旧的远端 3.0.0 包更新，避免覆盖官方 API 增量。
       final installed = await QuestionBankRepository().importFile(
         stagingPath,
@@ -470,6 +520,7 @@ class YkbBankSmartSyncService {
         '剩余=${failed.length + remaining.length} '
         '请求=$_requestsUsed',
       );
+      onProgress?.call(const BankProgress(stage: '同步完成', finished: true));
       return YkbBankSmartSyncResult(
         installed: true,
         manifestChapters: manifest?.leaves.length ?? 0,
@@ -532,6 +583,17 @@ class YkbBankSmartSyncService {
   Future<QuestionBank?> _activeBank() async {
     final repository = QuestionBankRepository();
     return repository.find(await repository.activeBankId());
+  }
+
+  Future<int> _addedBetween(String localPath, String incomingPath) async {
+    final db = await openDatabase(localPath, readOnly: true, singleInstance: false);
+    try {
+      await db.execute('ATTACH DATABASE ? AS incoming', [incomingPath]);
+      return Sqflite.firstIntValue(await db.rawQuery(
+        'SELECT COUNT(*) FROM incoming.Question r WHERE NOT EXISTS (SELECT 1 FROM Question l WHERE l.id = r.id)')) ?? 0;
+    } finally {
+      await db.close();
+    }
   }
 
   Future<_Manifest> _fetchManifest(

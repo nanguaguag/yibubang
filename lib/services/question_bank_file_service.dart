@@ -9,6 +9,29 @@ class BankImportCancelled implements Exception {}
 
 /// Only edits a disposable copy; both input files remain unchanged.
 class QuestionBankFileService {
+  static Future<bool> hasChanges(String localPath, String incomingPath) async {
+    final db = await openDatabase(localPath, readOnly: true, singleInstance: false);
+    try {
+      await db.execute('ATTACH DATABASE ? AS incoming', [incomingPath]);
+      for (final table in ['Question', 'Identity', 'Subject', 'Chapter', 'IdentityQuestion']) {
+        final localColumns = await db.rawQuery('PRAGMA table_info($table)');
+        final incomingColumns = await db.rawQuery('PRAGMA incoming.table_info($table)');
+        final names = incomingColumns.map((r) => r['name']).toSet();
+        final columns = localColumns.map((r) => r['name'] as String)
+            .where((name) => names.contains(name) && name != 'cut_question' && name != 'user_answer')
+            .map((name) => '"${name.replaceAll('"', '""')}"').join(',');
+        final changes = await db.rawQuery('''
+          SELECT $columns FROM incoming.$table
+          EXCEPT SELECT $columns FROM $table LIMIT 1
+        ''');
+        if (changes.isNotEmpty) return true;
+      }
+      return false;
+    } finally {
+      await db.close();
+    }
+  }
+
   static String nextVersion(String version) {
     final match = RegExp(r'^(\d+)\.(\d+)\.(\d+)').firstMatch(version);
     if (match == null) return '1.0.0';

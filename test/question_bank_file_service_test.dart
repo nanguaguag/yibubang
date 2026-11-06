@@ -130,4 +130,14 @@ void main() {
     expect(QuestionBankFileService.nextVersion('3.0.4+delta.123'), '3.0.5');
     expect(QuestionBankFileService.nextVersion('sync-123'), '1.0.0');
   });
+
+  test('no-op detection ignores account state and retains local extra questions', () async {
+    expect(await QuestionBankFileService.hasChanges(localPath, incomingPath), isTrue);
+    final incoming = await openDatabase(incomingPath);
+    await incoming.delete('IdentityQuestion', where: 'question_id = ?', whereArgs: ['3']);
+    await incoming.delete('Question', where: 'id = ?', whereArgs: ['3']);
+    await incoming.update('Question', {'title': '本地', 'user_answer': '', 'cut_question': '0'});
+    await incoming.close();
+    expect(await QuestionBankFileService.hasChanges(localPath, incomingPath), isFalse);
+  });
 }

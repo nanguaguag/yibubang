@@ -5,6 +5,8 @@ import '../repositories/question_bank_repository.dart';
 import 'ykb_bank_smart_sync_service.dart';
 import 'ykb_bank_sync_service.dart';
 import 'ykb_pull_service.dart';
+import '../models/bank_progress.dart';
+import '../widgets/bank_progress_view.dart';
 
 enum CourseSyncAction {
   smart('smart', '智能增量同步题库', Icons.auto_awesome_outlined),
@@ -48,7 +50,7 @@ class CourseSyncActions extends ChangeNotifier {
     notifyListeners();
     final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context, rootNavigator: true);
-    final progress = ValueNotifier<String>('正在准备…');
+    final progress = ValueNotifier<BankProgress>(const BankProgress(stage: '正在准备…'));
     DialogRoute<void>? dialog;
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -93,16 +95,9 @@ class CourseSyncActions extends ChangeNotifier {
           canPop: false,
           child: AlertDialog(
             title: Text(action.label),
-            content: ValueListenableBuilder<String>(
+            content: ValueListenableBuilder<BankProgress>(
               valueListenable: progress,
-              builder: (_, text, _) => Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const LinearProgressIndicator(),
-                  const SizedBox(height: 16),
-                  Text(text),
-                ],
-              ),
+              builder: (_, value, _) => BankProgressView(progress: value),
             ),
           ),
         ),
@@ -111,7 +106,7 @@ class CourseSyncActions extends ChangeNotifier {
       String message;
       switch (action) {
         case CourseSyncAction.records:
-          progress.value = '正在拉取记录；本地已作答的题目会保留…';
+          progress.value = const BankProgress(stage: '正在拉取记录；本地已作答的题目会保留…');
           final result = await YkbPullService.pullForBank(
             bank,
             pacing: SyncPacing(
@@ -121,12 +116,13 @@ class CourseSyncActions extends ChangeNotifier {
           );
           message = result.summary;
         case CourseSyncAction.smart:
-          progress.value = '正在检查远端章节，只处理有变化的章节…';
+          progress.value = const BankProgress(stage: '正在检查远端章节，只处理有变化的章节…');
           final result = await YkbBankSmartSyncService.instance.run(
             bank: bank,
             manual: true,
             forceManifest: true,
             maxChapters: 16,
+            onProgress: (value) => progress.value = value,
           );
           message = result.summary;
         case CourseSyncAction.rebuild:
@@ -137,7 +133,7 @@ class CourseSyncActions extends ChangeNotifier {
               pacingEnabled: prefs.getBool('sync_ykb_pacing_enabled') ?? false,
             ),
             onProgress: (stage, done, total) =>
-                progress.value = '$stage（$done/$total）',
+                progress.value = BankProgress(stage: stage, completed: done, total: total),
           );
           message = '题库「${bank.name}」重建完成';
       }
