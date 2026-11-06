@@ -14,6 +14,7 @@ import 'package:yibubang/services/bank_export_service.dart';
 import 'package:yibubang/services/bank_subscription_loader.dart';
 import 'package:yibubang/services/bank_subscription_service.dart';
 import 'package:yibubang/services/ykb_bank_sync_service.dart';
+import 'package:yibubang/services/question_bank_file_service.dart';
 import 'package:yibubang/repositories/question_bank_repository.dart';
 import 'package:yibubang/widgets/bank_subscription_settings.dart';
 
@@ -135,6 +136,83 @@ void main() {
       );
       await service.refresh(bankId: 'fixture');
       expect((await service.cached()).length, 2);
+    },
+  );
+
+  test(
+    'manual subscription update refreshes the source, installs new content and preserves global user answers',
+    () async {
+      final file = await artifact();
+      final repository = QuestionBankRepository();
+      final installed = await repository.importFile(
+        file.path,
+        updateEnabled: false,
+      );
+      final userDb = await UserDBHelper().database;
+      await userDb.insert('Question', {
+        'id': '1',
+        'status': 1,
+        'user_answer': 'A',
+      });
+      final updateDirectory = await directory.createTemp('update-');
+      final updatedFile = await file.copy(
+        p.join(updateDirectory.path, 'fixture.sqlite'),
+      );
+      // Prepare a new disposable content artifact; installed bank stays read-only.
+      final content = await openDatabase(
+        updatedFile.path,
+        singleInstance: false,
+      );
+      await content.insert('Question', {'id': '2'});
+      await content.insert('IdentityQuestion', {
+        'identity_id': '38',
+        'subject_id': 's',
+        'chapter_id': 'c',
+        'question_id': '2',
+      });
+      await QuestionBankFileService.recount(content, version: '1.0.1');
+      await content.close();
+      final service = BankSubscriptionService(
+        loader: BankSubscriptionLoader(
+          client: MockClient(
+            (_) async =>
+                http.Response.bytes(await updatedFile.readAsBytes(), 200),
+          ),
+        ),
+      );
+      await service.saveSources(['https://example.org/fixture.sqlite']);
+      // Automatic updates skip frozen content, while the manual button is explicit.
+      await service.refresh(installUpdates: true);
+      expect(
+        (await repository.find('fixture'))!.contentHash,
+        installed.contentHash,
+      );
+      await service.refresh(bankId: 'fixture', installUpdates: true);
+      final updated = (await repository.find('fixture'))!;
+      expect(updated.version, '1.0.1');
+      expect(updated.contentHash, isNot(installed.contentHash));
+      expect(
+        (await userDb.query(
+          'Question',
+          where: 'id = ?',
+          whereArgs: ['1'],
+        )).single['user_answer'],
+        'A',
+      );
+      expect(
+        (await userDb.query(
+          'IdentitySubject',
+          where: 'bank_id = ?',
+          whereArgs: ['fixture'],
+        )).single['correct'],
+        1,
+      );
+      final history = await repository.history('fixture');
+      expect(history.length, 2);
+      expect(history.first['added'], 1);
+      // Rechecking the same source must not reinstall or fabricate a history event.
+      await service.refresh(bankId: 'fixture', installUpdates: true);
+      expect((await repository.history('fixture')).length, 2);
     },
   );
 

@@ -194,7 +194,7 @@ class QuestionBankDatabaseManager {
         whereArgs: ['-1'],
       );
       if (rootRows.length != 1) {
-        return const BankFileValidation.invalid('题库必须且只能包含一个根 identity');
+        return const BankFileValidation.invalid('题库必须且只能属于一个顶层学科');
       }
       final tFk = sw.elapsedMilliseconds;
       final foreignKeyErrors =

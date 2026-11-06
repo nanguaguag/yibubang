@@ -355,7 +355,7 @@ class QuestionBankRepository {
       }
       final metadata = validation.metadata!;
       if (expectedIdentityId != null && metadata['identity_id'] != expectedIdentityId) {
-        throw const FormatException('下载题库的根 identity 与订阅清单不一致');
+        throw const FormatException('下载题库的学科与订阅清单不一致');
       }
       if (expectedSqliteHash != null &&
           sha256.convert(await File(databasePath).readAsBytes()).toString() != expectedSqliteHash.toLowerCase()) {
@@ -381,7 +381,7 @@ class QuestionBankRepository {
           if (!localValidation.isValid ||
               localValidation.metadata?['identity_id'] !=
                   metadata['identity_id']) {
-            throw const FormatException('题库根 identity 不一致，无法增量合并');
+            throw const FormatException('题库所属学科不一致，无法增量合并');
           }
           mergeDirectory = await Directory.systemTemp.createTemp('bank-merge-');
           final merged = await QuestionBankFileService.merge(
@@ -706,7 +706,7 @@ class QuestionBankRepository {
     }
     final remoteIdentity = remote?['identity_id']?.toString();
     if (local?.isInstalled == true && remoteIdentity != null && local!.identityId != remoteIdentity) {
-      throw const FormatException('订阅清单不能更改已安装题库的根 identity');
+      throw const FormatException('订阅清单的学科与已安装题库不一致');
     }
 
     final client = http.Client();
