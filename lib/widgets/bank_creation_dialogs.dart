@@ -2,6 +2,61 @@ import 'package:flutter/material.dart';
 
 import '../models/bank_creation_report.dart';
 
+Future<bool> showBankCreationConfirmation(
+  BuildContext context, {
+  required int bankCount,
+}) async {
+  var acknowledged = false;
+  return await showDialog<bool>(
+        context: context,
+        builder: (ctx) => StatefulBuilder(
+          builder: (ctx, setDialogState) => AlertDialog(
+            icon: const Icon(Icons.info_outline_rounded),
+            title: const Text('创建前确认'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('本次将创建 $bankCount 个题库。'),
+                  const SizedBox(height: 12),
+                  const Text(
+                    '自动抓取可能涉及著作权、平台服务协议及相关法律责任。请仅在获得授权的范围内使用，勿未经许可传播题库。',
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    '请确认当前登录的医考帮账号已开通会员，并拥有所选内容的查看权限。会员或课程权限不足会导致受限内容抓取失败（203）；会员身份不代表所有课程均可访问。',
+                  ),
+                  const SizedBox(height: 12),
+                  CheckboxListTile(
+                    key: const ValueKey('bank-creation-acknowledgement'),
+                    contentPadding: EdgeInsets.zero,
+                    controlAffinity: ListTileControlAffinity.leading,
+                    title: const Text('我已了解风险，并确认当前账号为会员且具有所选内容的访问权限。'),
+                    value: acknowledged,
+                    onChanged: (value) =>
+                        setDialogState(() => acknowledged = value == true),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('取消'),
+              ),
+              FilledButton(
+                key: const ValueKey('bank-creation-confirm'),
+                onPressed: acknowledged ? () => Navigator.pop(ctx, true) : null,
+                child: const Text('确认并开始'),
+              ),
+            ],
+          ),
+        ),
+      ) ??
+      false;
+}
+
 Future<BankCreationErrorAction> showBankCreationIssue(
   BuildContext context,
   BankCreationIssue issue,

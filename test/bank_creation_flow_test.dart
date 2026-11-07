@@ -13,21 +13,26 @@ import 'package:yibubang/services/bank_creation_service.dart';
 import 'package:yibubang/services/ykb_bank_sync_service.dart';
 import 'package:yibubang/widgets/bank_creation_dialogs.dart';
 
+var creationRequests = 0;
+
 class _CreationFixture extends BankCreationService {
   _CreationFixture()
     : super(
-        request: (_, __) async => {
-          'code': 200,
-          'data': [
-            {
-              'chapter_id': 's',
-              'title': '解剖学',
-              'children': [
-                for (final id in ['成功章节', '无权限章节', '服务异常章节', '另一失败章节'])
-                  {'chapter_id': id, 'title': id, 'count': 1},
-              ],
-            },
-          ],
+        request: (_, __) async {
+          creationRequests++;
+          return {
+            'code': 200,
+            'data': [
+              {
+                'chapter_id': 's',
+                'title': '解剖学',
+                'children': [
+                  for (final id in ['成功章节', '无权限章节', '服务异常章节', '另一失败章节'])
+                    {'chapter_id': id, 'title': id, 'count': 1},
+                ],
+              },
+            ],
+          };
         },
         fetchChapter: (_, id) async => id == '成功章节'
             ? const YkbChapterFetchResult(
@@ -56,6 +61,7 @@ void main() {
   late Directory directory;
   late String previousPath;
   setUp(() async {
+    creationRequests = 0;
     SharedPreferences.setMockInitialValues({'loggedin': true});
     previousPath = await getDatabasesPath();
     directory = await Directory.systemTemp.createTemp('creation-flow-');
@@ -88,6 +94,28 @@ void main() {
     await tester.tap(find.byType(Checkbox).first);
     await tester.pump();
     await tester.tap(find.text('开始创建'));
+    await waitFor(tester, find.text('创建前确认'));
+    expect(find.textContaining('法律责任'), findsOneWidget);
+    expect(find.textContaining('会员身份'), findsOneWidget);
+    expect(
+      tester
+          .widget<FilledButton>(
+            find.byKey(const ValueKey('bank-creation-confirm')),
+          )
+          .onPressed,
+      isNull,
+    );
+    expect(creationRequests, 0);
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('bank-creation-acknowledgement')),
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('bank-creation-acknowledgement')),
+    );
+    await tester.pump();
+    await tester.runAsync(
+      () => tester.tap(find.byKey(const ValueKey('bank-creation-confirm'))),
+    );
     await waitFor(tester, find.text('当前账号没有查看权限（203）。'));
     expect(find.text('忽略'), findsOneWidget);
     expect(find.text('忽略全部'), findsOneWidget);
@@ -95,6 +123,34 @@ void main() {
   }
 
   for (final width in [390.0, 1000.0]) {
+    testWidgets(
+      'cancelling creation confirmation makes no content requests at $width',
+      (tester) async {
+        await tester.binding.setSurfaceSize(Size(width, 1000));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        await tester.pumpWidget(
+          MaterialApp(home: BankCreationPage(service: _CreationFixture())),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byType(Checkbox).first);
+        await tester.pump();
+        await tester.tap(find.text('开始创建'));
+        await waitFor(tester, find.text('创建前确认'));
+        await tester.tap(find.text('取消'));
+        await tester.pumpAndSettle();
+        expect(creationRequests, 0);
+        expect(find.text('查看创建报告'), findsNothing);
+        expect(find.byType(BankCreationReportDialog), findsNothing);
+        expect(
+          tester
+              .widget<FilledButton>(find.widgetWithText(FilledButton, '开始创建'))
+              .onPressed,
+          isNotNull,
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+
     testWidgets(
       'creation supports ignore and ignore all, then reports saved content and all failures at $width',
       (tester) async {

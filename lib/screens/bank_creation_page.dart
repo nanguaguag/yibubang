@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/bank_progress.dart';
 import '../models/bank_creation_report.dart';
 import '../widgets/bank_creation_dialogs.dart';
-import '../widgets/common/info_card.dart';
+import '../widgets/bank_identity_tree.dart';
 import '../services/bank_creation_service.dart';
 import '../widgets/bank_progress_view.dart';
 import '../widgets/bank_action_button.dart';
@@ -23,6 +23,7 @@ class _BankCreationPageState extends State<BankCreationPage> {
   BankTaskCancellation? _cancellation;
   BankProgress? _progress;
   bool _busy = false;
+  bool _confirming = false;
   BankCreationReport? _report;
   bool _terminated = false;
 
@@ -36,29 +37,6 @@ class _BankCreationPageState extends State<BankCreationPage> {
   void dispose() {
     _cancellation?.cancelled = true;
     super.dispose();
-  }
-
-  Widget _node(BankIdentityNode node) {
-    final checkbox = CheckboxListTile(
-      controlAffinity: ListTileControlAffinity.leading,
-      title: Text(node.name),
-      subtitle: Text(node.id),
-      value: _selected.contains(node.id),
-      onChanged: _busy
-          ? null
-          : (value) => setState(() {
-              if (value == true) {
-                _selected.add(node.id);
-              } else {
-                _selected.remove(node.id);
-              }
-            }),
-    );
-    if (node.children.isEmpty) return checkbox;
-    return ExpansionTile(
-      title: checkbox,
-      children: node.children.map(_node).toList(),
-    );
   }
 
   Future<BankCreationErrorAction> _onError(BankCreationIssue issue) async {
@@ -75,8 +53,20 @@ class _BankCreationPageState extends State<BankCreationPage> {
   );
 
   Future<void> _create(List<BankIdentityNode> nodes) async {
+    if (_busy || _confirming) return;
     final roots = nodes.expand((n) => n.selectedRoots(_selected)).toList();
     if (roots.isEmpty) return;
+    setState(() => _confirming = true);
+    bool confirmed;
+    try {
+      confirmed = await showBankCreationConfirmation(
+        context,
+        bankCount: roots.length,
+      );
+    } finally {
+      if (mounted) setState(() => _confirming = false);
+    }
+    if (!confirmed || !mounted) return;
     final cancellation = BankTaskCancellation();
     final report = BankCreationReport();
     setState(() {
@@ -168,72 +158,86 @@ class _BankCreationPageState extends State<BankCreationPage> {
           if (!snapshot.hasData) {
             return const Center(child: BankActionProgress(label: '正在加载题库'));
           }
-          return Column(
-            children: [
-              Expanded(
-                child: ListView(
-                  padding: const EdgeInsets.all(16),
-                  children: [
-                    Text(
-                      '选择学科后，抓取全部课程与章节并保存为独立题库。选择上级学科会包含下级；重复选择只制作一次。',
-                      style: Theme.of(context).textTheme.bodyMedium,
+          return Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 760),
+              child: Column(
+                children: [
+                  Expanded(
+                    child: ListView(
+                      padding: const EdgeInsets.all(16),
+                      children: [
+                        Text(
+                          '选择学科后，抓取全部课程与章节并保存为独立题库。选择上级学科会包含下级；重复选择只制作一次。',
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                        const SizedBox(height: 12),
+                        BankIdentityTree(
+                          nodes: snapshot.data!,
+                          selected: _selected,
+                          enabled: !_busy && !_confirming,
+                          onChanged: (selection) => setState(() {
+                            _selected
+                              ..clear()
+                              ..addAll(selection);
+                          }),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 12),
-                    InfoCard(children: snapshot.data!.map(_node).toList()),
-                  ],
-                ),
-              ),
-              SafeArea(
-                top: false,
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      if (_progress != null)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: BankProgressView(
-                            progress: _progress!,
-                            showIndicator: false,
-                          ),
-                        ),
-                      FilledButton.icon(
-                        onPressed: _busy || _selected.isEmpty
-                            ? null
-                            : () => _create(snapshot.data!),
-                        icon: _busy
-                            ? BankActionProgress(
-                                value: _progress?.fraction,
-                                label: _progress?.stage,
-                              )
-                            : const Icon(Icons.add_rounded),
-                        label: Text(_busy ? '正在创建' : '开始创建'),
-                      ),
-                      if (_busy)
-                        TextButton(
-                          onPressed: (_cancellation?.cancelled ?? false)
-                              ? null
-                              : () => setState(() {
-                                  _cancellation?.cancelled = true;
-                                }),
-                          child: Text(
-                            (_cancellation?.cancelled ?? false)
-                                ? '正在终止…'
-                                : '终止创建',
-                          ),
-                        ),
-                      if (!_busy && _report != null)
-                        TextButton(
-                          onPressed: _showReport,
-                          child: const Text('查看创建报告'),
-                        ),
-                    ],
                   ),
-                ),
+                  SafeArea(
+                    top: false,
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (_progress != null)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: BankProgressView(
+                                progress: _progress!,
+                                showIndicator: false,
+                              ),
+                            ),
+                          FilledButton.icon(
+                            onPressed: _busy || _confirming || _selected.isEmpty
+                                ? null
+                                : () => _create(snapshot.data!),
+                            icon: _busy
+                                ? BankActionProgress(
+                                    value: _progress?.fraction,
+                                    label: _progress?.stage,
+                                  )
+                                : const Icon(Icons.add_rounded),
+                            label: Text(_busy ? '正在创建' : '开始创建'),
+                          ),
+                          if (_busy)
+                            TextButton(
+                              onPressed: (_cancellation?.cancelled ?? false)
+                                  ? null
+                                  : () => setState(() {
+                                      _cancellation?.cancelled = true;
+                                    }),
+                              child: Text(
+                                (_cancellation?.cancelled ?? false)
+                                    ? '正在终止…'
+                                    : '终止创建',
+                              ),
+                            ),
+                          if (!_busy && _report != null)
+                            TextButton(
+                              onPressed: _showReport,
+                              child: const Text('查看创建报告'),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           );
         },
       ),
