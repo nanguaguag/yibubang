@@ -5,6 +5,8 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/question_bank.dart';
+import '../models/bank_source.dart';
+import 'bank_source_store.dart';
 import '../repositories/question_bank_repository.dart';
 import 'bank_subscription_loader.dart';
 
@@ -17,6 +19,8 @@ class BankSubscriptionService {
   static const _intervalKey = 'bank_subscription_interval_minutes';
   static const _lastCheckKey = 'bank_subscription_last_check';
   final BankSubscriptionLoader loader;
+  final store = BankSourceStore();
+  final _checks = <String, Future<BankSource>>{};
   Timer? _timer;
   bool _running = false;
   int _scheduleRevision = 0;
@@ -42,16 +46,115 @@ class BankSubscriptionService {
     return Map<String, String>.from(jsonDecode(raw) as Map);
   }
 
-  static String validateUrl(String value) {
-    final uri = Uri.tryParse(value.trim());
-    if (uri == null ||
-        uri.scheme != 'https' ||
-        uri.host.isEmpty ||
-        uri.userInfo.isNotEmpty) {
-      throw const FormatException('请输入有效的 HTTPS 题库链接或订阅清单地址');
-    }
-    return uri.toString();
+  static String validateUrl(String value) => normalizeBankSourceUrl(value);
+
+  Future<List<BankSource>> sources() async =>
+      (await store.read()).sources.values.toList();
+
+  Future<void> proposeBankSource(QuestionBank bank, String value) async {
+    final source = BankSource.fresh(value);
+    await store.change((catalog) {
+      catalog.sources.putIfAbsent(source.id, () => source);
+      catalog.pending[bank.bankId] = source.id;
+    });
   }
+
+  Future<void> selectSource(QuestionBank bank, String sourceId) async {
+    final source = (await store.read()).sources[sourceId];
+    final entry = source?.entry(bank.bankId);
+    if (source == null ||
+        source.status != BankSourceStatus.ready ||
+        entry == null) {
+      throw StateError('请先检查该来源');
+    }
+    if (bank.isInstalled && entry['identity_id']?.toString() != bank.identityId) {
+      throw const FormatException('来源学科与当前题库不一致');
+    }
+    await store.change((catalog) {
+      catalog.bindings[bank.bankId] = sourceId;
+      catalog.pending.remove(bank.bankId);
+    });
+    await QuestionBankRepository().registerRemoteEntries([entry]);
+  }
+
+  Future<List<BankSource>> check({String? bankId, String? sourceId}) async {
+    final catalog = await store.read();
+    final selectedId =
+        sourceId ??
+        (bankId == null
+            ? null
+            : catalog.pending[bankId] ?? catalog.bindings[bankId]);
+    final selected = selectedId == null && bankId == null
+        ? catalog.sources.values.toList()
+        : [
+            if (catalog.sources[selectedId] != null)
+              catalog.sources[selectedId]!,
+          ];
+    final results = <BankSource>[];
+    for (final source in selected) {
+      final future = _checks.putIfAbsent(source.id, () => _checkSource(source));
+      try {
+        results.add(await future);
+      } finally {
+        if (identical(_checks[source.id], future)) _checks.remove(source.id);
+      }
+    }
+    return results;
+  }
+
+  Future<BankSource> _checkSource(BankSource source) async {
+    late BankSource result;
+    try {
+      result = await loader.check(source);
+      await store.change((catalog) {
+        if (!catalog.sources.containsKey(source.id)) return;
+        catalog.sources[source.id] = result;
+        for (final entry in result.entries) {
+          catalog.bindings.putIfAbsent(
+            entry['bank_id'] as String,
+            () => source.id,
+          );
+        }
+      });
+      final catalog = await store.read();
+      for (final entry in result.entries) {
+        final id = entry['bank_id'] as String;
+        if (catalog.pending[id] == source.id &&
+            result.status == BankSourceStatus.ready) {
+          final bank = await QuestionBankRepository().find(id);
+          if (bank != null) await selectSource(bank, source.id);
+        }
+      }
+      await QuestionBankRepository().registerRemoteEntries(
+        result.entries
+            .where((e) => catalog.bindings[e['bank_id'] as String] == source.id)
+            .toList(),
+      );
+    } catch (error) {
+      result = BankSource(
+        url: source.url,
+        official: source.official,
+        kind: source.kind,
+        status: BankSourceStatus.failed,
+        entries: source.entries,
+        checkedAt: DateTime.now().millisecondsSinceEpoch,
+        successAt: source.successAt,
+        error: error.toString(),
+        etag: source.etag,
+        lastModified: source.lastModified,
+        transportUrl: source.transportUrl,
+      );
+      await store.change((catalog) {
+        if (catalog.sources.containsKey(source.id)) {
+          catalog.sources[source.id] = result;
+        }
+      });
+    }
+    return result;
+  }
+
+  Future<BankUpdateInfo> updateInfo(QuestionBank bank) async =>
+      BankUpdateInfo.compare(bank, (await store.read()).sourceFor(bank.bankId));
 
   Future<void> save(List<String> values, bool auto) async {
     await saveSources(values);
@@ -61,6 +164,28 @@ class BankSubscriptionService {
   Future<void> saveSources(List<String> values) async {
     if (_running) throw StateError('订阅正在检查，请稍后保存');
     final normalized = values.map(validateUrl).toSet().toList();
+    await store.change((catalog) {
+      final wanted = normalized.map((url) => BankSource.fresh(url)).toList();
+      final retainedIds = wanted.map((s) => s.id).toSet();
+      final removedIds = catalog.sources.values
+          .where(
+            (s) =>
+                !s.official &&
+                !retainedIds.contains(s.id) &&
+                !catalog.pending.containsValue(s.id),
+          )
+          .map((s) => s.id)
+          .toSet();
+      catalog.sources.removeWhere((id, _) => removedIds.contains(id));
+      for (final id in catalog.bindings.keys.toList()) {
+        if (removedIds.contains(catalog.bindings[id])) {
+          catalog.bindings[id] = '';
+        }
+      }
+      for (final source in wanted) {
+        catalog.sources.putIfAbsent(source.id, () => source);
+      }
+    });
     final overrides = await _overrides();
     final retained = {...normalized, ...overrides.values};
     final prefs = await SharedPreferences.getInstance();
@@ -311,7 +436,7 @@ class BankSubscriptionService {
     if (!await automatic() || _running || !await isDue(DateTime.now())) return;
     if ((await urls()).isEmpty && (await _overrides()).isEmpty) return;
     try {
-      await refresh(installUpdates: true);
+      await check();
       await (await SharedPreferences.getInstance()).setInt(
         _lastCheckKey,
         DateTime.now().millisecondsSinceEpoch,

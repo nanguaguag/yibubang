@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/bank_subscription_service.dart';
+import '../models/bank_source.dart';
 import '../widgets/common/info_card.dart';
 import '../widgets/bank_link_dialog.dart';
 import '../widgets/common/styled_tile.dart';
@@ -15,6 +16,7 @@ class BankSubscriptionsPage extends StatefulWidget {
 class _BankSubscriptionsPageState extends State<BankSubscriptionsPage> {
   final _service = BankSubscriptionService.instance;
   List<String> _urls = [];
+  Map<String, BankSource> _sources = {};
   bool _busy = true;
   String? _error;
 
@@ -25,10 +27,15 @@ class _BankSubscriptionsPageState extends State<BankSubscriptionsPage> {
   }
 
   Future<void> _load() async {
-    final urls = await _service.urls();
+    final allSources = await _service.sources();
+    final urls = allSources
+        .where((s) => !s.official)
+        .map((s) => s.url)
+        .toList();
     if (mounted) {
       setState(() {
         _urls = urls;
+        _sources = {for (final source in allSources) source.url: source};
         _busy = false;
       });
     }
@@ -45,7 +52,11 @@ class _BankSubscriptionsPageState extends State<BankSubscriptionsPage> {
     if (result != null && mounted) {
       setState(() {
         final url = BankSubscriptionService.validateUrl(result);
-        if (index != null) {
+        if (_urls.contains(url) && (index == null || _urls[index] != url)) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('该订阅已存在')));
+        } else if (index != null) {
           _urls[index] = url;
         } else if (!_urls.contains(url)) {
           _urls.add(url);
@@ -62,7 +73,6 @@ class _BankSubscriptionsPageState extends State<BankSubscriptionsPage> {
     });
     try {
       await _service.saveSources(_urls);
-      await _service.refresh();
       if (mounted) Navigator.pop(context, true);
     } catch (error) {
       if (mounted) setState(() => _error = error.toString());
@@ -80,7 +90,7 @@ class _BankSubscriptionsPageState extends State<BankSubscriptionsPage> {
         Text('订阅来源', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 8),
         Text(
-          '支持 ZIP、SQLite 题库下载链接和 JSON 订阅清单。自动更新及检查间隔可在设置中调整。',
+          '保存后可在题库管理中检查更新。支持题库文件链接和订阅清单。',
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
             color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),
@@ -103,8 +113,8 @@ class _BankSubscriptionsPageState extends State<BankSubscriptionsPage> {
                             style: Theme.of(context).textTheme.bodyLarge,
                           ),
                           Text(
-                            _urls[i],
-                            maxLines: 2,
+                            '${_urls[i]}\n${_sources[_urls[i]]?.statusLabel ?? '待检查'}',
+                            maxLines: 3,
                             overflow: TextOverflow.ellipsis,
                             style: Theme.of(context).textTheme.bodySmall,
                           ),
@@ -147,10 +157,7 @@ class _BankSubscriptionsPageState extends State<BankSubscriptionsPage> {
             child: LinearProgressIndicator(),
           ),
         const SizedBox(height: 20),
-        FilledButton(
-          onPressed: _busy ? null : _save,
-          child: const Text('保存并检查'),
-        ),
+        FilledButton(onPressed: _busy ? null : _save, child: const Text('保存')),
       ],
     ),
   );

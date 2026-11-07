@@ -159,7 +159,7 @@ void main() {
         );
         final update = find.descendant(
           of: card,
-          matching: find.byTooltip('更新订阅题库'),
+          matching: find.byTooltip('检查更新'),
         );
         final export = find.descendant(
           of: card,

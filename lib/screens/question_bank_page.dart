@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/question_bank.dart';
+import '../models/bank_source.dart';
 import '../repositories/question_bank_repository.dart';
 import '../services/question_bank_file_service.dart';
 import '../services/bank_subscription_service.dart';
@@ -28,6 +29,7 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
   final Map<String, double?> _downloadProgress = <String, double?>{};
   bool _busy = false;
   bool _exporting = false;
+  final _updates = <String, BankUpdateInfo>{};
 
   bool get _controlsDisabled => _busy || _exporting || _downloading.isNotEmpty;
 
@@ -100,21 +102,15 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
       _downloadProgress[bank.bankId] = null;
     });
     try {
-      await BankSubscriptionService.instance.refresh(
-        bankId: bank.bankId,
-        installUpdates: true,
-      );
-      final updated = await _repository.find(bank.bankId);
+      await BankSubscriptionService.instance.check(bankId: bank.bankId);
+      final info = await BankSubscriptionService.instance.updateInfo(bank);
       if (!mounted) return;
       setState(_reload);
       await _loadSubscriptions();
       if (!mounted) return;
-      final changed =
-          updated?.version != bank.version ||
-          updated?.contentHash != bank.contentHash;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text(changed ? '题库更新成功' : '题库已是最新版本')));
+      ).showSnackBar(SnackBar(content: Text(info.message ?? info.label)));
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -146,31 +142,40 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
   Future<List<QuestionBank>> _loadBanks() async {
     final banks = await _repository.listBanks();
     _activeBankId = await _repository.activeBankId();
+    final catalog = await BankSubscriptionService.instance.store.read();
+    _updates.clear();
+    for (final bank in banks) {
+      _updates[bank.bankId] = BankUpdateInfo.compare(
+        bank,
+        catalog.sourceFor(bank.bankId),
+      );
+    }
     return banks;
   }
 
   Future<void> _refreshManifest() async {
     setState(() => _busy = true);
     try {
-      final manifest = await _repository.checkRemoteManifest();
-      final entries = <String, dynamic>{};
-      for (final raw in (manifest?['banks'] as List? ?? const [])) {
-        if (raw is Map && raw['bank_id'] != null) {
-          entries[raw['bank_id'].toString()] = Map<String, dynamic>.from(raw);
-        }
-      }
-      final subscriptions = await BankSubscriptionService.instance.refresh();
-      for (final entry in subscriptions) {
-        entries[entry['bank_id'] as String] = entry;
-      }
+      final results = await BankSubscriptionService.instance.check();
+      final catalog = await BankSubscriptionService.instance.store.read();
+      final entries = <String, dynamic>{
+        for (final source in catalog.sources.values)
+          for (final entry in source.entries)
+            if (catalog.bindings[entry['bank_id']] == source.id)
+              entry['bank_id'] as String: entry,
+      };
       if (!mounted) return;
       setState(() {
         _remoteBanks = entries;
         _reload();
       });
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('题库清单已更新')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '检查完成：${results.where((s) => s.status != BankSourceStatus.failed).length} 个来源成功，${results.where((s) => s.status == BankSourceStatus.failed).length} 个失败',
+          ),
+        ),
+      );
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -342,8 +347,7 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
     final remote = _remoteBanks[bank.bankId] as Map<String, dynamic>?;
     final hasUpdate =
         bank.isInstalled &&
-        remote != null &&
-        _repository.hasUpdate(bank, remote);
+        _updates[bank.bankId]?.status == BankUpdateStatus.available;
     final canDownload =
         !bank.isInstalled &&
         (remote?['url']?.toString().isNotEmpty == true ||
@@ -429,7 +433,7 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
                   ),
                   if (hasSubscription)
                     IconButton(
-                      tooltip: '更新订阅题库',
+                      tooltip: '检查更新',
                       onPressed: _controlsDisabled
                           ? null
                           : () => _updateSubscription(bank),
@@ -460,9 +464,9 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
                         ],
                       ),
                     )
-                  else if (canDownload || (canUpdate && !hasSubscription))
+                  else if (canDownload || canUpdate)
                     IconButton(
-                      tooltip: canUpdate ? '更新题库' : '下载题库',
+                      tooltip: canUpdate ? '下载并更新' : '下载题库',
                       onPressed: _controlsDisabled
                           ? null
                           : () => _download(bank),
@@ -497,7 +501,7 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
             icon: const Icon(Icons.rss_feed),
           ),
           IconButton(
-            tooltip: '检查题库更新',
+            tooltip: '检查全部更新',
             onPressed: _controlsDisabled ? null : _refreshManifest,
             icon: const Icon(Icons.sync),
           ),

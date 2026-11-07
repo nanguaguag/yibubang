@@ -141,12 +141,15 @@ class _BankDetailPageState extends State<BankDetailPage> {
     if (url == null || !mounted) return;
     setState(() => _saving = true);
     try {
-      await BankSubscriptionService.instance.setBankSource(widget.bank, url);
+      await BankSubscriptionService.instance.proposeBankSource(
+        widget.bank,
+        url,
+      );
       if (mounted) {
         setState(() => _details = _load());
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(const SnackBar(content: Text('订阅链接已修改')));
+        ).showSnackBar(const SnackBar(content: Text('新来源已保存，请检查后确认')));
       }
     } catch (error) {
       if (mounted) {
