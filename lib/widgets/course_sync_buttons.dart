@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/course_sync_actions.dart';
+import 'bank_action_button.dart';
 
 class CourseSyncButtons extends StatelessWidget {
   const CourseSyncButtons({super.key, this.onCompleted});
@@ -22,7 +23,9 @@ class CourseSyncButtons extends StatelessWidget {
         return PopupMenuButton<CourseSyncAction>(
           tooltip: '同步操作',
           enabled: !CourseSyncActions.instance.busy,
-          icon: const Icon(Icons.sync),
+          icon: CourseSyncActions.instance.busy
+              ? const BankActionProgress(label: '正在同步')
+              : const Icon(Icons.sync),
           onSelected: (action) => _run(context, action),
           itemBuilder: (_) => actions
               .map(
@@ -46,7 +49,11 @@ class CourseSyncButtons extends StatelessWidget {
           for (final action in actions)
             IconButton(
               tooltip: action.label,
-              icon: Icon(action.icon),
+              icon:
+                  CourseSyncActions.instance.busy &&
+                      CourseSyncActions.instance.activeAction == action
+                  ? BankActionProgress(label: action.label)
+                  : Icon(action.icon),
               onPressed: CourseSyncActions.instance.busy
                   ? null
                   : () => _run(context, action),

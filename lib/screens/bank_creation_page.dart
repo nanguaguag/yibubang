@@ -6,6 +6,7 @@ import '../widgets/bank_creation_dialogs.dart';
 import '../widgets/common/info_card.dart';
 import '../services/bank_creation_service.dart';
 import '../widgets/bank_progress_view.dart';
+import '../widgets/bank_action_button.dart';
 
 class BankCreationPage extends StatefulWidget {
   const BankCreationPage({super.key, this.service});
@@ -155,8 +156,9 @@ class _BankCreationPageState extends State<BankCreationPage> {
                 children: [
                   Text('${snapshot.error}'),
                   TextButton(
-                    onPressed: () =>
-                        setState(() => _identities = _service.identities()),
+                    onPressed: () => setState(() {
+                      _identities = _service.identities();
+                    }),
                     child: const Text('重试'),
                   ),
                 ],
@@ -164,7 +166,7 @@ class _BankCreationPageState extends State<BankCreationPage> {
             );
           }
           if (!snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
+            return const Center(child: BankActionProgress(label: '正在加载题库'));
           }
           return Column(
             children: [
@@ -192,8 +194,23 @@ class _BankCreationPageState extends State<BankCreationPage> {
                       if (_progress != null)
                         Padding(
                           padding: const EdgeInsets.only(bottom: 12),
-                          child: BankProgressView(progress: _progress!),
+                          child: BankProgressView(
+                            progress: _progress!,
+                            showIndicator: false,
+                          ),
                         ),
+                      FilledButton.icon(
+                        onPressed: _busy || _selected.isEmpty
+                            ? null
+                            : () => _create(snapshot.data!),
+                        icon: _busy
+                            ? BankActionProgress(
+                                value: _progress?.fraction,
+                                label: _progress?.stage,
+                              )
+                            : const Icon(Icons.add_rounded),
+                        label: Text(_busy ? '正在创建' : '开始创建'),
+                      ),
                       if (_busy)
                         TextButton(
                           onPressed: (_cancellation?.cancelled ?? false)
@@ -206,13 +223,6 @@ class _BankCreationPageState extends State<BankCreationPage> {
                                 ? '正在终止…'
                                 : '终止创建',
                           ),
-                        )
-                      else
-                        FilledButton(
-                          onPressed: _selected.isEmpty
-                              ? null
-                              : () => _create(snapshot.data!),
-                          child: const Text('开始创建'),
                         ),
                       if (!_busy && _report != null)
                         TextButton(

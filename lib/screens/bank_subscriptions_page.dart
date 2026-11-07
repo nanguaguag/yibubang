@@ -7,7 +7,7 @@ import '../services/bank_subscription_service.dart';
 import '../services/question_bank_file_service.dart';
 import '../widgets/bank_link_dialog.dart';
 import '../models/bank_download_task.dart';
-import '../widgets/bank_download_progress.dart';
+import '../widgets/bank_action_button.dart';
 import '../widgets/bank_check_feedback.dart';
 import '../widgets/common/info_card.dart';
 import '../widgets/common/styled_tile.dart';
@@ -26,6 +26,8 @@ class _BankSubscriptionsPageState extends State<BankSubscriptionsPage> {
   List<BankSource> _sources = [];
   BankDownloadTask? _task;
   bool _busy = true;
+  String? _activeSourceId;
+  String _operation = 'load';
   String? _error;
 
   @override
@@ -90,18 +92,22 @@ class _BankSubscriptionsPageState extends State<BankSubscriptionsPage> {
           );
         }
       }
-    });
+    }, sourceId: source?.id);
   }
 
   Future<void> _run(
     Future<void> Function() action, {
     BankDownloadTask? task,
+    String? sourceId,
+    String operation = 'edit',
   }) async {
     if (_busy) return;
     setState(() {
       _busy = true;
       _error = null;
       _task = task;
+      _activeSourceId = sourceId;
+      _operation = operation;
     });
     try {
       await action();
@@ -118,9 +124,14 @@ class _BankSubscriptionsPageState extends State<BankSubscriptionsPage> {
 
   Future<void> _downloadSource(BankSource source) async {
     final task = BankDownloadTask();
-    await _run(() async {
-      await _service.confirmSource(source.id, task: task);
-    }, task: task);
+    await _run(
+      () async {
+        await _service.confirmSource(source.id, task: task);
+      },
+      task: task,
+      sourceId: source.id,
+      operation: 'download',
+    );
   }
 
   Future<void> _remove(BankSource source) async {
@@ -145,7 +156,11 @@ class _BankSubscriptionsPageState extends State<BankSubscriptionsPage> {
       ),
     );
     if (remove == true && mounted) {
-      await _run(() => _service.removeSource(source.id));
+      await _run(
+        () => _service.removeSource(source.id),
+        sourceId: source.id,
+        operation: 'remove',
+      );
     }
   }
 
@@ -176,24 +191,34 @@ class _BankSubscriptionsPageState extends State<BankSubscriptionsPage> {
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              IconButton(
+              BankActionButton(
+                key: ValueKey('source-check-${source.id}'),
                 tooltip: '检查来源',
-                onPressed: _busy
-                    ? null
-                    : () => _run(() async {
-                        final results = await _service.check(
-                          sourceId: source.id,
-                        );
-                        if (mounted) {
-                          await showBankCheckErrors(context, results);
-                        }
-                      }),
-                icon: const Icon(Icons.sync_rounded),
+                busy:
+                    _busy &&
+                    _activeSourceId == source.id &&
+                    _operation == 'check',
+                enabled: !_busy,
+                onPressed: () => _run(
+                  () async {
+                    final results = await _service.check(sourceId: source.id);
+                    if (mounted) await showBankCheckErrors(context, results);
+                  },
+                  sourceId: source.id,
+                  operation: 'check',
+                ),
+                icon: Icons.sync_rounded,
               ),
               if (!source.official)
                 PopupMenuButton<String>(
                   enabled: !_busy,
                   tooltip: '来源操作',
+                  icon:
+                      _busy &&
+                          _activeSourceId == source.id &&
+                          ['edit', 'remove'].contains(_operation)
+                      ? const BankActionProgress(label: '正在保存来源')
+                      : const Icon(Icons.more_vert),
                   onSelected: (value) =>
                       value == 'edit' ? _edit(source) : _remove(source),
                   itemBuilder: (_) => [
@@ -225,10 +250,17 @@ class _BankSubscriptionsPageState extends State<BankSubscriptionsPage> {
                   children: [
                     const Text('远端文件需要下载后才能确认内容。'),
                     const SizedBox(height: 8),
-                    OutlinedButton.icon(
-                      onPressed: _busy ? null : () => _downloadSource(source),
-                      icon: const Icon(Icons.download_rounded),
-                      label: const Text('下载确认题库'),
+                    BankActionButton(
+                      key: ValueKey('source-download-${source.id}'),
+                      tooltip: '下载确认题库',
+                      busy:
+                          _busy &&
+                          _activeSourceId == source.id &&
+                          _operation == 'download',
+                      task: _task,
+                      enabled: !_busy,
+                      onPressed: () => _downloadSource(source),
+                      icon: Icons.download_rounded,
                     ),
                   ],
                 ),
@@ -272,6 +304,10 @@ class _BankSubscriptionsPageState extends State<BankSubscriptionsPage> {
                 IconTile(
                   icon: Icons.add_link_rounded,
                   label: '添加订阅',
+                  trailing:
+                      _busy && _activeSourceId == null && _operation == 'edit'
+                      ? const BankActionProgress(label: '正在保存来源')
+                      : null,
                   onTap: _busy ? null : _edit,
                 ),
               ],
@@ -284,13 +320,8 @@ class _BankSubscriptionsPageState extends State<BankSubscriptionsPage> {
                   style: TextStyle(color: Theme.of(context).colorScheme.error),
                 ),
               ),
-            if (_task != null)
-              BankDownloadProgress(task: _task!)
-            else if (_busy)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 16),
-                child: LinearProgressIndicator(),
-              ),
+            if (_busy && _sources.isEmpty)
+              const Center(child: BankActionProgress(label: '正在加载订阅')),
           ],
         ),
       ),

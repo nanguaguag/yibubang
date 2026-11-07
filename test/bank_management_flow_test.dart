@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
@@ -25,6 +26,7 @@ import 'package:yibubang/services/bank_creation_service.dart';
 import 'package:yibubang/services/bank_subscription_loader.dart';
 import 'package:yibubang/services/bank_subscription_service.dart';
 import 'package:yibubang/services/ykb_bank_sync_service.dart';
+import 'package:yibubang/widgets/bank_action_button.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -115,7 +117,7 @@ void main() {
                 }),
               ),
               200,
-              headers: {'content-type': 'application/json'},
+              headers: {'content-type': 'application/json; charset=utf-8'},
             );
           }
           return http.Response.bytes(
@@ -153,6 +155,36 @@ void main() {
       await tester.pump();
     }
     await tester.pump(const Duration(seconds: 1));
+    // Cached content remains visible during reloads. Wait for those SQLite
+    // futures as well, so a live page cannot reopen the DB during tearDown.
+    final loads = tester
+        .widgetList<FutureBuilder<dynamic>>(
+          find.byWidgetPredicate((widget) => widget is FutureBuilder),
+        )
+        .map((widget) => widget.future)
+        .whereType<Future<dynamic>>()
+        .toList();
+    var loaded = loads.isEmpty;
+    if (!loaded) {
+      await tester.runAsync(() async {
+        Future.wait(loads).then<void>(
+          (_) {
+            loaded = true;
+          },
+          onError: (Object _, StackTrace _) {
+            loaded = true;
+          },
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 1));
+      });
+      for (var i = 0; i < 120 && !loaded; i++) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 20)),
+        );
+        await tester.pump();
+      }
+      expect(loaded, isTrue);
+    }
     expect(
       finder,
       findsWidgets,
@@ -212,8 +244,29 @@ void main() {
           findsNothing,
         );
         await capture(tester, 'bank-management-${width.toInt()}');
-        await tester.tap(
-          find.descendant(of: card, matching: find.byTooltip('题库详情')),
+        final activeBefore = await tester.runAsync(
+          () => QuestionBankRepository().activeBankId(),
+        );
+        await tester.tap(find.text('西医综合题库'));
+        await ready(tester, find.byKey(const ValueKey('bank-detail-totals')));
+        final totals = find.descendant(
+          of: find.byKey(const ValueKey('bank-detail-totals')),
+          matching: find.byType(Text),
+        );
+        expect(
+          tester.widgetList<Text>(totals).map((text) => text.data).toList(),
+          ['1', '课程总数', '1', '章节总数', '1', '题目总数'],
+        );
+        expect(
+          await tester.runAsync(() => QuestionBankRepository().activeBankId()),
+          activeBefore,
+        );
+        await tester.drag(
+          find.descendant(
+            of: find.byType(BankDetailPage),
+            matching: find.byType(ListView),
+          ),
+          const Offset(0, -260),
         );
         await ready(tester, find.text('最近检查'));
         expect(
@@ -277,9 +330,9 @@ void main() {
           (await service.store.read()).sourceFor('fixture')!.url,
           manifest,
         );
-        await tester.ensureVisible(find.text('检查新来源'));
+        await tester.ensureVisible(find.byTooltip('检查新来源'));
         await tester.runAsync(() async {
-          await tester.tap(find.text('检查新来源'));
+          await tester.tap(find.byTooltip('检查新来源'));
           await Future<void>.delayed(const Duration(milliseconds: 100));
         });
         await ready(tester, find.text('使用新来源'));
@@ -327,6 +380,154 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  for (final action in [
+    'all',
+    'source',
+    'official',
+    'bank',
+    'detail',
+    'pending',
+  ]) {
+    testWidgets(
+      'the $action operation replaces only its initiating icon with a circular indicator',
+      (tester) async {
+        final gate = Completer<void>();
+        addTearDown(() {
+          if (!gate.isCompleted) gate.complete();
+        });
+        const incomingUrl = 'https://example.org/new.sqlite';
+        final source = (await tester.runAsync(
+          () => service.store.read(),
+        ))!.sourceFor('fixture')!;
+        await tester.runAsync(
+          () => service.store.change((catalog) {
+            catalog.sources[source.id] = BankSource.fromJson({
+              ...source.toJson(),
+              'entries': [
+                {...entry, 'url': incomingUrl},
+              ],
+            });
+          }),
+        );
+        final pendingSource = BankSource.fresh(
+          'https://example.org/pending.json',
+        );
+        if (action == 'pending') {
+          await tester.runAsync(
+            () => service.store.change((catalog) {
+              catalog.sources[pendingSource.id] = pendingSource;
+              catalog.pending['fixture'] = pendingSource.id;
+            }),
+          );
+        }
+        final bytes = (await tester.runAsync(
+          () => File(bank.localPath).readAsBytes(),
+        ))!;
+        final delayed = BankSubscriptionService(
+          loader: BankSubscriptionLoader(
+            client: MockClient((request) async {
+              await gate.future;
+              if (request.url.path.endsWith('.json')) {
+                return http.Response(
+                  jsonEncode({
+                    'banks': [
+                      {...entry, 'url': incomingUrl},
+                    ],
+                  }),
+                  200,
+                  headers: {'content-type': 'application/json; charset=utf-8'},
+                );
+              }
+              return http.Response.bytes(
+                bytes,
+                200,
+                headers: {'content-type': 'application/octet-stream'},
+              );
+            }),
+          ),
+        );
+        if (action == 'detail') {
+          await tester.runAsync(() async {
+            await (await UserDBHelper().database).delete(
+              'BankContentState',
+              where: 'bank_id = ?',
+              whereArgs: ['fixture'],
+            );
+          });
+        }
+        await tester.pumpWidget(
+          MaterialApp(
+            home: ['source', 'official'].contains(action)
+                ? BankSubscriptionsPage(subscriptionService: delayed)
+                : ['detail', 'pending'].contains(action)
+                ? BankDetailPage(bank: bank, subscriptionService: delayed)
+                : QuestionBankPage(subscriptionService: delayed),
+          ),
+        );
+        final key = action == 'all'
+            ? const ValueKey('bank-check-all')
+            : ['source', 'official'].contains(action)
+            ? ValueKey(
+                'source-check-${action == 'official' ? BankSourceCatalog.officialId : source.id}',
+              )
+            : action == 'detail'
+            ? const ValueKey('bank-detail-update')
+            : action == 'pending'
+            ? const ValueKey('bank-pending-check')
+            : const ValueKey('bank-update-fixture');
+        // Details may build the action lazily below the statistics header.
+        if (action == 'detail') {
+          await ready(tester, find.text('订阅更新'));
+          await tester.drag(find.byType(ListView), const Offset(0, -200));
+        }
+        if (action == 'pending') {
+          await ready(tester, find.text('新来源 · 待检查'));
+          await tester.ensureVisible(find.byKey(key));
+        }
+        await ready(tester, find.byKey(key));
+        if (action == 'detail') {
+          expect(find.textContaining('待比较'), findsOneWidget);
+        }
+        await tester.ensureVisible(find.byKey(key));
+        // Run the operation on the real clock: its serialized persistence
+        // futures are shared across widget tests, which use separate fake clocks.
+        await tester.runAsync(() => tester.tap(find.byKey(key)));
+        await tester.pump();
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 80)),
+        );
+        await tester.pump();
+        final ring = find.descendant(
+          of: find.byKey(key),
+          matching: find.byType(CircularProgressIndicator),
+        );
+        expect(ring, findsOneWidget);
+        expect(find.byType(LinearProgressIndicator), findsNothing);
+        expect(find.byType(CircularProgressIndicator), findsOneWidget);
+        expect(
+          find.descendant(
+            of: find.byType(BankActionProgress),
+            matching: find.byType(Text),
+          ),
+          findsNothing,
+        );
+        gate.complete();
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 200)),
+        );
+        await ready(tester, find.byKey(key));
+        expect(
+          find.descendant(
+            of: find.byKey(key),
+            matching: find.byType(CircularProgressIndicator),
+          ),
+          findsNothing,
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
 
   testWidgets(
     'source expansion keeps selectable URL scroll state separate from expansion state',

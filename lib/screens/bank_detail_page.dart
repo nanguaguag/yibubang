@@ -7,7 +7,7 @@ import '../models/bank_source.dart';
 import '../services/question_bank_file_service.dart';
 import '../widgets/bank_update_dialog.dart';
 import '../models/bank_download_task.dart';
-import '../widgets/bank_download_progress.dart';
+import '../widgets/bank_action_button.dart';
 import '../widgets/bank_check_feedback.dart';
 import '../repositories/question_bank_repository.dart';
 import '../services/bank_subscription_service.dart';
@@ -34,6 +34,7 @@ class _BankDetailPageState extends State<BankDetailPage> {
       widget.subscriptionService ?? BankSubscriptionService.instance;
   BankDownloadTask? _task;
   bool _saving = false;
+  String _operation = '';
   late Future<_BankDetails> _details = _load();
 
   @override
@@ -82,6 +83,12 @@ class _BankDetailPageState extends State<BankDetailPage> {
     try {
       final meta = bank.bankId == 'legacy_combined'
           ? <String, dynamic>{
+              'subject_count': Sqflite.firstIntValue(
+                await db.rawQuery('SELECT COUNT(*) FROM Subject'),
+              ),
+              'chapter_count': Sqflite.firstIntValue(
+                await db.rawQuery('SELECT COUNT(*) FROM Chapter'),
+              ),
               'question_count': Sqflite.firstIntValue(
                 await db.rawQuery('SELECT COUNT(*) FROM Question'),
               ),
@@ -183,7 +190,10 @@ class _BankDetailPageState extends State<BankDetailPage> {
           BankLinkDialog(title: '修改订阅链接', initialValue: source ?? ''),
     );
     if (url == null || !mounted) return;
-    setState(() => _saving = true);
+    setState(() {
+      _saving = true;
+      _operation = 'edit';
+    });
     try {
       await _service.proposeBankSource(widget.bank, url);
       if (mounted) {
@@ -209,11 +219,13 @@ class _BankDetailPageState extends State<BankDetailPage> {
     Future<void> Function() action, {
     String? success,
     BankDownloadTask? task,
+    String operation = 'more',
   }) async {
     if (_saving) return;
     setState(() {
       _saving = true;
       _task = task;
+      _operation = operation;
     });
     try {
       await action();
@@ -259,29 +271,33 @@ class _BankDetailPageState extends State<BankDetailPage> {
             !details.bank.isInstalled
         ? BankDownloadTask()
         : null;
-    await _run(() async {
-      if (details.info.status == BankUpdateStatus.needsDownload) {
-        await _service.confirmSource(details.info.source!.id, task: task);
-      } else if (details.info.canApply || !details.bank.isInstalled) {
-        await _service.install(
-          details.bank.bankId,
-          onResolve: _resolve,
-          task: task,
-        );
-      } else {
-        final results = await _service.check(bankId: details.bank.bankId);
-        if (mounted && await showBankCheckErrors(context, results)) return;
-      }
-      final bank = await QuestionBankRepository().find(details.bank.bankId);
-      if (bank != null && mounted) {
-        final result = await _service.updateInfo(bank);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(result.message ?? result.label)),
+    await _run(
+      () async {
+        if (details.info.status == BankUpdateStatus.needsDownload) {
+          await _service.confirmSource(details.info.source!.id, task: task);
+        } else if (details.info.canApply || !details.bank.isInstalled) {
+          await _service.install(
+            details.bank.bankId,
+            onResolve: _resolve,
+            task: task,
           );
+        } else {
+          final results = await _service.check(bankId: details.bank.bankId);
+          if (mounted && await showBankCheckErrors(context, results)) return;
         }
-      }
-    }, task: task);
+        final bank = await QuestionBankRepository().find(details.bank.bankId);
+        if (bank != null && mounted) {
+          final result = await _service.updateInfo(bank);
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(result.message ?? result.label)),
+            );
+          }
+        }
+      },
+      task: task,
+      operation: 'update',
+    );
   }
 
   Future<void> _redownload() async {
@@ -304,14 +320,18 @@ class _BankDetailPageState extends State<BankDetailPage> {
     final task = source.status == BankSourceStatus.needsDownload
         ? BankDownloadTask()
         : null;
-    await _run(() async {
-      if (task != null) {
-        await _service.confirmSource(source.id, task: task);
-      } else {
-        final results = await _service.check(sourceId: source.id);
-        if (mounted) await showBankCheckErrors(context, results);
-      }
-    }, task: task);
+    await _run(
+      () async {
+        if (task != null) {
+          await _service.confirmSource(source.id, task: task);
+        } else {
+          final results = await _service.check(sourceId: source.id);
+          if (mounted) await showBankCheckErrors(context, results);
+        }
+      },
+      task: task,
+      operation: 'pending',
+    );
   }
 
   Future<void> _integrity() => _run(() async {
@@ -433,14 +453,13 @@ class _BankDetailPageState extends State<BankDetailPage> {
                       ],
                     ),
                   ),
-                  IconButton(
+                  BankActionButton(
                     tooltip: '修改订阅链接',
-                    onPressed: _saving
-                        ? null
-                        : () => _editSubscription(
-                            pending?.url ?? details.subscription,
-                          ),
-                    icon: const Icon(Icons.edit_outlined),
+                    busy: _saving && _operation == 'edit',
+                    enabled: !_saving,
+                    onPressed: () =>
+                        _editSubscription(pending?.url ?? details.subscription),
+                    icon: Icons.edit_outlined,
                   ),
                 ],
               ),
@@ -451,16 +470,19 @@ class _BankDetailPageState extends State<BankDetailPage> {
               label: info.canApply
                   ? '${info.label} · v${info.entry?['version']}'
                   : info.label,
-              trailing: IconButton(
+              trailing: BankActionButton(
+                key: const ValueKey('bank-detail-update'),
                 tooltip: details.bank.isInstalled ? info.actionLabel : '下载题库',
-                onPressed: _saving ? null : () => _update(details),
-                icon: Icon(
-                  info.canApply ||
-                          info.status == BankUpdateStatus.needsDownload ||
-                          !details.bank.isInstalled
-                      ? Icons.download_rounded
-                      : Icons.sync_rounded,
-                ),
+                busy: _saving && _operation == 'update',
+                task: _task,
+                enabled: !_saving,
+                onPressed: () => _update(details),
+                icon:
+                    info.canApply ||
+                        info.status == BankUpdateStatus.needsDownload ||
+                        !details.bank.isInstalled
+                    ? Icons.download_rounded
+                    : Icons.sync_rounded,
               ),
             ),
           if (info.source?.checkedAt != null && info.source!.checkedAt > 0)
@@ -520,20 +542,19 @@ class _BankDetailPageState extends State<BankDetailPage> {
                     spacing: 8,
                     runSpacing: 8,
                     children: [
-                      OutlinedButton.icon(
-                        onPressed: _saving
-                            ? null
-                            : () => _checkPending(pending),
-                        icon: Icon(
-                          pending.status == BankSourceStatus.needsDownload
-                              ? Icons.download_rounded
-                              : Icons.sync_rounded,
-                        ),
-                        label: Text(
-                          pending.status == BankSourceStatus.needsDownload
-                              ? '下载确认'
-                              : '检查新来源',
-                        ),
+                      BankActionButton(
+                        key: const ValueKey('bank-pending-check'),
+                        tooltip:
+                            pending.status == BankSourceStatus.needsDownload
+                            ? '下载确认'
+                            : '检查新来源',
+                        busy: _saving && _operation == 'pending',
+                        task: _task,
+                        enabled: !_saving,
+                        onPressed: () => _checkPending(pending),
+                        icon: pending.status == BankSourceStatus.needsDownload
+                            ? Icons.download_rounded
+                            : Icons.sync_rounded,
                       ),
                       if (pending.status == BankSourceStatus.ready &&
                           pending.entry(details.bank.bankId) != null)
@@ -557,10 +578,6 @@ class _BankDetailPageState extends State<BankDetailPage> {
                 ],
               ),
             ),
-          if (_task != null)
-            BaseTile(child: BankDownloadProgress(task: _task!))
-          else if (_saving)
-            const LinearProgressIndicator(),
         ],
       ),
     ];
@@ -644,21 +661,30 @@ class _BankDetailPageState extends State<BankDetailPage> {
       actions: [
         if (widget.bank.isInstalled)
           BankExportButton(bank: widget.bank, enabled: !_saving),
-        PopupMenuButton<String>(
-          enabled: !_saving,
-          tooltip: '更多题库操作',
-          onSelected: (value) => value == 'integrity'
-              ? _integrity()
-              : value == 'source'
-              ? _chooseSource()
-              : _redownload(),
-          itemBuilder: (_) => [
-            if (widget.bank.localPath.isNotEmpty)
-              const PopupMenuItem(value: 'integrity', child: Text('检查本地完整性')),
-            const PopupMenuItem(value: 'source', child: Text('选择更新来源')),
-            const PopupMenuItem(value: 'redownload', child: Text('重新下载')),
-          ],
-        ),
+        if (_saving && _operation == 'more')
+          BankActionButton(
+            tooltip: '更多题库操作',
+            icon: Icons.more_vert,
+            busy: true,
+            task: _task,
+          )
+        else
+          PopupMenuButton<String>(
+            enabled: !_saving,
+            tooltip: '更多题库操作',
+            icon: const Icon(Icons.more_vert),
+            onSelected: (value) => value == 'integrity'
+                ? _integrity()
+                : value == 'source'
+                ? _chooseSource()
+                : _redownload(),
+            itemBuilder: (_) => [
+              if (widget.bank.localPath.isNotEmpty)
+                const PopupMenuItem(value: 'integrity', child: Text('检查本地完整性')),
+              const PopupMenuItem(value: 'source', child: Text('选择更新来源')),
+              const PopupMenuItem(value: 'redownload', child: Text('重新下载')),
+            ],
+          ),
       ],
     ),
     body: Center(
@@ -671,7 +697,7 @@ class _BankDetailPageState extends State<BankDetailPage> {
               return Center(child: Text('详情读取失败：${snapshot.error}'));
             }
             if (!snapshot.hasData) {
-              return const Center(child: CircularProgressIndicator());
+              return const Center(child: BankActionProgress(label: '正在加载题库'));
             }
             final details = snapshot.data!;
             final bank = details.bank;
@@ -718,14 +744,6 @@ class _BankDetailPageState extends State<BankDetailPage> {
                                   spacing: 8,
                                   runSpacing: 4,
                                   children: [
-                                    Chip(
-                                      label: Text(
-                                        bank.isInstalled
-                                            ? '${details.meta['question_count'] ?? 0} 道题'
-                                            : '未安装',
-                                      ),
-                                      shape: const StadiumBorder(),
-                                    ),
                                     if (bank.identityId.isNotEmpty)
                                       Chip(
                                         label: Text(bank.identityId),
@@ -736,6 +754,37 @@ class _BankDetailPageState extends State<BankDetailPage> {
                               ],
                             ),
                           ),
+                        ],
+                      ),
+                    ),
+                    BaseTile(
+                      child: Row(
+                        key: const ValueKey('bank-detail-totals'),
+                        children: [
+                          for (final item in const [
+                            ('课程总数', 'subject_count'),
+                            ('章节总数', 'chapter_count'),
+                            ('题目总数', 'question_count'),
+                          ])
+                            Expanded(
+                              child: Column(
+                                children: [
+                                  Text(
+                                    '${details.meta[item.$2] ?? details.info.entry?[item.$2] ?? '—'}',
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.headlineSmall,
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    item.$1,
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodySmall,
+                                  ),
+                                ],
+                              ),
+                            ),
                         ],
                       ),
                     ),

@@ -12,7 +12,7 @@ import '../widgets/bank_export_button.dart';
 import '../widgets/bank_link_import_dialog.dart';
 import '../widgets/bank_update_dialog.dart';
 import '../models/bank_download_task.dart';
-import '../widgets/bank_download_progress.dart';
+import '../widgets/bank_action_button.dart';
 import '../widgets/bank_check_feedback.dart';
 import 'bank_subscriptions_page.dart';
 import 'bank_creation_page.dart';
@@ -33,9 +33,9 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
   late Future<List<QuestionBank>> _banksFuture;
   String? _activeBankId;
   final Set<String> _downloading = <String>{};
-  final Map<String, double?> _downloadProgress = <String, double?>{};
   BankDownloadTask? _task;
   bool _busy = false;
+  String? _operation;
   bool _exporting = false;
   final _updates = <String, BankUpdateInfo>{};
 
@@ -93,7 +93,6 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
     setState(() {
       _task = task;
       _downloading.add(bank.bankId);
-      _downloadProgress[bank.bankId] = null;
     });
     try {
       if (action?.status == BankUpdateStatus.needsDownload &&
@@ -124,7 +123,7 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
       if (mounted) {
         setState(() {
           _downloading.remove(bank.bankId);
-          _downloadProgress.remove(bank.bankId);
+          _reload();
         });
       }
     }
@@ -152,7 +151,11 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
   }
 
   Future<void> _refreshManifest() async {
-    setState(() => _busy = true);
+    setState(() {
+      _busy = true;
+      _operation = 'all';
+      _task = null;
+    });
     try {
       final results = await _service.check();
       if (!mounted) return;
@@ -245,7 +248,6 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
     setState(() => _task = task);
     setState(() {
       _downloading.add(bankId);
-      _downloadProgress[bankId] = 0;
     });
     try {
       await _service.install(
@@ -253,13 +255,6 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
         onConflict: _chooseImportMode,
         onResolve: _resolveUpdate,
         task: task,
-        onProgress: (receivedBytes, totalBytes) {
-          if (!mounted) return;
-          final progress = totalBytes == null || totalBytes <= 0
-              ? null
-              : (receivedBytes / totalBytes).clamp(0.0, 1.0).toDouble();
-          setState(() => _downloadProgress[bankId] = progress);
-        },
       );
       task.finish();
       if (!mounted) return;
@@ -280,7 +275,7 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
       if (mounted) {
         setState(() {
           _downloading.remove(bankId);
-          _downloadProgress.remove(bankId);
+          _reload();
         });
       }
     }
@@ -302,6 +297,7 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
   }) async {
     setState(() {
       _busy = true;
+      _operation = 'import';
       _task = task;
     });
     try {
@@ -385,8 +381,8 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
     final localChanges =
         info?.content?.hasLocalChanges(bank.contentHash) == true;
     final downloading = _downloading.contains(bank.bankId);
-    final downloadProgress = _downloadProgress[bank.bankId];
     return Card(
+      key: ValueKey('bank-card-${bank.bankId}'),
       clipBehavior: Clip.antiAlias,
       elevation: 0,
       color: Theme.of(context).colorScheme.surface,
@@ -399,7 +395,7 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
       margin: const EdgeInsets.only(bottom: 12),
       child: InkWell(
         borderRadius: BorderRadius.circular(AppShapes.largeIncreased),
-        onTap: _controlsDisabled ? null : () => _select(bank),
+        onTap: _controlsDisabled ? null : () => _details(bank),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
@@ -468,23 +464,31 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
+                  if (bank.isInstalled &&
+                      bank.enabled &&
+                      bank.bankId != _activeBankId)
+                    TextButton(
+                      onPressed: _controlsDisabled ? null : () => _select(bank),
+                      child: const Text('使用此题库'),
+                    ),
                   IconButton(
                     tooltip: '题库详情',
                     onPressed: _controlsDisabled ? null : () => _details(bank),
                     icon: const Icon(Icons.info_outline),
                   ),
                   if (hasSubscription && bank.isInstalled)
-                    IconButton(
+                    BankActionButton(
+                      key: ValueKey('bank-update-${bank.bankId}'),
                       tooltip: info!.actionLabel,
-                      onPressed: _controlsDisabled
-                          ? null
-                          : () => _updateSubscription(bank),
-                      icon: Icon(
-                        info.status == BankUpdateStatus.needsDownload ||
-                                info.canApply
-                            ? Icons.download_rounded
-                            : Icons.sync_rounded,
-                      ),
+                      busy: downloading,
+                      task: downloading ? _task : null,
+                      enabled: !_controlsDisabled,
+                      onPressed: () => _updateSubscription(bank),
+                      icon:
+                          info.status == BankUpdateStatus.needsDownload ||
+                              info.canApply
+                          ? Icons.download_rounded
+                          : Icons.sync_rounded,
                     ),
                   if (bank.isInstalled)
                     BankExportButton(
@@ -494,30 +498,15 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
                         if (mounted) setState(() => _exporting = busy);
                       },
                     ),
-                  if (downloading && _task == null)
-                    SizedBox(
-                      width: 48,
-                      height: 48,
-                      child: Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          CircularProgressIndicator(value: downloadProgress),
-                          Text(
-                            downloadProgress == null
-                                ? '检查中'
-                                : '${(downloadProgress * 100).round()}%',
-                            style: Theme.of(context).textTheme.labelSmall,
-                          ),
-                        ],
-                      ),
-                    )
-                  else if (canDownload)
-                    IconButton(
+                  if (canDownload)
+                    BankActionButton(
+                      key: ValueKey('bank-download-${bank.bankId}'),
                       tooltip: '下载题库',
-                      onPressed: _controlsDisabled
-                          ? null
-                          : () => _download(bank),
-                      icon: const Icon(Icons.download_rounded),
+                      busy: downloading,
+                      task: downloading ? _task : null,
+                      enabled: !_controlsDisabled,
+                      onPressed: () => _download(bank),
+                      icon: Icons.download_rounded,
                     ),
                 ],
               ),
@@ -547,21 +536,33 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
             onPressed: _controlsDisabled ? null : _editSubscriptions,
             icon: const Icon(Icons.rss_feed),
           ),
-          IconButton(
+          BankActionButton(
+            key: const ValueKey('bank-check-all'),
             tooltip: '检查全部更新',
-            onPressed: _controlsDisabled ? null : _refreshManifest,
-            icon: const Icon(Icons.sync),
-          ),
-          PopupMenuButton<String>(
+            busy: _busy && _operation == 'all',
             enabled: !_controlsDisabled,
-            tooltip: '更多导入方式',
-            onSelected: (value) =>
-                value == 'link' ? _importLink() : _importFile(),
-            itemBuilder: (_) => [
-              const PopupMenuItem(value: 'link', child: Text('从链接导入')),
-              const PopupMenuItem(value: 'file', child: Text('从文件导入')),
-            ],
+            onPressed: _refreshManifest,
+            icon: Icons.sync,
           ),
+          if (_busy && _operation == 'import')
+            BankActionButton(
+              tooltip: '导入题库',
+              icon: Icons.more_vert,
+              busy: true,
+              task: _task,
+            )
+          else
+            PopupMenuButton<String>(
+              enabled: !_controlsDisabled,
+              tooltip: '更多导入方式',
+              icon: const Icon(Icons.more_vert),
+              onSelected: (value) =>
+                  value == 'link' ? _importLink() : _importFile(),
+              itemBuilder: (_) => [
+                const PopupMenuItem(value: 'link', child: Text('从链接导入')),
+                const PopupMenuItem(value: 'file', child: Text('从文件导入')),
+              ],
+            ),
         ],
       ),
       body: Center(
@@ -570,8 +571,9 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
           child: FutureBuilder<List<QuestionBank>>(
             future: _banksFuture,
             builder: (context, snapshot) {
-              if (snapshot.connectionState != ConnectionState.done) {
-                return const Center(child: CircularProgressIndicator());
+              if (!snapshot.hasData &&
+                  snapshot.connectionState != ConnectionState.done) {
+                return const Center(child: BankActionProgress(label: '正在加载题库'));
               }
               if (snapshot.hasError) {
                 return Center(child: Text('题库目录加载失败：${snapshot.error}'));
@@ -592,13 +594,7 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
                     //  style: Theme.of(context).textTheme.bodyMedium,
                     //),
                     const SizedBox(height: 18),
-                    if (_task != null) BankDownloadProgress(task: _task!),
                     ...banks.map(_bankCard),
-                    if (_busy && _task == null)
-                      const Padding(
-                        padding: EdgeInsets.all(16),
-                        child: Center(child: CircularProgressIndicator()),
-                      ),
                   ],
                 ),
               );

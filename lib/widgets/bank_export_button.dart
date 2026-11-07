@@ -3,6 +3,7 @@ import 'package:sqflite/sqflite.dart';
 
 import '../models/question_bank.dart';
 import '../services/bank_export_service.dart';
+import 'bank_action_button.dart';
 
 /// Shared export action for management cards and the detail page.
 class BankExportButton extends StatefulWidget {
@@ -130,11 +131,7 @@ class _BankExportButtonState extends State<BankExportButton> {
         ? null
         : _export,
     icon: _packing
-        ? const SizedBox(
-            width: 20,
-            height: 20,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          )
+        ? const BankActionProgress(label: '正在打包题库')
         : const Icon(Icons.ios_share_rounded),
   );
 }

@@ -24,6 +24,7 @@ class CourseSyncActions extends ChangeNotifier {
   static final instance = CourseSyncActions();
   final Map<CourseSyncAction, bool> _visible = {};
   bool busy = false;
+  CourseSyncAction? activeAction;
 
   bool isVisible(CourseSyncAction action) => _visible[action] ?? true;
 
@@ -47,10 +48,13 @@ class CourseSyncActions extends ChangeNotifier {
   Future<void> run(BuildContext context, CourseSyncAction action) async {
     if (busy) return;
     busy = true;
+    activeAction = action;
     notifyListeners();
     final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context, rootNavigator: true);
-    final progress = ValueNotifier<BankProgress>(const BankProgress(stage: '正在准备…'));
+    final progress = ValueNotifier<BankProgress>(
+      const BankProgress(stage: '正在准备…'),
+    );
     DialogRoute<void>? dialog;
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -157,6 +161,7 @@ class CourseSyncActions extends ChangeNotifier {
       }
       progress.dispose();
       busy = false;
+      activeAction = null;
       notifyListeners();
     }
   }

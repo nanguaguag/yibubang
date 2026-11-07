@@ -109,6 +109,14 @@ void main() {
         addTearDown(() => tester.binding.setSurfaceSize(null));
         await tester.pumpWidget(MaterialApp(home: BankDetailPage(bank: bank)));
         await loaded(tester, find.text('覆盖课程'));
+        final totals = find.descendant(
+          of: find.byKey(const ValueKey('bank-detail-totals')),
+          matching: find.byType(Text),
+        );
+        expect(
+          tester.widgetList<Text>(totals).map((text) => text.data).toList(),
+          ['1', '课程总数', '2', '章节总数', '1', '题目总数'],
+        );
         expect(find.byType(InfoCard), findsWidgets);
         expect(find.text('空分组'), findsNothing);
         expect(find.text('空学科'), findsNothing);
