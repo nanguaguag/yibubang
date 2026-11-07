@@ -32,12 +32,10 @@ void main() {
           MaterialApp(
             home: Scaffold(
               body: StatefulBuilder(
-                builder: (context, setState) => SingleChildScrollView(
-                  child: BankIdentityTree(
-                    nodes: nodes,
-                    selected: selected,
-                    onChanged: (next) => setState(() => selected = next),
-                  ),
+                builder: (context, setState) => BankIdentityTree(
+                  nodes: nodes,
+                  selected: selected,
+                  onChanged: (next) => setState(() => selected = next),
                 ),
               ),
             ),
@@ -46,12 +44,8 @@ void main() {
         Finder checkbox(String id) => find.byKey(ValueKey('bank-identity-$id'));
         bool? value(String id) =>
             tester.widget<CheckboxListTile>(checkbox(id)).value;
-        Finder arrow(String id) => find
-            .descendant(
-              of: find.byKey(PageStorageKey('create-identity-$id')),
-              matching: find.byType(Icon),
-            )
-            .last;
+        Finder arrow(String id) =>
+            find.byKey(ValueKey('bank-identity-expand-$id'));
         await tester.tap(arrow('20101'));
         await tester.pumpAndSettle();
         await tester.tap(arrow('20103'));

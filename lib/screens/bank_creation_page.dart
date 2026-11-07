@@ -20,6 +20,7 @@ class _BankCreationPageState extends State<BankCreationPage> {
   late final _service = widget.service ?? BankCreationService();
   late Future<List<BankIdentityNode>> _identities;
   final _selected = <String>{};
+  final _hasSelection = ValueNotifier<bool>(false);
   BankTaskCancellation? _cancellation;
   BankProgress? _progress;
   bool _busy = false;
@@ -36,6 +37,7 @@ class _BankCreationPageState extends State<BankCreationPage> {
   @override
   void dispose() {
     _cancellation?.cancelled = true;
+    _hasSelection.dispose();
     super.dispose();
   }
 
@@ -164,25 +166,20 @@ class _BankCreationPageState extends State<BankCreationPage> {
               child: Column(
                 children: [
                   Expanded(
-                    child: ListView(
-                      padding: const EdgeInsets.all(16),
-                      children: [
-                        Text(
-                          '选择学科后，抓取全部课程与章节并保存为独立题库。选择上级学科会包含下级；重复选择只制作一次。',
-                          style: Theme.of(context).textTheme.bodyMedium,
-                        ),
-                        const SizedBox(height: 12),
-                        BankIdentityTree(
-                          nodes: snapshot.data!,
-                          selected: _selected,
-                          enabled: !_busy && !_confirming,
-                          onChanged: (selection) => setState(() {
-                            _selected
-                              ..clear()
-                              ..addAll(selection);
-                          }),
-                        ),
-                      ],
+                    child: BankIdentityTree(
+                      nodes: snapshot.data!,
+                      selected: _selected,
+                      enabled: !_busy && !_confirming,
+                      header: Text(
+                        '选择学科后，抓取全部课程与章节并保存为独立题库。选择上级学科会包含下级；重复选择只制作一次。',
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                      onChanged: (selection) {
+                        _selected
+                          ..clear()
+                          ..addAll(selection);
+                        _hasSelection.value = _selected.isNotEmpty;
+                      },
                     ),
                   ),
                   SafeArea(
@@ -201,17 +198,20 @@ class _BankCreationPageState extends State<BankCreationPage> {
                                 showIndicator: false,
                               ),
                             ),
-                          FilledButton.icon(
-                            onPressed: _busy || _confirming || _selected.isEmpty
-                                ? null
-                                : () => _create(snapshot.data!),
-                            icon: _busy
-                                ? BankActionProgress(
-                                    value: _progress?.fraction,
-                                    label: _progress?.stage,
-                                  )
-                                : const Icon(Icons.add_rounded),
-                            label: Text(_busy ? '正在创建' : '开始创建'),
+                          ValueListenableBuilder<bool>(
+                            valueListenable: _hasSelection,
+                            builder: (_, hasSelection, _) => FilledButton.icon(
+                              onPressed: _busy || _confirming || !hasSelection
+                                  ? null
+                                  : () => _create(snapshot.data!),
+                              icon: _busy
+                                  ? BankActionProgress(
+                                      value: _progress?.fraction,
+                                      label: _progress?.stage,
+                                    )
+                                  : const Icon(Icons.add_rounded),
+                              label: Text(_busy ? '正在创建' : '开始创建'),
+                            ),
                           ),
                           if (_busy)
                             TextButton(
