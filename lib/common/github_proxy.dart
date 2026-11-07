@@ -21,11 +21,7 @@ class GitHubProxyConfig {
 
   /// 预设镜像加速列表
   static const List<Map<String, String>> presets = [
-    {
-      'name': 'GitHub直连',
-      'prefix': '',
-      'description': '直接访问官方服务器（海外或开启代理推荐）',
-    },
+    {'name': 'GitHub直连', 'prefix': '', 'description': '直接访问官方服务器（海外或开启代理推荐）'},
     {
       'name': 'gh-proxy.com',
       'prefix': 'https://gh-proxy.com/',
@@ -100,6 +96,14 @@ class GitHubProxyConfig {
 
   /// 包装下载 URL（如 Release 安装包）
   static Future<String> resolveDownloadUrl(String url) async {
+    final host = Uri.parse(url).host.toLowerCase();
+    // GitHub mirrors cannot proxy Gitee, R2 or arbitrary subscription hosts.
+    if (host != 'github.com' &&
+        !host.endsWith('.github.com') &&
+        host != 'githubusercontent.com' &&
+        !host.endsWith('.githubusercontent.com')) {
+      return url;
+    }
     final prefix = await getSelectedPrefix();
     return applyProxy(url, prefix);
   }

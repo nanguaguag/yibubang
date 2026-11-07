@@ -60,7 +60,7 @@ class BankSource {
   final int checkedAt, successAt;
   final String? error, etag, lastModified, transportUrl;
   String get id => sha256.convert(utf8.encode(url)).toString();
-  String get name => official ? '官方题库' : Uri.parse(url).host;
+  String get name => official ? '内置题库' : Uri.parse(url).host;
   String get statusLabel => switch (status) {
     BankSourceStatus.unchecked => '待检查',
     BankSourceStatus.ready => '${entries.length} 个题库',

@@ -86,6 +86,7 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
   }
 
   void _refreshData() {
+    if (!mounted) return;
     setState(() {
       subjectsWithChapters = getSubjectsWithChapters();
     });
@@ -94,7 +95,7 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
   Future<void> _loadLastProgress() async {
     final prefs = await SharedPreferences.getInstance();
     final id = prefs.getString('lastSubjectId');
-    if (id != null && id.isNotEmpty) {
+    if (mounted && id != null && id.isNotEmpty) {
       setState(() {
         _lastSubjectId = id;
       });
@@ -171,7 +172,7 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
       ),
     );
 
-    _refreshData();
+    if (mounted) _refreshData();
   }
 
   /// 显示错误信息

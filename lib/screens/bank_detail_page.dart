@@ -8,6 +8,7 @@ import '../services/question_bank_file_service.dart';
 import '../widgets/bank_update_dialog.dart';
 import '../models/bank_download_task.dart';
 import '../widgets/bank_download_progress.dart';
+import '../widgets/bank_check_feedback.dart';
 import '../repositories/question_bank_repository.dart';
 import '../services/bank_subscription_service.dart';
 import '../widgets/bank_export_button.dart';
@@ -268,7 +269,8 @@ class _BankDetailPageState extends State<BankDetailPage> {
           task: task,
         );
       } else {
-        await _service.check(bankId: details.bank.bankId);
+        final results = await _service.check(bankId: details.bank.bankId);
+        if (mounted && await showBankCheckErrors(context, results)) return;
       }
       final bank = await QuestionBankRepository().find(details.bank.bankId);
       if (bank != null && mounted) {
@@ -306,7 +308,8 @@ class _BankDetailPageState extends State<BankDetailPage> {
       if (task != null) {
         await _service.confirmSource(source.id, task: task);
       } else {
-        await _service.check(sourceId: source.id);
+        final results = await _service.check(sourceId: source.id);
+        if (mounted) await showBankCheckErrors(context, results);
       }
     }, task: task);
   }

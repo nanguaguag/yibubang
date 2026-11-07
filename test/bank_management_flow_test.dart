@@ -20,6 +20,7 @@ import 'package:yibubang/repositories/question_bank_repository.dart';
 import 'package:yibubang/screens/bank_detail_page.dart';
 import 'package:yibubang/screens/bank_subscriptions_page.dart';
 import 'package:yibubang/screens/question_bank_page.dart';
+import 'package:yibubang/screens/choosed_subjects_page.dart';
 import 'package:yibubang/services/bank_creation_service.dart';
 import 'package:yibubang/services/bank_subscription_loader.dart';
 import 'package:yibubang/services/bank_subscription_service.dart';
@@ -328,13 +329,105 @@ void main() {
   );
 
   testWidgets(
+    'source expansion keeps selectable URL scroll state separate from expansion state',
+    (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(home: BankSubscriptionsPage(subscriptionService: service)),
+      );
+      await ready(tester, find.byType(ExpansionTile));
+      final tile = find.byKey(PageStorageKey(BankSourceCatalog.officialId));
+      await tester.tap(find.descendant(of: tile, matching: find.text('内置题库')));
+      await tester.pumpAndSettle();
+      expect(find.byType(SelectableText), findsWidgets);
+      expect(tester.takeException(), isNull);
+      await tester.tap(find.descendant(of: tile, matching: find.text('内置题库')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.descendant(of: tile, matching: find.text('内置题库')));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'disposing the courses page while bank management is open does not refresh a dead state',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(390, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final navigator = GlobalKey<NavigatorState>();
+      await tester.pumpWidget(
+        MaterialApp(
+          navigatorKey: navigator,
+          home: const Scaffold(body: Text('首页')),
+        ),
+      );
+      navigator.currentState!.push(
+        MaterialPageRoute<void>(builder: (_) => const ChoosedSubjectsPage()),
+      );
+      await ready(tester, find.byTooltip('题库管理'));
+      final previous = tester.state(find.byType(ChoosedSubjectsPage));
+      final route = ModalRoute.of(
+        tester.element(find.byType(ChoosedSubjectsPage)),
+      )!;
+      await tester.tap(find.byTooltip('题库管理'));
+      await ready(tester, find.byType(QuestionBankPage));
+      navigator.currentState!.removeRoute(route);
+      await tester.pump(const Duration(seconds: 1));
+      expect(previous.mounted, isFalse);
+      navigator.currentState!.pop();
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 100)),
+      );
+      await tester.pump(const Duration(seconds: 1));
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'failed checks show source and HTTP error without changing installed content',
+    (tester) async {
+      final failing = BankSubscriptionService(
+        loader: BankSubscriptionLoader(
+          client: MockClient((_) async => http.Response('', 503)),
+        ),
+      );
+      await tester.pumpWidget(
+        MaterialApp(home: QuestionBankPage(subscriptionService: failing)),
+      );
+      await ready(tester, find.text('西医综合题库'));
+      final before = (await service.store.read()).sourceFor('fixture')!.entries;
+      await tester.runAsync(() async {
+        await tester.tap(find.byTooltip('检查全部更新'));
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      });
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.text('检查更新失败'), findsOneWidget);
+      expect(find.textContaining('HTTP 503'), findsWidgets);
+      expect(
+        (await service.store.read()).sourceFor('fixture')!.entries,
+        before,
+      );
+      expect(
+        (await tester.runAsync(
+          () => QuestionBankRepository().history('fixture'),
+        ))!.length,
+        1,
+      );
+      await tester.tap(find.text('关闭'));
+      await tester.pump();
+      await ready(tester, find.text('检查失败'));
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
     'adding duplicate sources persists without downloads and source page includes official source',
     (tester) async {
       await tester.pumpWidget(
         MaterialApp(home: BankSubscriptionsPage(subscriptionService: service)),
       );
-      await ready(tester, find.text('官方题库'));
-      expect(find.text('官方题库'), findsOneWidget);
+      await ready(tester, find.text('内置题库'));
+      expect(find.text('内置题库'), findsOneWidget);
       final before = requests;
       await tester.ensureVisible(find.text('添加订阅'));
       await tester.tap(find.text('添加订阅'));

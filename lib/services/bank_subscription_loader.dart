@@ -6,6 +6,7 @@ import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
+import 'package:flutter/foundation.dart';
 
 import '../common/github_proxy.dart';
 import '../models/bank_source.dart';
@@ -49,7 +50,10 @@ class BankSubscriptionLoader {
       for (final url in urls) {
         try {
           return await _probe(connection, source, url);
-        } catch (error) {
+        } catch (error, trace) {
+          debugPrint(
+            '[bank-check] ${Uri.parse(url).origin}${Uri.parse(url).path}: $error\n$trace',
+          );
           lastError = error;
         }
       }
@@ -75,7 +79,13 @@ class BankSubscriptionLoader {
     Future<http.StreamedResponse> send(String method) async {
       final request = http.Request(method, Uri.parse(url))
         ..headers.addAll(headers);
-      return connection.send(request).timeout(const Duration(seconds: 20));
+      final response = await connection
+          .send(request)
+          .timeout(const Duration(seconds: 20));
+      debugPrint(
+        '[bank-check] $method ${request.url.origin}${request.url.path} → HTTP ${response.statusCode}',
+      );
+      return response;
     }
 
     final now = DateTime.now().millisecondsSinceEpoch;
@@ -129,7 +139,9 @@ class BankSubscriptionLoader {
           return same ? ready() : needs();
         }
       } else if (head.statusCode != 405 && head.statusCode != 501) {
-        throw StateError('来源检查失败（HTTP ${head.statusCode}）');
+        throw StateError(
+          'HEAD 检查失败（HTTP ${head.statusCode}，${Uri.parse(url).host}）',
+        );
       }
     }
     final response = await send('GET');
@@ -142,7 +154,9 @@ class BankSubscriptionLoader {
     }
     if (response.statusCode != 200) {
       await discard(response);
-      throw StateError('来源检查失败（HTTP ${response.statusCode}）');
+      throw StateError(
+        'GET 检查失败（HTTP ${response.statusCode}，${Uri.parse(url).host}）',
+      );
     }
     final type = response.headers['content-type'] ?? '';
     if (source.kind == BankSourceKind.file ||

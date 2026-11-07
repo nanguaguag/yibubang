@@ -176,7 +176,8 @@ class BankSubscriptionService extends ChangeNotifier {
             .where((e) => catalog.bindings[e['bank_id'] as String] == source.id)
             .toList(),
       );
-    } catch (error) {
+    } catch (error, trace) {
+      debugPrint('[bank-check] ${source.name}: $error\n$trace');
       result = BankSource(
         url: source.url,
         official: source.official,

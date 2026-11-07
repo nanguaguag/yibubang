@@ -13,6 +13,7 @@ import '../widgets/bank_link_import_dialog.dart';
 import '../widgets/bank_update_dialog.dart';
 import '../models/bank_download_task.dart';
 import '../widgets/bank_download_progress.dart';
+import '../widgets/bank_check_feedback.dart';
 import 'bank_subscriptions_page.dart';
 import 'bank_creation_page.dart';
 import 'bank_detail_page.dart';
@@ -99,7 +100,8 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
           action?.source != null) {
         await _service.confirmSource(action!.source!.id, task: task);
       } else {
-        await _service.check(bankId: bank.bankId);
+        final results = await _service.check(bankId: bank.bankId);
+        if (mounted && await showBankCheckErrors(context, results)) return;
       }
       final info = await _service.updateInfo(bank);
       if (!mounted) return;
@@ -155,6 +157,7 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
       final results = await _service.check();
       if (!mounted) return;
       setState(_reload);
+      if (await showBankCheckErrors(context, results) || !mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(

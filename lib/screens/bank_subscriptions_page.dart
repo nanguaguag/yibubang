@@ -8,6 +8,7 @@ import '../services/question_bank_file_service.dart';
 import '../widgets/bank_link_dialog.dart';
 import '../models/bank_download_task.dart';
 import '../widgets/bank_download_progress.dart';
+import '../widgets/bank_check_feedback.dart';
 import '../widgets/common/info_card.dart';
 import '../widgets/common/styled_tile.dart';
 import 'bank_detail_page.dart';
@@ -180,7 +181,12 @@ class _BankSubscriptionsPageState extends State<BankSubscriptionsPage> {
                 onPressed: _busy
                     ? null
                     : () => _run(() async {
-                        await _service.check(sourceId: source.id);
+                        final results = await _service.check(
+                          sourceId: source.id,
+                        );
+                        if (mounted) {
+                          await showBankCheckErrors(context, results);
+                        }
                       }),
                 icon: const Icon(Icons.sync_rounded),
               ),
@@ -200,6 +206,7 @@ class _BankSubscriptionsPageState extends State<BankSubscriptionsPage> {
           children: [
             BaseTile(
               child: SelectableText(
+                key: PageStorageKey('source-url-${source.id}'),
                 source.url,
                 style: Theme.of(context).textTheme.bodySmall,
               ),
@@ -251,6 +258,7 @@ class _BankSubscriptionsPageState extends State<BankSubscriptionsPage> {
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 760),
         child: ListView(
+          key: const PageStorageKey('bank-subscriptions-scroll'),
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
           children: [
             Text(
