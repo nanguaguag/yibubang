@@ -316,6 +316,48 @@ class _BankDetailPageState extends State<BankDetailPage> {
     );
   }
 
+  Future<void> _delete() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('删除「${widget.bank.name}」？'),
+        content: const Text(
+          '将删除本地题库及其补充题目。作答记录、收藏、笔记和选课信息会保留。'
+          '有订阅来源的题库仍可重新下载；未导出的本地补充无法恢复。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('删除题库'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted || _saving) return;
+    setState(() {
+      _saving = true;
+      _operation = 'more';
+    });
+    try {
+      await _service.deleteBank(widget.bank.bankId);
+      if (mounted) Navigator.pop(context);
+    } catch (error) {
+      if (mounted) {
+        setState(() => _saving = false);
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('删除失败：$error')));
+      }
+    }
+  }
+
   Future<void> _checkPending(BankSource source) async {
     final task = source.status == BankSourceStatus.needsDownload
         ? BankDownloadTask()
@@ -635,7 +677,9 @@ class _BankDetailPageState extends State<BankDetailPage> {
                   Text('${event['action']}', style: theme.textTheme.titleSmall),
                   const SizedBox(height: 4),
                   Text(
-                    '新增 ${event['added']} 道题 · 共 ${event['question_count']} 道题',
+                    event['action'] == '删除本地题库'
+                        ? '个人作答、收藏和笔记已保留'
+                        : '新增 ${event['added']} 道题 · 共 ${event['question_count']} 道题',
                     style: theme.textTheme.bodyMedium,
                   ),
                   const SizedBox(height: 4),
@@ -677,12 +721,24 @@ class _BankDetailPageState extends State<BankDetailPage> {
                 ? _integrity()
                 : value == 'source'
                 ? _chooseSource()
+                : value == 'delete'
+                ? _delete()
                 : _redownload(),
             itemBuilder: (_) => [
               if (widget.bank.localPath.isNotEmpty)
                 const PopupMenuItem(value: 'integrity', child: Text('检查本地完整性')),
               const PopupMenuItem(value: 'source', child: Text('选择更新来源')),
               const PopupMenuItem(value: 'redownload', child: Text('重新下载')),
+              if (widget.bank.localPath.isNotEmpty)
+                PopupMenuItem(
+                  value: 'delete',
+                  child: Text(
+                    '删除题库',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                ),
             ],
           ),
       ],

@@ -98,6 +98,15 @@ class BankSubscriptionService extends ChangeNotifier {
     );
   }
 
+  Future<void> deleteBank(String bankId) async {
+    final catalog = await store.read();
+    await QuestionBankRepository().deleteBank(
+      bankId,
+      keepAvailable: catalog.sourceFor(bankId) != null,
+    );
+    notifyListeners();
+  }
+
   Future<void> proposeBankSource(QuestionBank bank, String value) async {
     final source = BankSource.fresh(value);
     await store.change((catalog) {
@@ -379,6 +388,9 @@ class BankSubscriptionService extends ChangeNotifier {
       task?.checkCancelled();
       final repository = QuestionBankRepository();
       final current = await repository.find(bankId);
+      if (automatic && current?.isInstalled != true) {
+        throw BankImportCancelled();
+      }
       final upstream = BankRelease.fromEntry(source.id, entry);
       final release = BankRelease(
         sourceId: upstream.sourceId,

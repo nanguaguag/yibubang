@@ -26,11 +26,11 @@ Future<BankImportMode?> showBankUpdateDialog(
       ),
       TextButton(
         onPressed: () => Navigator.pop(ctx, BankImportMode.replace),
-        child: const Text('使用订阅版本'),
+        child: const Text('替换题库'),
       ),
       FilledButton(
         onPressed: () => Navigator.pop(ctx, BankImportMode.merge),
-        child: const Text('保留本地补充'),
+        child: const Text('合并更新'),
       ),
     ],
   ),

@@ -211,6 +211,43 @@ void main() {
   }
 
   for (final width in [390.0, 1000.0]) {
+    testWidgets('download confirmation text and action share a row at $width', (
+      tester,
+    ) async {
+      await tester.binding.setSurfaceSize(Size(width, 1000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final source = (await tester.runAsync(
+        () => service.store.read(),
+      ))!.sources[BankSource.fresh(url).id]!;
+      await tester.runAsync(
+        () => service.store.change((catalog) {
+          catalog.sources[source.id] = BankSource.fromJson({
+            ...source.toJson(),
+            'status': 'needsDownload',
+          });
+        }),
+      );
+      await tester.pumpWidget(
+        MaterialApp(home: BankSubscriptionsPage(subscriptionService: service)),
+      );
+      await ready(tester, find.byKey(PageStorageKey(source.id)));
+      final tile = find.byKey(PageStorageKey(source.id));
+      await tester.ensureVisible(tile);
+      await tester.tap(
+        find.descendant(of: tile, matching: find.text(source.name)),
+      );
+      await tester.pumpAndSettle();
+      final message = find.text('远端文件需要下载后才能确认内容。');
+      final download = find.byKey(ValueKey('source-download-${source.id}'));
+      await tester.ensureVisible(download);
+      expect(tester.getCenter(message).dy, tester.getCenter(download).dy);
+      expect(
+        tester.getRect(download).left,
+        greaterThanOrEqualTo(tester.getRect(message).right),
+      );
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets(
       'one update action, explicit source switching and local integrity at $width',
       (tester) async {
@@ -292,6 +329,35 @@ void main() {
           1,
         );
         expect(tester.takeException(), isNull);
+        await tester.tap(find.byTooltip('更多题库操作'));
+        await tester.pumpAndSettle();
+        await tester.runAsync(() => tester.tap(find.text('删除题库')));
+        await tester.pumpAndSettle();
+        expect(find.textContaining('补充题目'), findsOneWidget);
+        await tester.tap(find.text('取消'));
+        await tester.pumpAndSettle();
+        expect(
+          (await tester.runAsync(
+            () => QuestionBankRepository().find('fixture'),
+          ))!.isInstalled,
+          isTrue,
+        );
+        await tester.tap(find.byTooltip('更多题库操作'));
+        await tester.pumpAndSettle();
+        await tester.runAsync(() => tester.tap(find.text('删除题库')));
+        await tester.pumpAndSettle();
+        await tester.runAsync(() => tester.tap(find.text('删除题库')));
+        await ready(
+          tester,
+          find.byKey(const ValueKey('bank-download-fixture')),
+        );
+        expect(find.byType(BankDetailPage), findsNothing);
+        expect(
+          (await tester.runAsync(
+            () => QuestionBankRepository().find('fixture'),
+          ))!.isInstalled,
+          isFalse,
+        );
       },
     );
 

@@ -245,11 +245,10 @@ class _BankSubscriptionsPageState extends State<BankSubscriptionsPage> {
               ),
             if (source.status == BankSourceStatus.needsDownload)
               BaseTile(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                child: Row(
                   children: [
-                    const Text('远端文件需要下载后才能确认内容。'),
-                    const SizedBox(height: 8),
+                    const Expanded(child: Text('远端文件需要下载后才能确认内容。')),
+                    const SizedBox(width: 12),
                     BankActionButton(
                       key: ValueKey('source-download-${source.id}'),
                       tooltip: '下载确认题库',

@@ -157,6 +157,27 @@ void main() {
         },
       );
       final state = await repository.contentState('fixture');
+      final mergedDb = await openDatabase(
+        merged.localPath,
+        readOnly: true,
+        singleInstance: false,
+      );
+      try {
+        expect(
+          await mergedDb.query(
+            'Question',
+            columns: ['id', 'title'],
+            orderBy: 'id',
+          ),
+          [
+            {'id': '1', 'title': '1.1.0-1'},
+            {'id': '2', 'title': '1.1.0-2'},
+            {'id': 'local', 'title': '1.0.1-local'},
+          ],
+        );
+      } finally {
+        await mergedDb.close();
+      }
       expect(state.baseVersion, '1.1.0');
       expect(state.localRevision, 1);
       expect(
@@ -187,16 +208,40 @@ void main() {
         'user_answer': 'A',
         'status': 1,
       });
+      await repository.importFile(
+        (await artifact('2.0.1', ['1', 'local'])).path,
+        onConflict: (_) async => BankImportMode.merge,
+      );
       await publish('2.0.0', ['1', '2']);
       expect(
         (await service.updateInfo((await repository.find('fixture'))!)).status,
         BankUpdateStatus.changed,
       );
       await expectLater(service.install('fixture'), throwsStateError);
-      await service.install(
+      final replaced = await service.install(
         'fixture',
         onResolve: (_, __, ___) async => BankImportMode.replace,
       );
+      final replacedDb = await openDatabase(
+        replaced.localPath,
+        readOnly: true,
+        singleInstance: false,
+      );
+      try {
+        expect(
+          await replacedDb.query(
+            'Question',
+            columns: ['id', 'title'],
+            orderBy: 'id',
+          ),
+          [
+            {'id': '1', 'title': '2.0.0-1'},
+            {'id': '2', 'title': '2.0.0-2'},
+          ],
+        );
+      } finally {
+        await replacedDb.close();
+      }
       await publish('1.0.0', ['1']);
       expect(
         (await service.updateInfo((await repository.find('fixture'))!)).status,

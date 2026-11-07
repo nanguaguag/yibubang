@@ -296,6 +296,128 @@ class QuestionBankRepository {
     );
   }
 
+  /// Removes installed content while retaining global answers, notes, course
+  /// choices and history. Subscribed/built-in banks remain available to download.
+  Future<void> deleteBank(String bankId, {bool keepAvailable = false}) async {
+    if (_installing.isNotEmpty) throw StateError('已有题库正在安装、更新或删除');
+    _installing.add(bankId);
+    FileSystemEntity? original, removed;
+    Future<FileSystemEntity> move(
+      FileSystemEntity entity,
+      String destination,
+    ) => entity is File
+        ? entity.rename(destination)
+        : (entity as Directory).rename(destination);
+    var committed = false;
+    try {
+      final bank = await find(bankId);
+      if (bank == null) return;
+      if (!RegExp(r'^[A-Za-z0-9_-]+$').hasMatch(bankId)) {
+        throw const FormatException('题库标识格式不正确');
+      }
+      final legacy = bankId == 'legacy_combined';
+      final expected = legacy
+          ? p.join(await getDatabasesPath(), 'question_data.sqlite')
+          : await _databaseManager.pathFor(bankId);
+      if (bank.localPath.isNotEmpty &&
+          p.normalize(p.absolute(bank.localPath)) !=
+              p.normalize(p.absolute(expected))) {
+        throw StateError('题库路径不属于应用题库目录，无法删除');
+      }
+      final path = legacy ? expected : p.dirname(expected);
+      final type = await FileSystemEntity.type(path, followLinks: false);
+      if (type != FileSystemEntityType.notFound) {
+        if (type !=
+            (legacy
+                ? FileSystemEntityType.file
+                : FileSystemEntityType.directory)) {
+          throw StateError('题库路径类型异常，无法删除');
+        }
+        original = legacy ? File(path) : Directory(path);
+        final parent = legacy
+            ? await Directory(await getDatabasesPath()).resolveSymbolicLinks()
+            : await Directory(
+                await _databaseManager.rootPath,
+              ).resolveSymbolicLinks();
+        if (await original.resolveSymbolicLinks() !=
+            p.join(parent, legacy ? 'question_data.sqlite' : bankId)) {
+          throw StateError('题库路径指向其他位置，无法删除');
+        }
+        await _databaseManager.closeBank(bankId);
+        await DatabaseHelper().close();
+        // Move the complete directory, including old installation backups.
+        // A metadata failure can restore it without modifying any SQLite file.
+        removed = await move(
+          original,
+          p.join(
+            p.dirname(path),
+            '.removed-$bankId-${DateTime.now().microsecondsSinceEpoch}',
+          ),
+        );
+      }
+      final db = await UserDBHelper().database;
+      await db.transaction((txn) async {
+        if (keepAvailable || bank.builtIn) {
+          await txn.update(
+            'QuestionBank',
+            {
+              'local_path': '',
+              'content_hash': '',
+              'size': 0,
+              'install_state': 'available',
+              'updated_at': DateTime.now().millisecondsSinceEpoch,
+            },
+            where: 'bank_id = ?',
+            whereArgs: [bankId],
+          );
+        } else {
+          await txn.delete(
+            'QuestionBank',
+            where: 'bank_id = ?',
+            whereArgs: [bankId],
+          );
+        }
+        for (final table in [
+          'BankContentState',
+          'YkbBankSyncState',
+          'YkbBankChapterState',
+        ]) {
+          await txn.delete(table, where: 'bank_id = ?', whereArgs: [bankId]);
+        }
+        await txn.insert('BankHistory', {
+          'id': generateSimpleId(),
+          'bank_id': bankId,
+          'timestamp': DateTime.now().millisecondsSinceEpoch,
+          'action': '删除本地题库',
+          'version': bank.version,
+          'added': 0,
+          'question_count': 0,
+        });
+      });
+      committed = true;
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.getString('activeBankId') == bankId) {
+        await prefs.remove('activeBankId');
+        await prefs.remove('identityId');
+      }
+      await activeBankId();
+    } catch (_) {
+      if (!committed && removed != null && await removed.exists()) {
+        await move(removed, original!.path);
+      }
+      rethrow;
+    } finally {
+      if (committed && removed != null && await removed.exists()) {
+        try {
+          await removed.delete(recursive: true);
+        } catch (error) {
+          debugPrint('[bank-delete] 已移除题库，暂存文件清理失败：$error');
+        }
+      }
+      _installing.remove(bankId);
+    }
+  }
+
   Future<BankFileValidation> validatePath(
     String filePath, {
     String? expectedBankId,
