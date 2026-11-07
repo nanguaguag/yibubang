@@ -246,11 +246,18 @@ jobs:
 
       - name: Resolve Tag Name & Release Notes
         id: meta
+        env:
+          RELEASE_TAG: ${{ github.event.inputs.tag_name || github.ref_name }}
         run: |
-          RAW_TAG="${{ github.event.inputs.tag_name || github.ref_name }}"
+          RAW_TAG="$RELEASE_TAG"
           echo "TAG=$RAW_TAG" >> $GITHUB_OUTPUT
-          # 提取当前 tag 的提交日志或 commit 信息作为发布说明
-          git log -1 --pretty=format:"%B" > release_notes.txt
+          # 优先读取发布 tag 中的专属说明，旧版本回退到该 tag 的提交信息。
+          NOTES_PATH=".github/release-notes/${RAW_TAG}.md"
+          if git cat-file -e "refs/tags/${RAW_TAG}:${NOTES_PATH}" 2>/dev/null; then
+            git show "refs/tags/${RAW_TAG}:${NOTES_PATH}" > release_notes.txt
+          else
+            git log -1 --pretty=format:"%B" "refs/tags/${RAW_TAG}" > release_notes.txt
+          fi
           echo "--- Release Notes ---"
           cat release_notes.txt
 
