@@ -1,15 +1,15 @@
 {
-    "latest_app": "2.0.5",
-    "latest_app_url": "https://github.com/nanguaguag/yibubang/releases/tag/v2.0.5",
-    "update_info": "【医不帮 v2.0.5】：\n\nfix(ci): 升级构建工具链、解决Gradle/AGP/NDK依赖冲突并支持分架构APK发布\n\n- 升级 AGP 至 8.11.1，Kotlin 至 2.2.20，Gradle 包装器至 8.14.0\n- 配置 NDK 28.2.13676358 满足 jni 插件依赖要求\n- GitHub Actions CI 配置 Java 17 与 Flutter stable 渠道\n- 兼容 cached_network_image 约束并保留 Material 3 页面过渡 FadeForwardsPageTransitionsBuilder\n- release.yml 支持同时构建并发布通用版与分架构版 APK（arm64-v8a, armeabi-v7a, x86_64）至 GitHub Release",
+    "latest_app": "2.2.2",
+    "latest_app_url": "https://github.com/nanguaguag/yibubang/releases/tag/v2.2.2",
+    "update_info": "【医不帮 v2.2.2】：\n\n相比 v2.0.5，本版带来完整的题库订阅、制作与导出流程，同时改进刷题、同步和桌面端体验。\n\n## 题库管理与订阅\n\n- 支持订阅链接和本地 SQLite / ZIP 文件导入。订阅地址可修改、自动去重，保存配置时无需重新下载题库。\n- 分开“检查更新”与“下载更新”，复用已校验的下载包，减少重复传输；兼容 Gitee、Cloudflare R2 等文件直链，并在检查失败时显示具体原因。\n- 更新可选择合并或替换：合并保留本地补充题目，并采用远端同题的新内容；两种方式都保留个人作答、收藏与笔记。\n- 在设置中调整自动检查间隔，并单独选择是否自动安装更新。自动检查在应用运行期间执行，本地有补充时先确认再更新。\n- 详情页展示学科编号、课程 / 章节 / 题目总数、覆盖课程、文件大小与更新记录。支持导出完整题库为 SQLite / ZIP，也可删除本地题库并保留个人记录。\n\n## 自建题库与内容同步\n\n- 登录医考帮后选择学科，生成独立题库；支持父子联动勾选与半选，自建题库更新时自动递增版本。\n- 创建前提示会员权限与使用风险；遇到无权限或其他错误，可选择忽略、忽略全部或终止，完成后查看成功与失败明细。\n- 课程页集中提供智能同步、做题记录拉取与全量重建，显示阶段和题量进度；拉取记录时保留本地已有答案。\n- 大型学科树改为按需加载与局部刷新，显著改善勾选和滚动时的卡顿。\n\n## 刷题与界面体验\n\n- 新增可配置的刷题快捷键，支持冲突处理，并避免在输入框与弹窗中误触。\n- 护理等题库的填空、名词解释、简答等主观题支持参考答案核对与自评，完善题型筛选。\n- 打磨 Material Design 页面、紧凑状态标签与按钮原位进度，优化笔记、错题和收藏浏览。\n- 桌面端采用侧栏导航与居中弹窗，支持弹窗内连续导航；Windows 支持 F11 全屏及退出后的窗口状态恢复。\n\n## 稳定性改进\n\n- 修复 Android 数据库升级、筛选设置保存、统计弹窗跳转及页面关闭后的异步刷新问题。\n- 改进登录过期提示、同步重试与笔记冲突处理，修复 Gitee / R2 链接被错误套用 GitHub 代理的问题。\n- 发布前通过 135 项自动化测试，静态分析无警告。\n\n## 感谢贡献\n\n感谢 **[@JMK712](https://github.com/JMK712)** 带来的四组 PR，让这一版的刷题、同步与发布流程更加完善：\n\n- [#17](https://github.com/nanguaguag/yibubang/pull/17)：刷题快捷键、做题记录拉取与登录健壮性。\n- [#18](https://github.com/nanguaguag/yibubang/pull/18)：智能增量同步、题目解密、全量重建与数据库迁移。\n- [#19](https://github.com/nanguaguag/yibubang/pull/19)：CI 验证与源码来源记录。\n- [#20](https://github.com/nanguaguag/yibubang/pull/20)：课程同步入口、跳过原因统计与 F11 全屏。\n\n也感谢所有反馈问题、测试新功能的用户。\n\n**完整变更**：[v2.0.5 → v2.2.2](https://github.com/nanguaguag/yibubang/compare/v2.0.5...v2.2.2)",
     "assets": {
-        "android": "https://github.com/nanguaguag/yibubang/releases/download/v2.0.5/yibubang-v2.0.5-android.apk",
-        "android_arm64": "https://github.com/nanguaguag/yibubang/releases/download/v2.0.5/yibubang-v2.0.5-android-arm64-v8a.apk",
-        "android_armv7": "https://github.com/nanguaguag/yibubang/releases/download/v2.0.5/yibubang-v2.0.5-android-armeabi-v7a.apk",
-        "android_x86_64": "https://github.com/nanguaguag/yibubang/releases/download/v2.0.5/yibubang-v2.0.5-android-x86_64.apk",
-        "windows": "https://github.com/nanguaguag/yibubang/releases/download/v2.0.5/yibubang-v2.0.5-windows-x64.zip",
-        "macos": "https://github.com/nanguaguag/yibubang/releases/download/v2.0.5/yibubang-v2.0.5-macos.zip",
-        "linux": "https://github.com/nanguaguag/yibubang/releases/download/v2.0.5/yibubang-v2.0.5-linux-x64.tar.gz"
+        "android": "https://github.com/nanguaguag/yibubang/releases/download/v2.2.2/yibubang-v2.2.2-android.apk",
+        "android_arm64": "https://github.com/nanguaguag/yibubang/releases/download/v2.2.2/yibubang-v2.2.2-android-arm64-v8a.apk",
+        "android_armv7": "https://github.com/nanguaguag/yibubang/releases/download/v2.2.2/yibubang-v2.2.2-android-armeabi-v7a.apk",
+        "android_x86_64": "https://github.com/nanguaguag/yibubang/releases/download/v2.2.2/yibubang-v2.2.2-android-x86_64.apk",
+        "windows": "https://github.com/nanguaguag/yibubang/releases/download/v2.2.2/yibubang-v2.2.2-windows-x64.zip",
+        "macos": "https://github.com/nanguaguag/yibubang/releases/download/v2.2.2/yibubang-v2.2.2-macos.zip",
+        "linux": "https://github.com/nanguaguag/yibubang/releases/download/v2.2.2/yibubang-v2.2.2-linux-x64.tar.gz"
     },
     "latest_data_url": "https://gitee.com/pumpkin_melon/yibubang/releases/download/database-1.0.3/question_data.sqlite.zip",
     "latest_data_md5": "59cef99484946b17167aa7e34d5b3cf1",
