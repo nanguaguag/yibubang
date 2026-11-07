@@ -143,12 +143,10 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
   Future<List<QuestionBank>> _loadBanks() async {
     final banks = await _repository.listBanks();
     _activeBankId = await _repository.activeBankId();
-    final catalog = await BankSubscriptionService.instance.store.read();
     _updates.clear();
     for (final bank in banks) {
-      _updates[bank.bankId] = BankUpdateInfo.compare(
+      _updates[bank.bankId] = await BankSubscriptionService.instance.updateInfo(
         bank,
-        catalog.sourceFor(bank.bankId),
       );
     }
     return banks;
@@ -259,6 +257,7 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
       await BankSubscriptionService.instance.install(
         bankId,
         onConflict: _chooseImportMode,
+        onResolve: _resolveUpdate,
         onProgress: (receivedBytes, totalBytes) {
           if (!mounted) return;
           final progress = totalBytes == null || totalBytes <= 0
@@ -286,6 +285,38 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
         });
       }
     }
+  }
+
+  Future<BankImportMode?> _resolveUpdate(
+    QuestionBank existing,
+    BankUpdateInfo info,
+    BankContentDiff diff,
+  ) async {
+    if (!mounted) return null;
+    return showDialog<BankImportMode>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('更新「${existing.name}」'),
+        content: Text(
+          '${info.label}\n新包新增 ${diff.added} 道题、${diff.changed} 道内容不同，本地独有 ${diff.localExtras} 道题。\n\n'
+          '合并保留本地独有题目和课程关系；同一道题采用订阅内容。替换使用完整订阅版本。个人作答、收藏和笔记会保留。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('暂不更新'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, BankImportMode.replace),
+            child: const Text('使用订阅版本'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, BankImportMode.merge),
+            child: const Text('保留本地补充'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _runOperation(

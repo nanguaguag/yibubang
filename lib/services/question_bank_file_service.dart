@@ -7,32 +7,133 @@ enum BankImportMode { merge, replace }
 
 class BankImportCancelled implements Exception {}
 
+class BankContentDiff {
+  const BankContentDiff(
+    this.added,
+    this.changed,
+    this.removed,
+    this.localExtras,
+  );
+  final int added, changed, removed, localExtras;
+}
+
 /// Only edits a disposable copy; both input files remain unchanged.
 class QuestionBankFileService {
-  static Future<int> countNewQuestions(String localPath, String incomingPath) async {
-    final db = await openDatabase(localPath, readOnly: true, singleInstance: false);
+  /// Native ATTACH comparison; no question lists are joined in Dart memory.
+  static Future<BankContentDiff> diff(
+    String localPath,
+    String incomingPath,
+  ) async {
+    final db = await openDatabase(
+      localPath,
+      readOnly: true,
+      singleInstance: false,
+    );
     try {
       await db.execute('ATTACH DATABASE ? AS incoming', [incomingPath]);
-      return Sqflite.firstIntValue(await db.rawQuery('''
+      final fields = await db.rawQuery('PRAGMA table_info(Question)');
+      final other = (await db.rawQuery(
+        'PRAGMA incoming.table_info(Question)',
+      )).map((r) => r['name']).toSet();
+      final comparisons = fields
+          .map((r) => r['name'] as String)
+          .where(
+            (name) =>
+                other.contains(name) &&
+                ![
+                  'id',
+                  'cut_question',
+                  'user_answer',
+                  'is_collection_question',
+                ].contains(name),
+          )
+          .map((name) {
+            final q = '"${name.replaceAll('"', '""')}"';
+            return 'l.$q IS NOT r.$q';
+          })
+          .join(' OR ');
+      final added =
+          Sqflite.firstIntValue(
+            await db.rawQuery(
+              'SELECT COUNT(*) FROM incoming.Question r WHERE NOT EXISTS (SELECT 1 FROM Question l WHERE l.id = r.id)',
+            ),
+          ) ??
+          0;
+      final extras =
+          Sqflite.firstIntValue(
+            await db.rawQuery(
+              'SELECT COUNT(*) FROM Question l WHERE NOT EXISTS (SELECT 1 FROM incoming.Question r WHERE r.id = l.id)',
+            ),
+          ) ??
+          0;
+      final changed = comparisons.isEmpty
+          ? 0
+          : Sqflite.firstIntValue(
+                  await db.rawQuery(
+                    'SELECT COUNT(*) FROM Question l JOIN incoming.Question r ON l.id = r.id WHERE $comparisons',
+                  ),
+                ) ??
+                0;
+      return BankContentDiff(added, changed, extras, extras);
+    } finally {
+      await db.close();
+    }
+  }
+
+  static Future<int> countNewQuestions(
+    String localPath,
+    String incomingPath,
+  ) async {
+    final db = await openDatabase(
+      localPath,
+      readOnly: true,
+      singleInstance: false,
+    );
+    try {
+      await db.execute('ATTACH DATABASE ? AS incoming', [incomingPath]);
+      return Sqflite.firstIntValue(
+            await db.rawQuery('''
         SELECT COUNT(*) FROM incoming.Question r
         WHERE NOT EXISTS (SELECT 1 FROM Question l WHERE l.id = r.id)
-      ''')) ?? 0;
+      '''),
+          ) ??
+          0;
     } finally {
       await db.close();
     }
   }
 
   static Future<bool> hasChanges(String localPath, String incomingPath) async {
-    final db = await openDatabase(localPath, readOnly: true, singleInstance: false);
+    final db = await openDatabase(
+      localPath,
+      readOnly: true,
+      singleInstance: false,
+    );
     try {
       await db.execute('ATTACH DATABASE ? AS incoming', [incomingPath]);
-      for (final table in ['Question', 'Identity', 'Subject', 'Chapter', 'IdentityQuestion']) {
+      for (final table in [
+        'Question',
+        'Identity',
+        'Subject',
+        'Chapter',
+        'IdentityQuestion',
+      ]) {
         final localColumns = await db.rawQuery('PRAGMA table_info($table)');
-        final incomingColumns = await db.rawQuery('PRAGMA incoming.table_info($table)');
+        final incomingColumns = await db.rawQuery(
+          'PRAGMA incoming.table_info($table)',
+        );
         final names = incomingColumns.map((r) => r['name']).toSet();
-        final columns = localColumns.map((r) => r['name'] as String)
-            .where((name) => names.contains(name) && name != 'cut_question' && name != 'user_answer' && name != 'is_collection_question')
-            .map((name) => '"${name.replaceAll('"', '""')}"').join(',');
+        final columns = localColumns
+            .map((r) => r['name'] as String)
+            .where(
+              (name) =>
+                  names.contains(name) &&
+                  name != 'cut_question' &&
+                  name != 'user_answer' &&
+                  name != 'is_collection_question',
+            )
+            .map((name) => '"${name.replaceAll('"', '""')}"')
+            .join(',');
         final changes = await db.rawQuery('''
           SELECT $columns FROM incoming.$table
           EXCEPT SELECT $columns FROM $table LIMIT 1
@@ -89,7 +190,9 @@ class QuestionBankFileService {
               .map((name) {
                 if (table == 'Question' && name == 'cut_question') return "'0'";
                 if (table == 'Question' && name == 'user_answer') return "''";
-                if (table == 'Question' && name == 'is_collection_question') return "'0'";
+                if (table == 'Question' && name == 'is_collection_question') {
+                  return "'0'";
+                }
                 return quoted(name);
               })
               .join(',');

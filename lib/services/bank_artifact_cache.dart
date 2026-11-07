@@ -67,7 +67,7 @@ class BankArtifactCache {
     final records = await _records(directory);
     for (final candidate in records.reversed) {
       if (candidate['url'] == url &&
-          (!refresh || expected != null) &&
+          !refresh &&
           (expected == null ||
               (candidate['entry'] as Map)['sha256'] == expected['sha256'])) {
         final file = File(p.join(directory.path, candidate['file'] as String));

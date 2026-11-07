@@ -5,6 +5,7 @@ import 'package:crypto/crypto.dart';
 import '../common/github_proxy.dart';
 import '../models/question_bank.dart';
 import '../common/version_utils.dart';
+import 'bank_content_state.dart';
 
 enum BankSourceKind { unknown, manifest, file }
 
@@ -148,11 +149,18 @@ class BankSourceCatalog {
 }
 
 class BankUpdateInfo {
-  const BankUpdateInfo(this.status, {this.source, this.entry, this.message});
+  const BankUpdateInfo(
+    this.status, {
+    this.source,
+    this.entry,
+    this.message,
+    this.content,
+  });
   final BankUpdateStatus status;
   final BankSource? source;
   final Map<String, dynamic>? entry;
   final String? message;
+  final BankContentState? content;
   String get label => switch (status) {
     BankUpdateStatus.unchecked => '待检查',
     BankUpdateStatus.current => '已是最新',
@@ -164,7 +172,11 @@ class BankUpdateInfo {
     BankUpdateStatus.failed => '检查失败',
   };
   // Detection is independent of permission to automatically install content.
-  static BankUpdateInfo compare(QuestionBank bank, BankSource? source) {
+  static BankUpdateInfo compare(
+    QuestionBank bank,
+    BankSource? source, {
+    BankContentState? content,
+  }) {
     if (source == null || source.status == BankSourceStatus.unchecked) {
       return BankUpdateInfo(BankUpdateStatus.unchecked, source: source);
     }
@@ -198,6 +210,16 @@ class BankUpdateInfo {
       );
     }
     final hash = entry['sqlite_sha256']?.toString();
+    final release = BankRelease.fromEntry(source.id, entry);
+    if (content?.hasBaseline == true &&
+        content!.baseRelease == release.releaseId) {
+      return BankUpdateInfo(
+        BankUpdateStatus.current,
+        source: source,
+        entry: entry,
+        content: content,
+      );
+    }
     if (hash != null && hash == bank.contentHash) {
       return BankUpdateInfo(
         BankUpdateStatus.current,
@@ -207,16 +229,19 @@ class BankUpdateInfo {
     }
     final order = VersionUtils.compareVersions(
       '${entry['version']}',
-      bank.version,
+      content?.hasBaseline == true ? content!.baseVersion : bank.version,
     );
     return BankUpdateInfo(
-      order > 0
+      content?.hasBaseline != true
+          ? BankUpdateStatus.needsComparison
+          : order > 0
           ? BankUpdateStatus.available
           : order < 0
           ? BankUpdateStatus.rollback
-          : BankUpdateStatus.needsComparison,
+          : BankUpdateStatus.changed,
       source: source,
       entry: entry,
+      content: content,
     );
   }
 }

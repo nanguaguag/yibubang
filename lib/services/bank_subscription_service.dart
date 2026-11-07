@@ -1,11 +1,14 @@
 import 'dart:async';
-import 'dart:convert';
+import 'dart:io';
+import 'package:archive/archive.dart';
+import 'package:path/path.dart' as p;
 
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/question_bank.dart';
 import '../models/bank_source.dart';
+import '../models/bank_content_state.dart';
 import 'bank_source_store.dart';
 import '../repositories/question_bank_repository.dart';
 import 'bank_subscription_loader.dart';
@@ -16,8 +19,7 @@ class BankSubscriptionService {
   static final instance = BankSubscriptionService();
   static const _urlsKey = 'bank_subscription_urls';
   static const _autoKey = 'bank_subscription_auto';
-  static const _cacheKey = 'bank_subscription_entries';
-  static const _overridesKey = 'bank_subscription_overrides';
+  static const _autoInstallKey = 'bank_subscription_auto_install';
   static const _intervalKey = 'bank_subscription_interval_minutes';
   static const _lastCheckKey = 'bank_subscription_last_check';
   final BankSubscriptionLoader loader;
@@ -37,17 +39,12 @@ class BankSubscriptionService {
   Future<bool> automatic() async =>
       (await SharedPreferences.getInstance()).getBool(_autoKey) ?? false;
 
+  Future<bool> automaticInstallation() async =>
+      (await SharedPreferences.getInstance()).getBool(_autoInstallKey) ?? false;
+
   Future<int> intervalMinutes() async =>
       ((await SharedPreferences.getInstance()).getInt(_intervalKey) ?? 360)
           .clamp(1, 10080);
-
-  Future<Map<String, String>> _overrides() async {
-    final raw = (await SharedPreferences.getInstance()).getString(
-      _overridesKey,
-    );
-    if (raw == null) return {};
-    return Map<String, String>.from(jsonDecode(raw) as Map);
-  }
 
   static String validateUrl(String value) => normalizeBankSourceUrl(value);
 
@@ -157,8 +154,22 @@ class BankSubscriptionService {
     return result;
   }
 
-  Future<BankUpdateInfo> updateInfo(QuestionBank bank) async =>
-      BankUpdateInfo.compare(bank, (await store.read()).sourceFor(bank.bankId));
+  Future<BankUpdateInfo> updateInfo(QuestionBank bank) async {
+    final source = (await store.read()).sourceFor(bank.bankId);
+    var state = await QuestionBankRepository().contentState(bank.bankId);
+    final entry = source?.entry(bank.bankId);
+    if (bank.isInstalled &&
+        entry != null &&
+        entry['sqlite_sha256'] == bank.contentHash &&
+        !state.hasBaseline) {
+      await QuestionBankRepository().establishBaseline(
+        bank,
+        BankRelease.fromEntry(source!.id, entry),
+      );
+      state = await QuestionBankRepository().contentState(bank.bankId);
+    }
+    return BankUpdateInfo.compare(bank, source, content: state);
+  }
 
   /// Explicit full download to identify a file source, never called by check().
   Future<BankSource> confirmSource(
@@ -233,6 +244,9 @@ class BankSubscriptionService {
         expectedIdentityId: entry['identity_id']?.toString(),
         expectedSqliteHash: entry['sqlite_sha256'] as String?,
         versionOverride: entry['version']?.toString(),
+        upstream: subscribe
+            ? BankRelease.fromEntry(BankSource.fresh(url).id, entry)
+            : null,
         onConflict: onConflict,
       );
       if (subscribe) {
@@ -252,7 +266,15 @@ class BankSubscriptionService {
   Future<QuestionBank> install(
     String bankId, {
     Future<BankImportMode?> Function(QuestionBank existing)? onConflict,
+    Future<BankImportMode?> Function(
+      QuestionBank existing,
+      BankUpdateInfo info,
+      BankContentDiff diff,
+    )?
+    onResolve,
     DownloadProgressCallback? onProgress,
+    bool redownload = false,
+    bool automatic = false,
   }) async {
     var source = (await store.read()).sourceFor(bankId);
     if (source == null) throw StateError('尚未设置题库来源');
@@ -265,9 +287,30 @@ class BankSubscriptionService {
     final lease = await artifacts.acquire(
       entry['url'] as String,
       expected: entry,
+      refresh: redownload,
       onProgress: onProgress,
     );
     try {
+      final repository = QuestionBankRepository();
+      final current = await repository.find(bankId);
+      final upstream = BankRelease.fromEntry(source.id, entry);
+      final release = BankRelease(
+        sourceId: upstream.sourceId,
+        version: upstream.version,
+        releaseId: upstream.releaseId,
+        packageHash: upstream.packageHash,
+        sqliteHash: lease.entry['sqlite_sha256'] as String?,
+      );
+      if (current?.isInstalled == true && !redownload) {
+        final state = await repository.contentState(bankId);
+        if (state.baseRelease == release.releaseId ||
+            current!.contentHash == release.sqliteHash) {
+          if (!state.hasBaseline) {
+            await repository.establishBaseline(current!, release);
+          }
+          return current!;
+        }
+      }
       return await QuestionBankRepository().importFile(
         lease.file.path,
         expectedBankId: bankId,
@@ -275,10 +318,55 @@ class BankSubscriptionService {
         expectedSqliteHash: entry['sqlite_sha256'] as String?,
         versionOverride: entry['version']?.toString(),
         updateEnabled: true,
-        onConflict: onConflict,
+        upstream: release,
+        onConflict: (existing) async {
+          final state = await repository.contentState(bankId);
+          final info = BankUpdateInfo.compare(existing, source, content: state);
+          final unsafe =
+              state.hasLocalChanges(existing.contentHash) ||
+              [
+                BankUpdateStatus.needsComparison,
+                BankUpdateStatus.changed,
+                BankUpdateStatus.rollback,
+              ].contains(info.status);
+          if (unsafe) {
+            if (automatic) throw StateError('该题库需要手动处理本地内容或来源变更');
+            if (onResolve != null) {
+              return onResolve(existing, info, await _diff(existing, lease));
+            }
+            if (onConflict != null) return onConflict(existing);
+            throw StateError('请确认合并或替换后再更新');
+          }
+          return BankImportMode.replace;
+        },
       );
     } finally {
       await lease.dispose();
+    }
+  }
+
+  Future<BankContentDiff> _diff(
+    QuestionBank bank,
+    BankArtifactLease lease,
+  ) async {
+    if (lease.file.path.endsWith('.sqlite')) {
+      return QuestionBankFileService.diff(bank.localPath, lease.file.path);
+    }
+    final directory = await Directory.systemTemp.createTemp('bank-diff-');
+    try {
+      final archive = ZipDecoder().decodeBytes(await lease.file.readAsBytes());
+      final content = archive
+          .where(
+            (entry) =>
+                entry.isFile &&
+                p.extension(entry.name).toLowerCase() == '.sqlite',
+          )
+          .single;
+      final file = File(p.join(directory.path, 'incoming.sqlite'));
+      await file.writeAsBytes(content.content as List<int>);
+      return await QuestionBankFileService.diff(bank.localPath, file.path);
+    } finally {
+      await directory.delete(recursive: true);
     }
   }
 
@@ -312,79 +400,24 @@ class BankSubscriptionService {
         catalog.sources.putIfAbsent(source.id, () => source);
       }
     });
-    final overrides = await _overrides();
-    final retained = {...normalized, ...overrides.values};
-    final prefs = await SharedPreferences.getInstance();
-    final previousEntries = await cached();
-    final removed = previousEntries
-        .where((entry) => !retained.contains(entry['subscription_url']))
-        .toList();
-    if (removed.isNotEmpty) {
-      await QuestionBankRepository().removeRemoteEntries(removed);
-    }
-    await prefs.setStringList(_urlsKey, normalized);
-    await prefs.setString(
-      _cacheKey,
-      jsonEncode(
-        previousEntries
-            .where((entry) => retained.contains(entry['subscription_url']))
-            .toList(),
-      ),
+    await (await SharedPreferences.getInstance()).setStringList(
+      _urlsKey,
+      normalized,
     );
   }
 
   Future<List<Map<String, dynamic>>> cached() async {
-    final raw = (await SharedPreferences.getInstance()).getString(_cacheKey);
-    if (raw == null) return [];
-    try {
-      return (jsonDecode(raw) as List)
-          .map((r) => Map<String, dynamic>.from(r as Map))
-          .toList();
-    } catch (_) {
-      return [];
-    }
+    final catalog = await store.read();
+    return [
+      for (final source in catalog.sources.values)
+        for (final entry in source.entries)
+          if (catalog.bindings[entry['bank_id']] == source.id) entry,
+    ];
   }
 
   Future<String?> sourceFor(QuestionBank bank) async {
-    final override = (await _overrides())[bank.bankId];
-    if (override != null) return override;
-    final entries = await cached();
-    return entries
-            .where((entry) => entry['bank_id'] == bank.bankId)
-            .firstOrNull?['subscription_url']
-            ?.toString() ??
-        bank.remoteUrl;
-  }
-
-  /// A per-bank override does not edit other banks from a shared manifest.
-  Future<void> setBankSource(QuestionBank bank, String value) async {
-    if (_running) throw StateError('订阅正在检查，请稍后修改');
-    final url = validateUrl(value);
-    _running = true;
-    BankSubscriptionDownload? loaded;
-    try {
-      loaded = await loader.load(url);
-      final entry = loaded.entries
-          .where((r) => r['bank_id'] == bank.bankId)
-          .firstOrNull;
-      if (entry == null) throw const FormatException('该链接不包含当前题库，请检查链接是否正确');
-      if (bank.isInstalled &&
-          entry['identity_id']?.toString() != bank.identityId) {
-        throw const FormatException('该链接的学科与当前题库不一致');
-      }
-      final overrides = await _overrides();
-      overrides[bank.bankId] = url;
-      final prefs = await SharedPreferences.getInstance();
-      final entries = await cached();
-      entries.removeWhere((r) => r['bank_id'] == bank.bankId);
-      entries.add(entry);
-      await QuestionBankRepository().registerRemoteEntries([entry]);
-      await prefs.setString(_overridesKey, jsonEncode(overrides));
-      await prefs.setString(_cacheKey, jsonEncode(entries));
-    } finally {
-      if (loaded != null) await loaded.dispose();
-      _running = false;
-    }
+    final catalog = await store.read();
+    return catalog.sourceFor(bank.bankId)?.url;
   }
 
   static List<Map<String, dynamic>> parseManifest(
@@ -433,100 +466,18 @@ class BankSubscriptionService {
     }).toList();
   }
 
-  Future<List<Map<String, dynamic>>> refresh({
-    bool installUpdates = false,
-    String? bankId,
+  Future<void> configureAutomatic(
+    bool enabled,
+    int minutes, {
+    bool? install,
   }) async {
-    if (_running) throw StateError('订阅正在更新');
-    _running = true;
-    final downloads = <String, BankSubscriptionDownload>{};
-    try {
-      final overrides = await _overrides();
-      final sources = {...await urls(), ...overrides.values};
-      if (bankId != null) {
-        final bank = await QuestionBankRepository().find(bankId);
-        if (bank == null) throw StateError('题库不存在');
-        final source = await sourceFor(bank);
-        if (source == null) throw StateError('尚未设置订阅链接');
-        sources.clear();
-        sources.add(source);
-      }
-      final entries = <String, Map<String, dynamic>>{};
-      for (final url in sources) {
-        final loaded = await loader.load(url);
-        downloads[url] = loaded;
-        for (final entry in loaded.entries) {
-          final id = entry['bank_id'] as String;
-          if (bankId != null && id != bankId) continue;
-          if (overrides[id] != null && overrides[id] != url) continue;
-          if (entries.containsKey(id)) throw FormatException('多个订阅包含相同题库：$id');
-          entries[id] = entry;
-        }
-      }
-      if (bankId != null && !entries.containsKey(bankId)) {
-        throw const FormatException('订阅链接中未找到该题库');
-      }
-      final result = entries.values.toList();
-      final repository = QuestionBankRepository();
-      final previous = await cached();
-      if (bankId == null) {
-        final removed = previous
-            .where((entry) => !entries.containsKey(entry['bank_id']))
-            .toList();
-        if (removed.isNotEmpty) await repository.removeRemoteEntries(removed);
-      }
-      await repository.registerRemoteEntries(result);
-      final cache = bankId == null
-          ? result
-          : [
-              ...previous.where((entry) => entry['bank_id'] != bankId),
-              ...result,
-            ];
-      await (await SharedPreferences.getInstance()).setString(
-        _cacheKey,
-        jsonEncode(cache),
-      );
-      if (installUpdates) {
-        for (final entry in result) {
-          final bank = await repository.find(entry['bank_id'] as String);
-          if (bank == null || !bank.isInstalled) continue;
-          // Manual update is explicit even for a previously frozen bank.
-          final check = bankId != null
-              ? bank.copyWith(updateEnabled: true)
-              : bank;
-          if (!repository.hasUpdate(check, entry)) continue;
-          final artifact =
-              downloads[entry['subscription_url']]?.artifacts[bank.bankId];
-          if (artifact != null) {
-            await repository.importFile(
-              artifact.path,
-              expectedBankId: bank.bankId,
-              expectedIdentityId: bank.identityId,
-              expectedSqliteHash: entry['sqlite_sha256'] as String?,
-              versionOverride: entry['version']?.toString(),
-              updateEnabled: true,
-            );
-          } else {
-            await repository.downloadBank(bank.bankId, remoteEntry: entry);
-          }
-        }
-      }
-      return result;
-    } finally {
-      for (final loaded in downloads.values) {
-        await loaded.dispose();
-      }
-      _running = false;
-    }
-  }
-
-  Future<void> configureAutomatic(bool enabled, int minutes) async {
     if (minutes < 1 || minutes > 10080) {
       throw const FormatException('检查间隔需为 1～10080 分钟');
     }
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_autoKey, enabled);
     await prefs.setInt(_intervalKey, minutes);
+    if (install != null) await prefs.setBool(_autoInstallKey, install);
     await _schedule();
   }
 
@@ -551,24 +502,49 @@ class BankSubscriptionService {
     _timer?.cancel();
     final minutes = await intervalMinutes();
     if (!await automatic() || revision != _scheduleRevision) return;
-    unawaited(_checkAutomatically());
+    unawaited(checkAutomatically());
     _timer = Timer.periodic(
       Duration(minutes: minutes),
-      (_) => unawaited(_checkAutomatically()),
+      (_) => unawaited(checkAutomatically()),
     );
   }
 
-  Future<void> _checkAutomatically() async {
+  Future<void> checkAutomatically() async {
     if (!await automatic() || _running || !await isDue(DateTime.now())) return;
-    if ((await urls()).isEmpty && (await _overrides()).isEmpty) return;
+    _running = true;
     try {
       await check();
+      if (await automaticInstallation()) {
+        final repository = QuestionBankRepository();
+        for (final bank in await repository.listBanks()) {
+          if (!bank.isInstalled || !bank.updateEnabled) continue;
+          final state = await repository.contentState(bank.bankId);
+          if (!state.hasBaseline || state.hasLocalChanges(bank.contentHash)) {
+            continue;
+          }
+          try {
+            var info = await updateInfo(bank);
+            if (info.status == BankUpdateStatus.needsDownload &&
+                info.source != null) {
+              await confirmSource(info.source!.id);
+              info = await updateInfo(bank);
+            }
+            if (info.status == BankUpdateStatus.available) {
+              await install(bank.bankId, automatic: true);
+            }
+          } catch (error) {
+            debugPrint('[bank-auto-install] ${bank.bankId}: $error');
+          }
+        }
+      }
       await (await SharedPreferences.getInstance()).setInt(
         _lastCheckKey,
         DateTime.now().millisecondsSinceEpoch,
       );
     } catch (error) {
       debugPrint('[bank-subscription] $error');
+    } finally {
+      _running = false;
     }
   }
 }

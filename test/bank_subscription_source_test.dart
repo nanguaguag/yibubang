@@ -17,6 +17,7 @@ import 'package:yibubang/services/ykb_bank_sync_service.dart';
 import 'package:yibubang/services/question_bank_file_service.dart';
 import 'package:yibubang/repositories/question_bank_repository.dart';
 import 'package:yibubang/widgets/bank_subscription_settings.dart';
+import 'package:yibubang/models/bank_source.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -124,18 +125,36 @@ void main() {
         ),
       );
       await service.saveSources(['https://example.org/manifest.json']);
-      await service.refresh();
+      await service.check();
       final bank = (await QuestionBankRepository().find('fixture'))!;
-      await service.setBankSource(bank, 'https://example.org/revised.zip');
-      final entries = await service.refresh();
-      expect(entries.length, 2);
+      await service.proposeBankSource(bank, 'https://example.org/revised.zip');
+      await service.confirmSource(
+        BankSource.fresh('https://example.org/revised.zip').id,
+      );
+      await service.selectSource(
+        bank,
+        BankSource.fresh('https://example.org/revised.zip').id,
+      );
+      await service.check();
+      final entries = await service.cached();
+      expect(
+        entries
+            .where((e) => ['fixture', 'other'].contains(e['bank_id']))
+            .length,
+        2,
+      );
       expect(await service.sourceFor(bank), 'https://example.org/revised.zip');
       expect(
         entries.singleWhere((r) => r['bank_id'] == 'other')['subscription_url'],
         'https://example.org/manifest.json',
       );
-      await service.refresh(bankId: 'fixture');
-      expect((await service.cached()).length, 2);
+      await service.check(bankId: 'fixture');
+      expect(
+        (await service.cached())
+            .where((e) => ['fixture', 'other'].contains(e['bank_id']))
+            .length,
+        2,
+      );
     },
   );
 
@@ -182,12 +201,18 @@ void main() {
       );
       await service.saveSources(['https://example.org/fixture.sqlite']);
       // Automatic updates skip frozen content, while the manual button is explicit.
-      await service.refresh(installUpdates: true);
+      await service.check();
       expect(
         (await repository.find('fixture'))!.contentHash,
         installed.contentHash,
       );
-      await service.refresh(bankId: 'fixture', installUpdates: true);
+      await service.confirmSource(
+        BankSource.fresh('https://example.org/fixture.sqlite').id,
+      );
+      await service.install(
+        'fixture',
+        onResolve: (_, __, ___) async => BankImportMode.replace,
+      );
       final updated = (await repository.find('fixture'))!;
       expect(updated.version, '1.0.1');
       expect(updated.contentHash, isNot(installed.contentHash));
@@ -211,7 +236,13 @@ void main() {
       expect(history.length, 2);
       expect(history.first['added'], 1);
       // Rechecking the same source must not reinstall or fabricate a history event.
-      await service.refresh(bankId: 'fixture', installUpdates: true);
+      await service.confirmSource(
+        BankSource.fresh('https://example.org/fixture.sqlite').id,
+      );
+      await service.install(
+        'fixture',
+        onResolve: (_, __, ___) async => BankImportMode.replace,
+      );
       expect((await repository.history('fixture')).length, 2);
     },
   );
@@ -264,9 +295,19 @@ void main() {
         const MaterialApp(home: Scaffold(body: BankSubscriptionSettings())),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.byType(Switch));
+      await tester.tap(find.byType(Switch).first);
       await tester.pumpAndSettle();
       expect(await BankSubscriptionService.instance.automatic(), isTrue);
+      expect(
+        await BankSubscriptionService.instance.automaticInstallation(),
+        isFalse,
+      );
+      await tester.tap(find.byType(Switch).last);
+      await tester.pumpAndSettle();
+      expect(
+        await BankSubscriptionService.instance.automaticInstallation(),
+        isTrue,
+      );
       await tester.tap(find.text('检查更新间隔'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('自定义…'));

@@ -22,6 +22,7 @@ class BankSubscriptionSettings extends StatefulWidget {
 class _BankSubscriptionSettingsState extends State<BankSubscriptionSettings> {
   final _service = BankSubscriptionService.instance;
   bool _enabled = false;
+  bool _install = false;
   int _minutes = 360;
   bool _loaded = false;
   bool _saving = false;
@@ -35,23 +36,26 @@ class _BankSubscriptionSettingsState extends State<BankSubscriptionSettings> {
   Future<void> _load() async {
     final enabled = await _service.automatic();
     final minutes = await _service.intervalMinutes();
+    final install = await _service.automaticInstallation();
     if (mounted) {
       setState(() {
         _enabled = enabled;
         _minutes = minutes;
+        _install = install;
         _loaded = true;
       });
     }
   }
 
-  Future<void> _save(bool enabled, int minutes) async {
+  Future<void> _save(bool enabled, int minutes, {bool? install}) async {
     setState(() => _saving = true);
     try {
-      await _service.configureAutomatic(enabled, minutes);
+      await _service.configureAutomatic(enabled, minutes, install: install);
       if (mounted) {
         setState(() {
           _enabled = enabled;
           _minutes = minutes;
+          if (install != null) _install = install;
         });
       }
     } catch (error) {
@@ -106,12 +110,22 @@ class _BankSubscriptionSettingsState extends State<BankSubscriptionSettings> {
     children: [
       IconTile(
         icon: Icons.update_rounded,
-        label: '自动检查并更新订阅题库',
+        label: '自动检查更新',
         trailing: Switch(
           value: _enabled,
           onChanged: !_loaded || _saving
               ? null
               : (value) => _save(value, _minutes),
+        ),
+      ),
+      IconTile(
+        icon: Icons.download_rounded,
+        label: '发现更新后自动安装',
+        trailing: Switch(
+          value: _install,
+          onChanged: !_loaded || _saving || !_enabled
+              ? null
+              : (value) => _save(_enabled, _minutes, install: value),
         ),
       ),
       IconTile(
@@ -122,7 +136,7 @@ class _BankSubscriptionSettingsState extends State<BankSubscriptionSettings> {
       ),
       BaseTile(
         child: Text(
-          '应用打开时按此间隔检查订阅链接，发现更新后自动下载。',
+          '应用打开时检查来源。有本地补充、来源内容变更或版本回退的题库，需要手动确认后更新。',
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
             color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),

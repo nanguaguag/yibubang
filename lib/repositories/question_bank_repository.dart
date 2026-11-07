@@ -15,12 +15,12 @@ import '../db/database_helper.dart';
 import '../db/data_transfer.dart';
 import '../db/question_bank_manager.dart';
 import '../models/question_bank.dart';
+import '../models/bank_content_state.dart';
+import '../models/bank_source.dart';
 import '../services/question_bank_file_service.dart';
 
-typedef DownloadProgressCallback = void Function(
-  int receivedBytes,
-  int? totalBytes,
-);
+typedef DownloadProgressCallback =
+    void Function(int receivedBytes, int? totalBytes);
 
 class QuestionBankRepository {
   static const int supportedSchemaVersion = 1;
@@ -89,12 +89,13 @@ class QuestionBankRepository {
   /// 初始化题库目录只允许同时执行一次，避免启动入口和页面重复扫描题库。
   /// 初始化失败时清空 Future，后续进入题库管理页面仍可以重试。
   Future<void> initialize() {
-    return _initializationFuture ??= _initializeInternal().catchError(
-      (Object error, StackTrace stackTrace) {
-        _initializationFuture = null;
-        Error.throwWithStackTrace(error, stackTrace);
-      },
-    );
+    return _initializationFuture ??= _initializeInternal().catchError((
+      Object error,
+      StackTrace stackTrace,
+    ) {
+      _initializationFuture = null;
+      Error.throwWithStackTrace(error, stackTrace);
+    });
   }
 
   Future<void> _initializeInternal() async {
@@ -115,13 +116,16 @@ class QuestionBankRepository {
           ? await validatePath(path, expectedBankId: spec.bankId)
           : null;
       debugPrint(
-          '[bank-scan] 题库 ${spec.bankId} 校验阶段耗时 ${swBank.elapsedMilliseconds}ms');
+        '[bank-scan] 题库 ${spec.bankId} 校验阶段耗时 ${swBank.elapsedMilliseconds}ms',
+      );
       if (fileExists &&
           validation != null &&
           !validation.isValid &&
           await File(backupPath).exists()) {
-        final backupValidation =
-            await validatePath(backupPath, expectedBankId: spec.bankId);
+        final backupValidation = await validatePath(
+          backupPath,
+          expectedBankId: spec.bankId,
+        );
         if (backupValidation.isValid) {
           await File(path).delete();
           await File(backupPath).rename(path);
@@ -156,10 +160,7 @@ class QuestionBankRepository {
       } else if (fileExists && !fileIsValid) {
         await userDb.update(
           'QuestionBank',
-          {
-            'install_state': 'broken',
-            'local_path': path,
-          },
+          {'install_state': 'broken', 'local_path': path},
           where: 'bank_id = ?',
           whereArgs: [spec.bankId],
         );
@@ -195,19 +196,15 @@ class QuestionBankRepository {
         });
       }
     }
-    await userDb.insert(
-      'MigrationState',
-      {
-        'migration_id': 'question_bank_catalog_v1',
-        'from_version': 1,
-        'to_version': 3,
-        'state': 'completed',
-        'started_at': now,
-        'finished_at': now,
-        'error': '',
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    await userDb.insert('MigrationState', {
+      'migration_id': 'question_bank_catalog_v1',
+      'from_version': 1,
+      'to_version': 3,
+      'state': 'completed',
+      'started_at': now,
+      'finished_at': now,
+      'error': '',
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
     debugPrint('[bank-scan] 题库目录初始化总耗时 ${swTotal.elapsedMilliseconds}ms');
   }
 
@@ -252,8 +249,10 @@ class QuestionBankRepository {
         preferredBank.isInstalled) {
       return preferred;
     }
-    final installed = (await listBanks()).where((bank) =>
-        bank.enabled && bank.isInstalled && bank.bankId != 'legacy_combined');
+    final installed = (await listBanks()).where(
+      (bank) =>
+          bank.enabled && bank.isInstalled && bank.bankId != 'legacy_combined',
+    );
     final first = installed.isNotEmpty ? installed.first : null;
     if (first != null) {
       await prefs.setString('activeBankId', first.bankId);
@@ -282,10 +281,12 @@ class QuestionBankRepository {
     final bank = await find(bankId);
     if (bank == null) throw StateError('题库不存在');
     if (!enabled && bank.bankId == await activeBankId()) {
-      final alternatives = (await listBanks()).where((candidate) =>
-          candidate.bankId != bankId &&
-          candidate.enabled &&
-          candidate.isInstalled);
+      final alternatives = (await listBanks()).where(
+        (candidate) =>
+            candidate.bankId != bankId &&
+            candidate.enabled &&
+            candidate.isInstalled,
+      );
       if (alternatives.isEmpty) {
         throw StateError('至少需要保留一个已启用的题库');
       }
@@ -302,11 +303,7 @@ class QuestionBankRepository {
   Future<BankFileValidation> validatePath(
     String filePath, {
     String? expectedBankId,
-  }) =>
-      _databaseManager.validateFile(
-        filePath,
-        expectedBankId: expectedBankId,
-      );
+  }) => _databaseManager.validateFile(filePath, expectedBankId: expectedBankId);
 
   Future<Directory> _ensureQuestionBankRoot() async {
     final directory = Directory(await _databaseManager.rootPath);
@@ -321,6 +318,7 @@ class QuestionBankRepository {
     String? expectedSqliteHash,
     String? versionOverride,
     bool? updateEnabled,
+    BankRelease? upstream,
     Future<BankImportMode?> Function(QuestionBank existing)? onConflict,
   }) async {
     final source = File(sourcePath);
@@ -354,11 +352,13 @@ class QuestionBankRepository {
         throw FormatException(validation.message);
       }
       final metadata = validation.metadata!;
-      if (expectedIdentityId != null && metadata['identity_id'] != expectedIdentityId) {
+      if (expectedIdentityId != null &&
+          metadata['identity_id'] != expectedIdentityId) {
         throw const FormatException('下载题库的学科与订阅清单不一致');
       }
       if (expectedSqliteHash != null &&
-          sha256.convert(await File(databasePath).readAsBytes()).toString() != expectedSqliteHash.toLowerCase()) {
+          sha256.convert(await File(databasePath).readAsBytes()).toString() !=
+              expectedSqliteHash.toLowerCase()) {
         throw const FormatException('SQLite SHA-256 与订阅清单不一致');
       }
       final bankId = metadata['bank_id'] as String;
@@ -374,7 +374,10 @@ class QuestionBankRepository {
             : BankImportMode.replace;
         if (mode == null) throw BankImportCancelled();
         final addedCount = existing?.isInstalled == true
-            ? await QuestionBankFileService.countNewQuestions(existing!.localPath, databasePath)
+            ? await QuestionBankFileService.countNewQuestions(
+                existing!.localPath,
+                databasePath,
+              )
             : (metadata['question_count'] as num?)?.toInt() ?? 0;
         if (mode == BankImportMode.merge) {
           final localValidation = await validatePath(existing!.localPath);
@@ -404,6 +407,8 @@ class QuestionBankRepository {
             updateEnabled: false,
             historyAction: '增量合并',
             addedCount: addedCount,
+            upstream: upstream,
+            merged: true,
           );
           return installed;
         }
@@ -414,6 +419,7 @@ class QuestionBankRepository {
           updateEnabled: updateEnabled,
           historyAction: existing?.isInstalled == true ? '更新题库' : '创建/导入',
           addedCount: addedCount,
+          upstream: upstream,
         );
         return installed;
       } finally {
@@ -436,6 +442,8 @@ class QuestionBankRepository {
     bool? updateEnabled,
     required String historyAction,
     required int addedCount,
+    BankRelease? upstream,
+    bool merged = false,
   }) async {
     final bankId = metadata['bank_id'] as String;
     if (!RegExp(r'^[A-Za-z0-9_-]+$').hasMatch(bankId)) {
@@ -456,6 +464,9 @@ class QuestionBankRepository {
     final configuredRemote = configuredRemoteBanks[bankId];
     final isOfficialContent =
         configuredRemote?['sqlite_sha256']?.toString() == hash;
+    upstream ??= isOfficialContent && !merged
+        ? BankRelease.fromEntry(BankSourceCatalog.officialId, configuredRemote!)
+        : null;
     final resolvedUpdateEnabled = updateEnabled ?? isOfficialContent;
     // 下载更新使用远程发布版本；导入的官方同内容文件也沿用远程发布版本，
     // 避免 BankMeta 里的内容版本（1.0.0）把发布版本（3.0.0）回退。
@@ -469,8 +480,10 @@ class QuestionBankRepository {
     }
     final staging = File(stagingPath);
     await staging.writeAsBytes(bytes, flush: true);
-    final stagedValidation =
-        await validatePath(stagingPath, expectedBankId: bankId);
+    final stagedValidation = await validatePath(
+      stagingPath,
+      expectedBankId: bankId,
+    );
     if (!stagedValidation.isValid) {
       if (await staging.exists()) await staging.delete();
       throw FormatException(stagedValidation.message);
@@ -493,7 +506,8 @@ class QuestionBankRepository {
       final existing = await find(bankId);
       final bank = QuestionBank(
         bankId: bankId,
-        name: metadata['name'] as String? ??
+        name:
+            metadata['name'] as String? ??
             existing?.name ??
             spec?.name ??
             bankId,
@@ -508,7 +522,8 @@ class QuestionBankRepository {
         updateEnabled: resolvedUpdateEnabled,
         installState: 'installed',
         remoteUrl: existing?.remoteUrl,
-        identityId: (metadata['identity_id'] as String?) ??
+        identityId:
+            (metadata['identity_id'] as String?) ??
             spec?.identityId ??
             existing?.identityId ??
             '',
@@ -516,18 +531,39 @@ class QuestionBankRepository {
       );
       await userDb.transaction((txn) async {
         await txn.insert(
-          'QuestionBank', bank.toMap(),
+          'QuestionBank',
+          bank.toMap(),
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+        final previous = await txn.query(
+          'BankContentState',
+          where: 'bank_id = ?',
+          whereArgs: [bankId],
+        );
+        final state = previous.isEmpty
+            ? BankContentState(
+                bankId: bankId,
+                installedHash: existing?.contentHash ?? '',
+              )
+            : BankContentState.fromMap(previous.single);
+        await txn.insert(
+          'BankContentState',
+          state.installed(hash, release: upstream, merged: merged).toMap(),
           conflictAlgorithm: ConflictAlgorithm.replace,
         );
         await txn.insert('BankHistory', {
-          'id': generateSimpleId(), 'bank_id': bank.bankId,
+          'id': generateSimpleId(),
+          'bank_id': bank.bankId,
           'timestamp': DateTime.now().millisecondsSinceEpoch,
-          'action': historyAction, 'version': bank.version, 'added': addedCount,
+          'action': historyAction,
+          'version': bank.version,
+          'added': addedCount,
           'question_count': (metadata['question_count'] as num?)?.toInt() ?? 0,
         });
         // A full rebuild may move courses from the former root to their actual
         // leaf identities. Preserve choices when the old ownership disappeared.
-        await txn.rawInsert('''
+        await txn.rawInsert(
+          '''
           INSERT INTO IdentitySubject
             (bank_id, identity_id, subject_id, correct, incorrect, selected)
           SELECT ?, x.identity_id, x.subject_id, 0, 0,
@@ -538,7 +574,9 @@ class QuestionBankRepository {
                     AND kept.subject_id = old.subject_id)), 0)
           FROM install_bank.IdentitySubject x WHERE 1
           ON CONFLICT(bank_id, identity_id, subject_id) DO NOTHING
-        ''', [bankId, bankId]);
+        ''',
+          [bankId, bankId],
+        );
         await rebuildAttachedQuestionCount(txn, bankId, alias: 'install_bank');
       });
       return bank;
@@ -648,37 +686,32 @@ class QuestionBankRepository {
       final bankId = raw['bank_id']!.toString();
       final existing = await find(bankId);
       final spec = QuestionBankDefaults.byId(bankId);
-      await userDb.insert(
-        'QuestionBank',
-        {
-          'bank_id': bankId,
-          'name':
-              raw['name']?.toString() ?? existing?.name ?? spec?.name ?? bankId,
-          'description':
-              raw['description']?.toString() ?? existing?.description ?? '',
-          'version': existing?.version ?? '0.0.0',
-          'schema_version': int.tryParse('${raw['schema_version'] ?? 0}') ?? 0,
-          'local_path': existing?.localPath ?? '',
-          'content_hash': existing?.contentHash ?? '',
-          'size': existing?.size ?? 0,
-          'enabled': existing?.enabled == false ? 0 : 1,
-          'built_in': spec != null || (existing?.builtIn ?? false) ? 1 : 0,
-          'update_enabled': existing?.updateEnabled == false ? 0 : 1,
-          'install_state': existing?.installState ?? 'available',
-          'remote_url': raw['url']?.toString(),
-          'identity_id':
-              existing?.isInstalled == true
-                  ? existing!.identityId
-                  : raw['identity_id']?.toString() ?? existing?.identityId ?? spec?.identityId ?? '',
-          'updated_at': DateTime.now().millisecondsSinceEpoch,
-        },
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
+      await userDb.insert('QuestionBank', {
+        'bank_id': bankId,
+        'name':
+            raw['name']?.toString() ?? existing?.name ?? spec?.name ?? bankId,
+        'description':
+            raw['description']?.toString() ?? existing?.description ?? '',
+        'version': existing?.version ?? '0.0.0',
+        'schema_version': int.tryParse('${raw['schema_version'] ?? 0}') ?? 0,
+        'local_path': existing?.localPath ?? '',
+        'content_hash': existing?.contentHash ?? '',
+        'size': existing?.size ?? 0,
+        'enabled': existing?.enabled == false ? 0 : 1,
+        'built_in': spec != null || (existing?.builtIn ?? false) ? 1 : 0,
+        'update_enabled': existing?.updateEnabled == false ? 0 : 1,
+        'install_state': existing?.installState ?? 'available',
+        'remote_url': raw['url']?.toString(),
+        'identity_id': existing?.isInstalled == true
+            ? existing!.identityId
+            : raw['identity_id']?.toString() ??
+                  existing?.identityId ??
+                  spec?.identityId ??
+                  '',
+        'updated_at': DateTime.now().millisecondsSinceEpoch,
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
     }
-    return {
-      ...decoded,
-      'banks': remoteEntries.values.toList(),
-    };
+    return {...decoded, 'banks': remoteEntries.values.toList()};
   }
 
   Future<QuestionBank> downloadBank(
@@ -693,9 +726,7 @@ class QuestionBankRepository {
       throw StateError('题库尚未配置远程直链');
     }
 
-    final expectedSize = int.tryParse(
-      '${remote?['size'] ?? ''}',
-    );
+    final expectedSize = int.tryParse('${remote?['size'] ?? ''}');
     final expectedHash = remote?['sha256']?.toString();
     if (expectedHash == null || expectedHash.isEmpty) {
       throw const FormatException('远程题库清单缺少 SHA-256，拒绝安装');
@@ -705,7 +736,9 @@ class QuestionBankRepository {
       throw FormatException('远程题库标识不匹配：清单为 $remoteBankId，目标为 $bankId');
     }
     final remoteIdentity = remote?['identity_id']?.toString();
-    if (local?.isInstalled == true && remoteIdentity != null && local!.identityId != remoteIdentity) {
+    if (local?.isInstalled == true &&
+        remoteIdentity != null &&
+        local!.identityId != remoteIdentity) {
       throw const FormatException('订阅清单的学科与已安装题库不一致');
     }
 
@@ -724,8 +757,8 @@ class QuestionBankRepository {
       final totalBytes = responseLength != null && responseLength > 0
           ? responseLength
           : expectedSize != null && expectedSize > 0
-              ? expectedSize
-              : null;
+          ? expectedSize
+          : null;
       final remoteExtension = p.extension(Uri.parse(url).path).toLowerCase();
       final temporaryPath = p.join(
         (await _ensureQuestionBankRoot()).path,
@@ -790,11 +823,17 @@ class QuestionBankRepository {
       } else {
         // An installed file owns its root and content version. A subscription
         // supplies download information, not replacement identity metadata.
-        await userDb.update('QuestionBank', {
-          'remote_url': entry['url']?.toString(),
-          if (!existing.isInstalled)
-            'identity_id': entry['identity_id']?.toString() ?? existing.identityId,
-        }, where: 'bank_id = ?', whereArgs: [bankId]);
+        await userDb.update(
+          'QuestionBank',
+          {
+            'remote_url': entry['url']?.toString(),
+            if (!existing.isInstalled)
+              'identity_id':
+                  entry['identity_id']?.toString() ?? existing.identityId,
+          },
+          where: 'bank_id = ?',
+          whereArgs: [bankId],
+        );
       }
     }
   }
@@ -808,15 +847,58 @@ class QuestionBankRepository {
       if (!bank.isInstalled && !bank.builtIn) {
         await db.delete('QuestionBank', where: 'bank_id = ?', whereArgs: [id]);
       } else {
-        await db.update('QuestionBank', {'remote_url': configuredRemoteBanks[id]?['url']},
-          where: 'bank_id = ?', whereArgs: [id]);
+        await db.update(
+          'QuestionBank',
+          {'remote_url': configuredRemoteBanks[id]?['url']},
+          where: 'bank_id = ?',
+          whereArgs: [id],
+        );
       }
     }
   }
 
   Future<List<Map<String, dynamic>>> history(String bankId) async =>
-      (await UserDBHelper().database).query('BankHistory',
-        where: 'bank_id = ?', whereArgs: [bankId], orderBy: 'timestamp DESC');
+      (await UserDBHelper().database).query(
+        'BankHistory',
+        where: 'bank_id = ?',
+        whereArgs: [bankId],
+        orderBy: 'timestamp DESC',
+      );
+
+  Future<BankContentState> contentState(String bankId) async {
+    final rows = await (await UserDBHelper().database).query(
+      'BankContentState',
+      where: 'bank_id = ?',
+      whereArgs: [bankId],
+    );
+    return rows.isEmpty
+        ? BankContentState(bankId: bankId)
+        : BankContentState.fromMap(rows.single);
+  }
+
+  /// Old installations can prove a baseline by matching a known SQLite digest.
+  Future<void> establishBaseline(QuestionBank bank, BankRelease release) async {
+    if (release.sqliteHash != bank.contentHash) return;
+    final db = await UserDBHelper().database;
+    await db.transaction((txn) async {
+      final current = await txn.query(
+        'QuestionBank',
+        where: 'bank_id = ?',
+        whereArgs: [bank.bankId],
+      );
+      if (current.isEmpty ||
+          current.single['content_hash'] != bank.contentHash) {
+        return;
+      }
+      await txn.insert(
+        'BankContentState',
+        BankContentState(
+          bankId: bank.bankId,
+        ).installed(bank.contentHash, release: release).toMap(),
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    });
+  }
 
   bool hasUpdate(QuestionBank bank, Map<String, dynamic> remote) {
     if (!bank.updateEnabled) return false;

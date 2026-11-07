@@ -237,7 +237,7 @@ class UserDBHelper {
     String path = join(await getDatabasesPath(), 'user_data.sqlite');
     return await openDatabase(
       path,
-      version: 12,
+      version: 13,
       onConfigure: (db) async {
         // 用户库为高频写库：WAL 提升并发写性能，同时保证导出前关闭连接即可完整落盘。
         // 注意：Android 原生 SQLiteDatabase.execSQL 禁止执行有返回值的 PRAGMA（如 journal_mode），
@@ -277,7 +277,7 @@ class UserDBHelper {
 
   @visibleForTesting
   Future<void> upgradeForTesting(Database db, int oldVersion) =>
-      _onUpgrade(db, oldVersion, 12);
+      _onUpgrade(db, oldVersion, 13);
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     await db.transaction((txn) async {
@@ -408,6 +408,9 @@ class UserDBHelper {
       if (oldVersion < 12) {
         await _createBankHistoryTable(txn);
       }
+      if (oldVersion < 13) {
+        await _createBankContentStateTable(txn);
+      }
       await _createMigrationStateTable(txn);
     });
   }
@@ -457,6 +460,17 @@ class UserDBHelper {
     ''');
   }
 
+  Future<void> _createBankContentStateTable(DatabaseExecutor db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS BankContentState (
+        bank_id TEXT PRIMARY KEY, source_id TEXT NOT NULL DEFAULT '',
+        base_version TEXT NOT NULL DEFAULT '', base_release TEXT NOT NULL DEFAULT '',
+        base_hash TEXT NOT NULL DEFAULT '', local_revision INTEGER NOT NULL DEFAULT 0,
+        installed_hash TEXT NOT NULL DEFAULT ''
+      )
+    ''');
+  }
+
   Future<void> _createBankHistoryTable(DatabaseExecutor db) async {
     await db.execute('''
       CREATE TABLE IF NOT EXISTS BankHistory (
@@ -466,7 +480,9 @@ class UserDBHelper {
         question_count INTEGER NOT NULL DEFAULT 0
       )
     ''');
-    await db.execute('CREATE INDEX IF NOT EXISTS idx_bank_history ON BankHistory(bank_id, timestamp)');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_bank_history ON BankHistory(bank_id, timestamp)',
+    );
   }
 
   Future<List<String>> _columns(DatabaseExecutor db, String table) async {
@@ -706,6 +722,7 @@ class UserDBHelper {
     await _createQuestionBankTable(db);
     await _createBankSmartSyncTables(db);
     await _createBankHistoryTable(db);
+    await _createBankContentStateTable(db);
     await _createMigrationStateTable(db);
 
     // 给 Question 表按 chapter_id 建表
