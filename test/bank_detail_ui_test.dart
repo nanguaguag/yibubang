@@ -15,6 +15,7 @@ import 'package:yibubang/screens/question_bank_page.dart';
 import 'package:yibubang/services/bank_creation_service.dart';
 import 'package:yibubang/services/ykb_bank_sync_service.dart';
 import 'package:yibubang/widgets/common/info_card.dart';
+import 'package:yibubang/widgets/bank_tag.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -75,6 +76,13 @@ void main() {
     await db.close();
     await QuestionBankRepository().initialize();
     bank = await QuestionBankRepository().importFile(file.path);
+    bank = bank.copyWith(description: '覆盖基础课程与临床知识');
+    await (await UserDBHelper().database).update(
+      'QuestionBank',
+      {'description': bank.description},
+      where: 'bank_id = ?',
+      whereArgs: [bank.bankId],
+    );
   });
   setUp(
     () => SharedPreferences.setMockInitialValues({
@@ -118,6 +126,22 @@ void main() {
           ['1', '课程总数', '2', '章节总数', '1', '题目总数'],
         );
         expect(find.byType(InfoCard), findsWidgets);
+        final header = find.byKey(const ValueKey('bank-detail-header'));
+        final name = find.descendant(
+          of: header,
+          matching: find.text(bank.name),
+        );
+        final identity = find.byKey(const ValueKey('bank-detail-identity'));
+        expect(
+          tester.getRect(identity).left,
+          greaterThan(tester.getRect(name).right),
+        );
+        expect(
+          tester.getRect(identity).left,
+          greaterThan(tester.getRect(find.text(bank.description)).right),
+        );
+        expect(tester.getCenter(identity).dy, tester.getCenter(header).dy);
+        expect(find.text('题库文件大小'), findsOneWidget);
         expect(find.text('空分组'), findsNothing);
         expect(find.text('空学科'), findsNothing);
         expect(find.text('大一'), findsOneWidget);
@@ -177,6 +201,21 @@ void main() {
         expect(export, findsOneWidget);
         expect(tester.getCenter(detail).dy, tester.getCenter(update).dy);
         expect(tester.getCenter(update).dy, tester.getCenter(export).dy);
+        final title = find.byKey(ValueKey('bank-title-${bank.bankId}'));
+        final active = find.descendant(of: title, matching: find.text('当前使用'));
+        expect(active, findsOneWidget);
+        final tag = find.ancestor(of: active, matching: find.byType(BankTag));
+        expect(tester.widget<BankTag>(tag).highlighted, isTrue);
+        expect(tester.getCenter(active).dy, tester.getCenter(title).dy);
+        for (final tag
+            in find
+                .descendant(of: card, matching: find.byType(BankTag))
+                .evaluate()) {
+          expect(
+            tester.getSize(find.byWidget(tag.widget)).height,
+            lessThan(28),
+          );
+        }
         await tester.ensureVisible(export);
         await tester.tap(export);
         await tester.pumpAndSettle();

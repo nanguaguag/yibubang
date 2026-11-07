@@ -14,6 +14,7 @@ import '../widgets/bank_update_dialog.dart';
 import '../models/bank_download_task.dart';
 import '../widgets/bank_action_button.dart';
 import '../widgets/bank_check_feedback.dart';
+import '../widgets/bank_tag.dart';
 import 'bank_subscriptions_page.dart';
 import 'bank_creation_page.dart';
 import 'bank_detail_page.dart';
@@ -148,35 +149,6 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
       _updates[bank.bankId] = await _service.updateInfo(bank);
     }
     return banks;
-  }
-
-  Future<void> _refreshManifest() async {
-    setState(() {
-      _busy = true;
-      _operation = 'all';
-      _task = null;
-    });
-    try {
-      final results = await _service.check();
-      if (!mounted) return;
-      setState(_reload);
-      if (await showBankCheckErrors(context, results) || !mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            '检查完成：${results.where((s) => s.status != BankSourceStatus.failed).length} 个来源成功，${results.where((s) => s.status == BankSourceStatus.failed).length} 个失败',
-          ),
-        ),
-      );
-    } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('暂时无法获取远程题库清单：$error')));
-      }
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
   }
 
   Future<void> _importFile() async {
@@ -354,19 +326,6 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
     }
   }
 
-  Widget _status(QuestionBank bank) {
-    if (!bank.isInstalled) {
-      return const Chip(label: Text('未安装'));
-    }
-    if (_activeBankId == bank.bankId) {
-      return const Chip(
-        avatar: Icon(Icons.check, size: 16),
-        label: Text('当前使用'),
-      );
-    }
-    return Chip(label: const Text('已安装'), visualDensity: VisualDensity.compact);
-  }
-
   Widget _bankCard(QuestionBank bank) {
     final info = _updates[bank.bankId];
     final displayVersion = bank.isInstalled
@@ -381,6 +340,7 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
     final localChanges =
         info?.content?.hasLocalChanges(bank.contentHash) == true;
     final downloading = _downloading.contains(bank.bankId);
+    final active = bank.isInstalled && _activeBankId == bank.bankId;
     return Card(
       key: ValueKey('bank-card-${bank.bankId}'),
       clipBehavior: Clip.antiAlias,
@@ -414,9 +374,22 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          bank.name,
-                          style: Theme.of(context).textTheme.titleMedium,
+                        Row(
+                          key: ValueKey('bank-title-${bank.bankId}'),
+                          children: [
+                            Flexible(
+                              child: Text(
+                                bank.name,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.titleMedium,
+                              ),
+                            ),
+                            if (active) ...[
+                              const SizedBox(width: 8),
+                              const BankTag('当前使用', highlighted: true),
+                            ],
+                          ],
                         ),
                         const SizedBox(height: 4),
                         Text(
@@ -427,25 +400,18 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
                         ),
                         const SizedBox(height: 8),
                         Wrap(
-                          spacing: 8,
+                          spacing: 6,
                           runSpacing: 4,
                           children: [
                             if (RegExp(r'^\d+$').hasMatch(bank.identityId))
-                              Chip(
-                                label: Text(bank.identityId),
-                                shape: const StadiumBorder(),
-                                visualDensity: VisualDensity.compact,
-                              ),
-                            _status(bank),
-                            if (localChanges) const Chip(label: Text('本地有补充')),
+                              BankTag(bank.identityId),
+                            if (!active)
+                              BankTag(bank.isInstalled ? '已安装' : '未安装'),
+                            if (localChanges) const BankTag('本地有补充'),
                             if (hasSubscription && bank.isInstalled)
-                              Chip(
-                                label: Text(info!.label),
-                                shape: const StadiumBorder(),
-                                visualDensity: VisualDensity.compact,
-                              ),
+                              BankTag(info!.label),
                             if (!bank.isInstalled && !canDownload)
-                              const Chip(label: Text('暂无下载链接')),
+                              const BankTag('暂无下载链接'),
                           ],
                         ),
                       ],
@@ -536,18 +502,10 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
             onPressed: _controlsDisabled ? null : _editSubscriptions,
             icon: const Icon(Icons.rss_feed),
           ),
-          BankActionButton(
-            key: const ValueKey('bank-check-all'),
-            tooltip: '检查全部更新',
-            busy: _busy && _operation == 'all',
-            enabled: !_controlsDisabled,
-            onPressed: _refreshManifest,
-            icon: Icons.sync,
-          ),
           if (_busy && _operation == 'import')
             BankActionButton(
               tooltip: '导入题库',
-              icon: Icons.more_vert,
+              icon: Icons.file_download_outlined,
               busy: true,
               task: _task,
             )
@@ -555,7 +513,7 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
             PopupMenuButton<String>(
               enabled: !_controlsDisabled,
               tooltip: '更多导入方式',
-              icon: const Icon(Icons.more_vert),
+              icon: const Icon(Icons.file_download_outlined),
               onSelected: (value) =>
                   value == 'link' ? _importLink() : _importFile(),
               itemBuilder: (_) => [

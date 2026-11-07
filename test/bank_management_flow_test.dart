@@ -524,7 +524,7 @@ void main() {
         }
         await tester.pumpWidget(
           MaterialApp(
-            home: ['source', 'official'].contains(action)
+            home: ['all', 'source', 'official'].contains(action)
                 ? BankSubscriptionsPage(subscriptionService: delayed)
                 : ['detail', 'pending'].contains(action)
                 ? BankDetailPage(bank: bank, subscriptionService: delayed)
@@ -658,9 +658,9 @@ void main() {
         ),
       );
       await tester.pumpWidget(
-        MaterialApp(home: QuestionBankPage(subscriptionService: failing)),
+        MaterialApp(home: BankSubscriptionsPage(subscriptionService: failing)),
       );
-      await ready(tester, find.text('西医综合题库'));
+      await ready(tester, find.byKey(const ValueKey('bank-check-all')));
       final before = (await service.store.read()).sourceFor('fixture')!.entries;
       await tester.runAsync(() async {
         await tester.tap(find.byTooltip('检查全部更新'));

@@ -15,6 +15,7 @@ import '../widgets/bank_export_button.dart';
 import '../widgets/bank_link_dialog.dart';
 import '../widgets/common/info_card.dart';
 import '../widgets/common/styled_tile.dart';
+import '../widgets/bank_tag.dart';
 
 class BankDetailPage extends StatefulWidget {
   const BankDetailPage({
@@ -632,6 +633,15 @@ class _BankDetailPageState extends State<BankDetailPage> {
       .replaceAll('T', ' ')
       .replaceAll('-', '/');
 
+  String _fileSize(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    if (bytes < 1024 * 1024 * 1024) {
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
+    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
+  }
+
   Widget _heading(String text) => Padding(
     padding: const EdgeInsets.fromLTRB(4, 24, 4, 12),
     child: Text(
@@ -775,6 +785,7 @@ class _BankDetailPageState extends State<BankDetailPage> {
                   children: [
                     BaseTile(
                       child: Row(
+                        key: const ValueKey('bank-detail-header'),
                         children: [
                           const TileIcon(icon: Icons.menu_book_rounded),
                           const SizedBox(width: 14),
@@ -795,21 +806,19 @@ class _BankDetailPageState extends State<BankDetailPage> {
                                     ).textTheme.bodySmall,
                                   ),
                                 ],
-                                const SizedBox(height: 12),
-                                Wrap(
-                                  spacing: 8,
-                                  runSpacing: 4,
-                                  children: [
-                                    if (bank.identityId.isNotEmpty)
-                                      Chip(
-                                        label: Text(bank.identityId),
-                                        shape: const StadiumBorder(),
-                                      ),
-                                  ],
-                                ),
                               ],
                             ),
                           ),
+                          if (RegExp(r'^\d+$').hasMatch(bank.identityId)) ...[
+                            const SizedBox(width: 12),
+                            Tooltip(
+                              message: '学科编号',
+                              child: BankTag(
+                                bank.identityId,
+                                key: const ValueKey('bank-detail-identity'),
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -860,6 +869,12 @@ class _BankDetailPageState extends State<BankDetailPage> {
                       label: '来源',
                       value: source,
                     ),
+                    if (bank.isInstalled && bank.size > 0)
+                      IconTile(
+                        icon: Icons.storage_rounded,
+                        label: '题库文件大小',
+                        value: _fileSize(bank.size),
+                      ),
                   ],
                 ),
                 ..._subscriptionSection(details),

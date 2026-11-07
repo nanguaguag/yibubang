@@ -11,6 +11,7 @@ import 'package:yibubang/screens/bank_creation_page.dart';
 import 'package:yibubang/screens/bank_subscriptions_page.dart';
 import 'package:yibubang/screens/question_bank_page.dart';
 import 'package:yibubang/widgets/bank_link_import_dialog.dart';
+import 'package:yibubang/widgets/bank_tag.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -60,13 +61,37 @@ void main() {
         expect(find.text('A测试题库'), findsOneWidget);
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
-        final tag = tester.widget<Chip>(
-          find.ancestor(of: find.text('38'), matching: find.byType(Chip)),
+        final tag = find.ancestor(
+          of: find.text('38'),
+          matching: find.byType(BankTag),
         );
-        expect(tag.shape, isA<StadiumBorder>());
+        final decoration =
+            tester
+                    .widget<DecoratedBox>(
+                      find.descendant(
+                        of: tag,
+                        matching: find.byType(DecoratedBox),
+                      ),
+                    )
+                    .decoration
+                as ShapeDecoration;
+        expect(decoration.shape, isA<StadiumBorder>());
+        expect(tester.getSize(tag).height, lessThan(28));
         expect(find.textContaining('根 identity'), findsNothing);
         expect(find.byTooltip('创建题库'), findsOneWidget);
         expect(find.byTooltip('管理订阅'), findsOneWidget);
+        expect(find.byTooltip('检查全部更新'), findsNothing);
+        expect(
+          tester
+              .widget<Icon>(
+                find.descendant(
+                  of: find.byTooltip('更多导入方式'),
+                  matching: find.byType(Icon),
+                ),
+              )
+              .icon,
+          Icons.file_download_outlined,
+        );
 
         await tester.tap(find.byTooltip('更多导入方式'));
         await tester.pumpAndSettle();
@@ -106,6 +131,7 @@ void main() {
         await tester.tap(find.byTooltip('管理订阅'));
         await tester.pumpAndSettle();
         expect(find.byType(BankSubscriptionsPage), findsOneWidget);
+        expect(find.byTooltip('检查全部更新'), findsOneWidget);
         await tester.tap(find.text('添加订阅'));
         await tester.pumpAndSettle();
         expect(find.text('HTTPS 订阅地址'), findsOneWidget);

@@ -134,6 +134,16 @@ class _BankSubscriptionsPageState extends State<BankSubscriptionsPage> {
     );
   }
 
+  Future<void> _checkAll() => _run(() async {
+    final results = await _service.check();
+    if (!mounted || await showBankCheckErrors(context, results) || !mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('检查完成：${results.length} 个来源，已刷新更新状态')),
+    );
+  }, operation: 'checkAll');
+
   Future<void> _remove(BankSource source) async {
     final catalog = await _service.store.read();
     final count = catalog.bindings.values.where((id) => id == source.id).length;
@@ -284,7 +294,19 @@ class _BankSubscriptionsPageState extends State<BankSubscriptionsPage> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('题库订阅')),
+    appBar: AppBar(
+      title: const Text('题库订阅'),
+      actions: [
+        BankActionButton(
+          key: const ValueKey('bank-check-all'),
+          tooltip: '检查全部更新',
+          busy: _busy && _operation == 'checkAll',
+          enabled: !_busy,
+          onPressed: _checkAll,
+          icon: Icons.sync_rounded,
+        ),
+      ],
+    ),
     body: Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 760),
