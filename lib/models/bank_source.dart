@@ -41,6 +41,7 @@ class BankSource {
   BankSource({
     required this.url,
     this.official = false,
+    this.active = true,
     this.kind = BankSourceKind.unknown,
     this.status = BankSourceStatus.unchecked,
     this.entries = const [],
@@ -52,7 +53,7 @@ class BankSource {
     this.transportUrl,
   });
   final String url;
-  final bool official;
+  final bool official, active;
   final BankSourceKind kind;
   final BankSourceStatus status;
   final List<Map<String, dynamic>> entries;
@@ -71,6 +72,7 @@ class BankSource {
   Map<String, dynamic> toJson() => {
     'url': url,
     'official': official,
+    'active': active,
     'kind': kind.name,
     'status': status.name,
     'entries': entries,
@@ -84,6 +86,7 @@ class BankSource {
   factory BankSource.fromJson(Map<String, dynamic> row) => BankSource(
     url: normalizeBankSourceUrl(row['url'] as String),
     official: row['official'] == true,
+    active: row['active'] != false,
     kind: BankSourceKind.values.firstWhere(
       (v) => v.name == row['kind'],
       orElse: () => BankSourceKind.unknown,
@@ -125,9 +128,13 @@ class BankSourceCatalog {
 
   /// Empty bindings explicitly mean unsubscribed; do not fall back to old URLs.
   final Map<String, String> bindings, pending;
-  BankSource? sourceFor(String bankId) => sources[bindings[bankId]];
+  BankSource? sourceFor(String bankId) {
+    final source = sources[bindings[bankId]];
+    return source?.active == true ? source : null;
+  }
+
   List<BankSource> candidates(String bankId) =>
-      sources.values.where((s) => s.entry(bankId) != null).toList();
+      sources.values.where((s) => s.active && s.entry(bankId) != null).toList();
   Map<String, dynamic> toJson() => {
     'sources': sources.map((id, source) => MapEntry(id, source.toJson())),
     'bindings': bindings,
@@ -161,6 +168,17 @@ class BankUpdateInfo {
   final Map<String, dynamic>? entry;
   final String? message;
   final BankContentState? content;
+  bool get canApply => [
+    BankUpdateStatus.available,
+    BankUpdateStatus.needsComparison,
+    BankUpdateStatus.changed,
+    BankUpdateStatus.rollback,
+  ].contains(status);
+  String get actionLabel => status == BankUpdateStatus.needsDownload
+      ? '下载确认'
+      : canApply
+      ? '下载并更新'
+      : '检查更新';
   String get label => switch (status) {
     BankUpdateStatus.unchecked => '待检查',
     BankUpdateStatus.current => '已是最新',

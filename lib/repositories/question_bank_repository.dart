@@ -1,16 +1,12 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
-import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
 
-import '../common/github_proxy.dart';
-import '../common/version_utils.dart';
 import '../db/database_helper.dart';
 import '../db/data_transfer.dart';
 import '../db/question_bank_manager.dart';
@@ -319,6 +315,7 @@ class QuestionBankRepository {
     String? versionOverride,
     bool? updateEnabled,
     BankRelease? upstream,
+    VoidCallback? onInstallReady,
     Future<BankImportMode?> Function(QuestionBank existing)? onConflict,
   }) async {
     final source = File(sourcePath);
@@ -373,6 +370,7 @@ class QuestionBankRepository {
             ? await onConflict(existing!)
             : BankImportMode.replace;
         if (mode == null) throw BankImportCancelled();
+        onInstallReady?.call();
         final addedCount = existing?.isInstalled == true
             ? await QuestionBankFileService.countNewQuestions(
                 existing!.localPath,
@@ -600,213 +598,6 @@ class QuestionBankRepository {
     }
   }
 
-  Future<Map<String, dynamic>?> checkRemoteManifest() async {
-    Map<String, dynamic> decoded;
-    try {
-      final candidateUrls = await GitHubProxyConfig.getCandidateManifestUrls();
-      http.Response? successfulResponse;
-      for (final url in candidateUrls) {
-        try {
-          final response = await http
-              .get(Uri.parse(url), headers: GitHubProxyConfig.defaultHeaders)
-              .timeout(const Duration(seconds: 8));
-          if (response.statusCode == 200) {
-            successfulResponse = response;
-            break;
-          }
-        } catch (candidateError) {
-          debugPrint('题库清单源拉取失败 ($url): $candidateError，尝试备用源...');
-        }
-      }
-
-      if (successfulResponse == null) {
-        throw const HttpException('题库清单请求失败：所有清单源均不可用');
-      }
-
-      final value = jsonDecode(utf8.decode(successfulResponse.bodyBytes));
-      if (value is! Map<String, dynamic>) {
-        throw const FormatException('远程更新清单格式不正确');
-      }
-      final nestedBanks = value['question_banks'];
-      if (value['banks'] is List) {
-        decoded = value;
-      } else if (nestedBanks is Map && nestedBanks['banks'] is List) {
-        decoded = Map<String, dynamic>.from(nestedBanks);
-      } else if (nestedBanks is List) {
-        decoded = {
-          'manifest_version': value['manifest_version'] ?? 1,
-          'schema_version': value['schema_version'] ?? supportedSchemaVersion,
-          'banks': nestedBanks,
-        };
-      } else {
-        throw const FormatException('远程更新清单缺少题库列表');
-      }
-    } catch (error) {
-      // 三个 ZIP 已经发布，但独立 manifest 尚未上传时，使用内置清单。
-      // 仍然保留远程 manifest 优先，后续发布 manifest 后可直接覆盖这些值。
-      debugPrint('远程题库清单不可用，使用内置清单：$error');
-      decoded = {
-        'manifest_version': 1,
-        'schema_version': supportedSchemaVersion,
-        'banks': configuredRemoteBanks.values.toList(),
-      };
-    }
-
-    final remoteEntries = <String, Map<String, dynamic>>{};
-    for (final raw in decoded['banks'] as List) {
-      if (raw is Map && raw['bank_id'] != null) {
-        final entry = Map<String, dynamic>.from(raw);
-        remoteEntries[entry['bank_id'].toString()] = entry;
-      }
-    }
-    // 远程 manifest 可以覆盖内置版本；如果远程条目仍是旧的本地 manifest
-    // 格式（没有下载 URL 或 SHA-256），则使用已发布 ZIP 的完整信息。
-    for (final entry in configuredRemoteBanks.values) {
-      final bankId = entry['bank_id'].toString();
-      final current = remoteEntries[bankId];
-      if (current == null) {
-        remoteEntries[bankId] = Map<String, dynamic>.from(entry);
-      } else if (current['url']?.toString().isNotEmpty != true ||
-          current['sha256']?.toString().isNotEmpty != true) {
-        remoteEntries[bankId] = {
-          ...entry,
-          ...current,
-          'version': entry['version'],
-          'url': entry['url'],
-          'size': entry['size'],
-          'sha256': entry['sha256'],
-        };
-      } else if (current['sqlite_sha256']?.toString().isNotEmpty != true) {
-        current['sqlite_sha256'] = entry['sqlite_sha256'];
-      }
-    }
-
-    final userDb = await UserDBHelper().database;
-    for (final raw in remoteEntries.values) {
-      final bankId = raw['bank_id']!.toString();
-      final existing = await find(bankId);
-      final spec = QuestionBankDefaults.byId(bankId);
-      await userDb.insert('QuestionBank', {
-        'bank_id': bankId,
-        'name':
-            raw['name']?.toString() ?? existing?.name ?? spec?.name ?? bankId,
-        'description':
-            raw['description']?.toString() ?? existing?.description ?? '',
-        'version': existing?.version ?? '0.0.0',
-        'schema_version': int.tryParse('${raw['schema_version'] ?? 0}') ?? 0,
-        'local_path': existing?.localPath ?? '',
-        'content_hash': existing?.contentHash ?? '',
-        'size': existing?.size ?? 0,
-        'enabled': existing?.enabled == false ? 0 : 1,
-        'built_in': spec != null || (existing?.builtIn ?? false) ? 1 : 0,
-        'update_enabled': existing?.updateEnabled == false ? 0 : 1,
-        'install_state': existing?.installState ?? 'available',
-        'remote_url': raw['url']?.toString(),
-        'identity_id': existing?.isInstalled == true
-            ? existing!.identityId
-            : raw['identity_id']?.toString() ??
-                  existing?.identityId ??
-                  spec?.identityId ??
-                  '',
-        'updated_at': DateTime.now().millisecondsSinceEpoch,
-      }, conflictAlgorithm: ConflictAlgorithm.replace);
-    }
-    return {...decoded, 'banks': remoteEntries.values.toList()};
-  }
-
-  Future<QuestionBank> downloadBank(
-    String bankId, {
-    Map<String, dynamic>? remoteEntry,
-    DownloadProgressCallback? onProgress,
-  }) async {
-    final local = await find(bankId);
-    final remote = remoteEntry ?? configuredRemoteBanks[bankId];
-    final url = remote?['url']?.toString() ?? local?.remoteUrl;
-    if (url == null || url.isEmpty) {
-      throw StateError('题库尚未配置远程直链');
-    }
-
-    final expectedSize = int.tryParse('${remote?['size'] ?? ''}');
-    final expectedHash = remote?['sha256']?.toString();
-    if (expectedHash == null || expectedHash.isEmpty) {
-      throw const FormatException('远程题库清单缺少 SHA-256，拒绝安装');
-    }
-    final remoteBankId = remote?['bank_id']?.toString();
-    if (remoteBankId != null && remoteBankId != bankId) {
-      throw FormatException('远程题库标识不匹配：清单为 $remoteBankId，目标为 $bankId');
-    }
-    final remoteIdentity = remote?['identity_id']?.toString();
-    if (local?.isInstalled == true &&
-        remoteIdentity != null &&
-        local!.identityId != remoteIdentity) {
-      throw const FormatException('订阅清单的学科与已安装题库不一致');
-    }
-
-    final client = http.Client();
-    File? temporary;
-    try {
-      final downloadUrl = await GitHubProxyConfig.resolveDownloadUrl(url);
-      final request = http.Request('GET', Uri.parse(downloadUrl));
-      request.headers.addAll(GitHubProxyConfig.defaultHeaders);
-      final response = await client.send(request);
-      if (response.statusCode != 200) {
-        throw HttpException('题库下载失败：HTTP ${response.statusCode}');
-      }
-
-      final responseLength = response.contentLength;
-      final totalBytes = responseLength != null && responseLength > 0
-          ? responseLength
-          : expectedSize != null && expectedSize > 0
-          ? expectedSize
-          : null;
-      final remoteExtension = p.extension(Uri.parse(url).path).toLowerCase();
-      final temporaryPath = p.join(
-        (await _ensureQuestionBankRoot()).path,
-        '.download-${DateTime.now().microsecondsSinceEpoch}${remoteExtension == '.zip' ? '.zip' : '.sqlite'}',
-      );
-      final temporaryFile = File(temporaryPath);
-      temporary = temporaryFile;
-      final sink = temporaryFile.openWrite();
-      var receivedBytes = 0;
-      onProgress?.call(receivedBytes, totalBytes);
-      try {
-        await for (final chunk in response.stream) {
-          sink.add(chunk);
-          receivedBytes += chunk.length;
-          onProgress?.call(receivedBytes, totalBytes);
-        }
-        await sink.flush();
-      } finally {
-        await sink.close();
-      }
-
-      if (expectedSize != null &&
-          expectedSize > 0 &&
-          receivedBytes != expectedSize) {
-        throw FormatException('下载文件大小校验失败');
-      }
-      final bytes = await temporaryFile.readAsBytes();
-      final actualHash = sha256.convert(bytes).toString();
-      if (actualHash != expectedHash) {
-        throw FormatException('下载文件 SHA-256 校验失败');
-      }
-
-      return await importFile(
-        temporaryPath,
-        expectedBankId: bankId,
-        expectedIdentityId: remoteIdentity,
-        expectedSqliteHash: remote?['sqlite_sha256']?.toString(),
-        versionOverride: remote?['version']?.toString(),
-        updateEnabled: true,
-      );
-    } finally {
-      client.close();
-      if (temporary != null && await temporary.exists()) {
-        await temporary.delete();
-      }
-    }
-  }
-
   Future<void> registerRemoteEntries(List<Map<String, dynamic>> entries) async {
     final userDb = await UserDBHelper().database;
     for (final entry in entries) {
@@ -898,22 +689,5 @@ class QuestionBankRepository {
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
     });
-  }
-
-  bool hasUpdate(QuestionBank bank, Map<String, dynamic> remote) {
-    if (!bank.updateEnabled) return false;
-    final remoteHash = remote['sqlite_sha256']?.toString();
-    if (remoteHash != null &&
-        remoteHash.isNotEmpty &&
-        bank.contentHash.isNotEmpty) {
-      return remoteHash != bank.contentHash;
-    }
-    final remoteVersion = remote['version']?.toString();
-    return remoteVersion != null &&
-        compareVersions(remoteVersion, bank.version) > 0;
-  }
-
-  int compareVersions(String left, String right) {
-    return VersionUtils.compareVersions(left, right);
   }
 }

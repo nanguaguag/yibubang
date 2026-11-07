@@ -9,13 +9,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/question_bank.dart';
 import '../models/bank_source.dart';
 import '../models/bank_content_state.dart';
+import '../models/bank_download_task.dart';
 import 'bank_source_store.dart';
 import '../repositories/question_bank_repository.dart';
 import 'bank_subscription_loader.dart';
 import 'bank_artifact_cache.dart';
 import 'question_bank_file_service.dart';
 
-class BankSubscriptionService {
+class BankSubscriptionService extends ChangeNotifier {
   static final instance = BankSubscriptionService();
   static const _urlsKey = 'bank_subscription_urls';
   static const _autoKey = 'bank_subscription_auto';
@@ -25,16 +26,22 @@ class BankSubscriptionService {
   final BankSubscriptionLoader loader;
   final store = BankSourceStore();
   final _checks = <String, Future<BankSource>>{};
-  late final BankArtifactCache artifacts = BankArtifactCache(loader: loader);
+  late final BankArtifactCache artifacts;
   Timer? _timer;
   bool _running = false;
   int _scheduleRevision = 0;
 
-  BankSubscriptionService({BankSubscriptionLoader? loader})
-    : loader = loader ?? BankSubscriptionLoader();
+  BankSubscriptionService({
+    BankSubscriptionLoader? loader,
+    BankArtifactCache? cache,
+  }) : loader = loader ?? BankSubscriptionLoader() {
+    artifacts = cache ?? BankArtifactCache(loader: this.loader);
+  }
 
-  Future<List<String>> urls() async =>
-      (await SharedPreferences.getInstance()).getStringList(_urlsKey) ?? [];
+  Future<List<String>> urls() async => (await sources())
+      .where((source) => !source.official)
+      .map((source) => source.url)
+      .toList();
 
   Future<bool> automatic() async =>
       (await SharedPreferences.getInstance()).getBool(_autoKey) ?? false;
@@ -49,26 +56,71 @@ class BankSubscriptionService {
   static String validateUrl(String value) => normalizeBankSourceUrl(value);
 
   Future<List<BankSource>> sources() async =>
-      (await store.read()).sources.values.toList();
+      (await store.read()).sources.values.where((s) => s.active).toList();
+
+  Future<bool> addSource(String value) async {
+    final source = BankSource.fresh(value);
+    final added = await store.change((catalog) {
+      if (catalog.sources[source.id]?.active == true) return false;
+      catalog.sources[source.id] = source;
+      return true;
+    });
+    if (added) notifyListeners();
+    return added;
+  }
+
+  Future<void> editSource(BankSource source, String value) async {
+    final replacement = BankSource.fresh(value);
+    if (replacement.id == source.id) return;
+    await store.change((catalog) {
+      if (catalog.sources[replacement.id]?.active != true) {
+        catalog.sources[replacement.id] = replacement;
+      }
+      for (final bankId in catalog.bindings.keys) {
+        if (catalog.bindings[bankId] == source.id) {
+          catalog.pending[bankId] = replacement.id;
+        }
+      }
+      if (!catalog.bindings.containsValue(source.id)) {
+        catalog.sources[source.id] = BankSource.fromJson({
+          ...source.toJson(),
+          'active': false,
+        });
+      }
+    });
+    notifyListeners();
+  }
+
+  Future<void> removeSource(String id) async {
+    final active = await sources();
+    await saveSources(
+      active.where((s) => !s.official && s.id != id).map((s) => s.url).toList(),
+    );
+  }
 
   Future<void> proposeBankSource(QuestionBank bank, String value) async {
     final source = BankSource.fresh(value);
     await store.change((catalog) {
-      catalog.sources.putIfAbsent(source.id, () => source);
+      if (catalog.sources[source.id]?.active != true) {
+        catalog.sources[source.id] = source;
+      }
       catalog.pending[bank.bankId] = source.id;
     });
+    notifyListeners();
   }
 
   Future<void> selectSource(QuestionBank bank, String sourceId) async {
     final source = (await store.read()).sources[sourceId];
     final entry = source?.entry(bank.bankId);
     if (source == null ||
+        !source.active ||
         source.status != BankSourceStatus.ready ||
         entry == null) {
       throw StateError('请先检查该来源');
     }
-    if (bank.isInstalled &&
-        entry['identity_id']?.toString() != bank.identityId) {
+    final current = await QuestionBankRepository().find(bank.bankId) ?? bank;
+    if (current.isInstalled &&
+        entry['identity_id']?.toString() != current.identityId) {
       throw const FormatException('来源学科与当前题库不一致');
     }
     await store.change((catalog) {
@@ -76,6 +128,7 @@ class BankSubscriptionService {
       catalog.pending.remove(bank.bankId);
     });
     await QuestionBankRepository().registerRemoteEntries([entry]);
+    notifyListeners();
   }
 
   Future<List<BankSource>> check({String? bankId, String? sourceId}) async {
@@ -86,9 +139,9 @@ class BankSubscriptionService {
             ? null
             : catalog.pending[bankId] ?? catalog.bindings[bankId]);
     final selected = selectedId == null && bankId == null
-        ? catalog.sources.values.toList()
+        ? catalog.sources.values.where((s) => s.active).toList()
         : [
-            if (catalog.sources[selectedId] != null)
+            if (catalog.sources[selectedId]?.active == true)
               catalog.sources[selectedId]!,
           ];
     final results = <BankSource>[];
@@ -108,7 +161,7 @@ class BankSubscriptionService {
     try {
       result = await loader.check(source);
       await store.change((catalog) {
-        if (!catalog.sources.containsKey(source.id)) return;
+        if (catalog.sources[source.id]?.active != true) return;
         catalog.sources[source.id] = result;
         for (final entry in result.entries) {
           catalog.bindings.putIfAbsent(
@@ -118,14 +171,6 @@ class BankSubscriptionService {
         }
       });
       final catalog = await store.read();
-      for (final entry in result.entries) {
-        final id = entry['bank_id'] as String;
-        if (catalog.pending[id] == source.id &&
-            result.status == BankSourceStatus.ready) {
-          final bank = await QuestionBankRepository().find(id);
-          if (bank != null) await selectSource(bank, source.id);
-        }
-      }
       await QuestionBankRepository().registerRemoteEntries(
         result.entries
             .where((e) => catalog.bindings[e['bank_id'] as String] == source.id)
@@ -146,11 +191,12 @@ class BankSubscriptionService {
         transportUrl: source.transportUrl,
       );
       await store.change((catalog) {
-        if (catalog.sources.containsKey(source.id)) {
+        if (catalog.sources[source.id]?.active == true) {
           catalog.sources[source.id] = result;
         }
       });
     }
+    notifyListeners();
     return result;
   }
 
@@ -168,20 +214,29 @@ class BankSubscriptionService {
       );
       state = await QuestionBankRepository().contentState(bank.bankId);
     }
-    return BankUpdateInfo.compare(bank, source, content: state);
+    final info = BankUpdateInfo.compare(bank, source, content: state);
+    return BankUpdateInfo(
+      info.status,
+      source: source,
+      entry: info.entry,
+      message: info.message,
+      content: state,
+    );
   }
 
   /// Explicit full download to identify a file source, never called by check().
   Future<BankSource> confirmSource(
     String sourceId, {
     DownloadProgressCallback? onProgress,
+    BankDownloadTask? task,
   }) async {
     final source = (await store.read()).sources[sourceId];
-    if (source == null) throw StateError('来源已移除');
+    if (source == null || !source.active) throw StateError('来源已移除');
     final lease = await artifacts.acquire(
       source.url,
       refresh: source.status != BankSourceStatus.ready,
       onProgress: onProgress,
+      task: task,
     );
     try {
       return await _publishArtifact(source, lease);
@@ -207,7 +262,7 @@ class BankSubscriptionService {
       successAt: now,
       etag: lease.etag,
       lastModified: lease.lastModified,
-      transportUrl: source.url,
+      transportUrl: lease.transportUrl ?? source.url,
     );
     await store.change((catalog) {
       if (!catalog.sources.containsKey(source.id)) return;
@@ -221,6 +276,7 @@ class BankSubscriptionService {
     if (catalog.bindings[lease.entry['bank_id']] == source.id) {
       await QuestionBankRepository().registerRemoteEntries(result.entries);
     }
+    notifyListeners();
     return result;
   }
 
@@ -229,12 +285,14 @@ class BankSubscriptionService {
     required bool subscribe,
     Future<BankImportMode?> Function(QuestionBank existing)? onConflict,
     DownloadProgressCallback? onProgress,
+    BankDownloadTask? task,
   }) async {
     final url = validateUrl(value);
     final lease = await artifacts.acquire(
       url,
       refresh: true,
       onProgress: onProgress,
+      task: task,
     );
     try {
       final entry = lease.entry;
@@ -248,6 +306,7 @@ class BankSubscriptionService {
             ? BankRelease.fromEntry(BankSource.fresh(url).id, entry)
             : null,
         onConflict: onConflict,
+        onInstallReady: task?.beginInstallation,
       );
       if (subscribe) {
         final fresh = BankSource.fresh(url);
@@ -273,24 +332,50 @@ class BankSubscriptionService {
     )?
     onResolve,
     DownloadProgressCallback? onProgress,
+    BankDownloadTask? task,
     bool redownload = false,
     bool automatic = false,
   }) async {
     var source = (await store.read()).sourceFor(bankId);
     if (source == null) throw StateError('尚未设置题库来源');
+    BankArtifactLease? confirmedLease;
     if (source.kind == BankSourceKind.file &&
         source.status != BankSourceStatus.ready) {
-      source = await confirmSource(source.id, onProgress: onProgress);
+      confirmedLease = await artifacts.acquire(
+        source.url,
+        refresh: true,
+        onProgress: onProgress,
+        task: task,
+      );
+      try {
+        source = await _publishArtifact(source, confirmedLease);
+      } catch (_) {
+        await confirmedLease.dispose();
+        rethrow;
+      }
     }
     final entry = source.entry(bankId);
-    if (entry == null) throw const FormatException('来源中未找到该题库');
-    final lease = await artifacts.acquire(
-      entry['url'] as String,
-      expected: entry,
-      refresh: redownload,
-      onProgress: onProgress,
-    );
+    if (entry == null) {
+      await confirmedLease?.dispose();
+      throw const FormatException('来源中未找到该题库');
+    }
+    final existing = await QuestionBankRepository().find(bankId);
+    if (existing?.isInstalled == true &&
+        entry['identity_id']?.toString() != existing!.identityId) {
+      await confirmedLease?.dispose();
+      throw const FormatException('来源学科与已安装题库不一致');
+    }
+    final lease =
+        confirmedLease ??
+        await artifacts.acquire(
+          entry['url'] as String,
+          expected: entry,
+          refresh: redownload,
+          onProgress: onProgress,
+          task: task,
+        );
     try {
+      task?.checkCancelled();
       final repository = QuestionBankRepository();
       final current = await repository.find(bankId);
       final upstream = BankRelease.fromEntry(source.id, entry);
@@ -311,7 +396,7 @@ class BankSubscriptionService {
           return current!;
         }
       }
-      return await QuestionBankRepository().importFile(
+      final installed = await QuestionBankRepository().importFile(
         lease.file.path,
         expectedBankId: bankId,
         expectedIdentityId: entry['identity_id']?.toString(),
@@ -319,7 +404,12 @@ class BankSubscriptionService {
         versionOverride: entry['version']?.toString(),
         updateEnabled: true,
         upstream: release,
+        onInstallReady: task?.beginInstallation,
         onConflict: (existing) async {
+          task?.checkCancelled();
+          if (entry['identity_id']?.toString() != existing.identityId) {
+            throw const FormatException('来源学科与已安装题库不一致');
+          }
           final state = await repository.contentState(bankId);
           final info = BankUpdateInfo.compare(existing, source, content: state);
           final unsafe =
@@ -332,7 +422,14 @@ class BankSubscriptionService {
           if (unsafe) {
             if (automatic) throw StateError('该题库需要手动处理本地内容或来源变更');
             if (onResolve != null) {
-              return onResolve(existing, info, await _diff(existing, lease));
+              task?.report('等待确认更新');
+              final choice = await onResolve(
+                existing,
+                info,
+                await _diff(existing, lease),
+              );
+              task?.checkCancelled();
+              return choice;
             }
             if (onConflict != null) return onConflict(existing);
             throw StateError('请确认合并或替换后再更新');
@@ -340,6 +437,8 @@ class BankSubscriptionService {
           return BankImportMode.replace;
         },
       );
+      notifyListeners();
+      return installed;
     } finally {
       await lease.dispose();
     }
@@ -378,38 +477,53 @@ class BankSubscriptionService {
   Future<void> saveSources(List<String> values) async {
     if (_running) throw StateError('订阅正在检查，请稍后保存');
     final normalized = values.map(validateUrl).toSet().toList();
+    final removed = <Map<String, dynamic>>[];
     await store.change((catalog) {
       final wanted = normalized.map((url) => BankSource.fresh(url)).toList();
       final retainedIds = wanted.map((s) => s.id).toSet();
       final removedIds = catalog.sources.values
-          .where(
-            (s) =>
-                !s.official &&
-                !retainedIds.contains(s.id) &&
-                !catalog.pending.containsValue(s.id),
-          )
+          .where((s) => s.active && !s.official && !retainedIds.contains(s.id))
           .map((s) => s.id)
           .toSet();
-      catalog.sources.removeWhere((id, _) => removedIds.contains(id));
+      for (final id in removedIds) {
+        final source = catalog.sources[id]!;
+        removed.addAll(
+          source.entries.where((e) => catalog.bindings[e['bank_id']] == id),
+        );
+        catalog.sources[id] = BankSource.fromJson({
+          ...source.toJson(),
+          'active': false,
+        });
+      }
       for (final id in catalog.bindings.keys.toList()) {
         if (removedIds.contains(catalog.bindings[id])) {
           catalog.bindings[id] = '';
         }
       }
+      catalog.pending.removeWhere(
+        (_, sourceId) => removedIds.contains(sourceId),
+      );
       for (final source in wanted) {
-        catalog.sources.putIfAbsent(source.id, () => source);
+        final existing = catalog.sources[source.id];
+        catalog.sources[source.id] = existing == null
+            ? source
+            : BankSource.fromJson({...existing.toJson(), 'active': true});
       }
     });
+    if (removed.isNotEmpty) {
+      await QuestionBankRepository().removeRemoteEntries(removed);
+    }
     await (await SharedPreferences.getInstance()).setStringList(
       _urlsKey,
       normalized,
     );
+    notifyListeners();
   }
 
   Future<List<Map<String, dynamic>>> cached() async {
     final catalog = await store.read();
     return [
-      for (final source in catalog.sources.values)
+      for (final source in catalog.sources.values.where((s) => s.active))
         for (final entry in source.entries)
           if (catalog.bindings[entry['bank_id']] == source.id) entry,
     ];
@@ -523,13 +637,9 @@ class BankSubscriptionService {
             continue;
           }
           try {
-            var info = await updateInfo(bank);
-            if (info.status == BankUpdateStatus.needsDownload &&
-                info.source != null) {
-              await confirmSource(info.source!.id);
-              info = await updateInfo(bank);
-            }
-            if (info.status == BankUpdateStatus.available) {
+            final info = await updateInfo(bank);
+            if (info.status == BankUpdateStatus.available ||
+                info.status == BankUpdateStatus.needsDownload) {
               await install(bank.bankId, automatic: true);
             }
           } catch (error) {

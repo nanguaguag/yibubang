@@ -216,6 +216,27 @@ void main() {
   );
 
   test(
+    'a changed upstream subject is rejected before download, preserving installed subject and history',
+    () async {
+      await publish('1.0.0', ['1']);
+      final bank = await service.install('fixture');
+      entry['identity_id'] = '39';
+      entry['version'] = '1.1.0';
+      await service.check(bankId: 'fixture');
+      final before = downloads;
+      await expectLater(service.install('fixture'), throwsFormatException);
+      await expectLater(
+        service.selectSource(bank, BankSource.fresh(sourceUrl).id),
+        throwsFormatException,
+      );
+      expect(downloads, before);
+      expect((await repository.find('fixture'))!.identityId, '38');
+      expect((await repository.find('fixture'))!.contentHash, bank.contentHash);
+      expect((await repository.history('fixture')).length, 1);
+    },
+  );
+
+  test(
     'failed installation rolls back the upstream baseline with the file and history',
     () async {
       await publish('1.0.0', ['1']);
@@ -270,6 +291,28 @@ void main() {
       await service.checkAutomatically();
       expect((await repository.contentState('fixture')).baseVersion, '1.1.0');
       expect(downloads, 2);
+    },
+  );
+
+  test(
+    'removing a bound source archives its URL and leaves installed content, history and candidates intact',
+    () async {
+      await publish('1.0.0', ['1']);
+      final bank = await service.install('fixture');
+      const mirror = 'https://example.org/mirror.json';
+      await service.addSource(mirror);
+      await service.check(sourceId: BankSource.fresh(mirror).id);
+      final primary = BankSource.fresh(sourceUrl).id;
+      await service.removeSource(primary);
+      final catalog = await service.store.read();
+      expect(catalog.sourceFor('fixture'), isNull);
+      expect(catalog.sources[primary]!.active, isFalse);
+      expect(catalog.sources[primary]!.url, sourceUrl);
+      expect((await repository.find('fixture'))!.contentHash, bank.contentHash);
+      expect((await repository.history('fixture')).length, 1);
+      expect(catalog.candidates('fixture').length, 1);
+      await service.selectSource(bank, BankSource.fresh(mirror).id);
+      expect((await service.store.read()).sourceFor('fixture')!.url, mirror);
     },
   );
 

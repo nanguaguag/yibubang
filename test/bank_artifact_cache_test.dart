@@ -1,4 +1,6 @@
 import 'dart:io';
+import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -9,6 +11,8 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:yibubang/db/database_helper.dart';
 import 'package:yibubang/db/question_bank_manager.dart';
 import 'package:yibubang/models/bank_source.dart';
+import 'package:yibubang/models/bank_download_task.dart';
+import 'package:yibubang/services/question_bank_file_service.dart';
 import 'package:yibubang/services/bank_artifact_cache.dart';
 import 'package:yibubang/services/bank_creation_service.dart';
 import 'package:yibubang/services/bank_subscription_loader.dart';
@@ -153,6 +157,91 @@ void main() {
       expect((await service.sources()).where((s) => !s.official).length, 1);
       await service.install('fixture');
       expect(requests, 1);
+    },
+  );
+
+  test(
+    'cancelling a partial download closes the response and publishes no cache or live bank',
+    () async {
+      var closed = false;
+      final stream = StreamController<List<int>>(
+        onCancel: () {
+          closed = true;
+        },
+      );
+      final started = Completer<void>();
+      final task = BankDownloadTask();
+      task.addListener(() {
+        if (task.received > 0 && !task.cancelled) task.cancel();
+      });
+      final cache = BankArtifactCache(
+        loader: BankSubscriptionLoader(
+          client: MockClient.streaming((_, __) async {
+            started.complete();
+            return http.StreamedResponse(stream.stream, 200);
+          }),
+        ),
+      );
+      final cancelled = expectLater(
+        cache.acquire(url, task: task),
+        throwsA(isA<BankImportCancelled>()),
+      );
+      await started.future;
+      stream.add(bytes.take(128).toList());
+      await cancelled;
+      expect(closed, isTrue);
+      expect(await QuestionBankRepository().find('fixture'), isNull);
+      final root = Directory(p.join(await getDatabasesPath(), 'BankDownloads'));
+      expect(await root.list().toList(), isEmpty);
+      await stream.close();
+    },
+  );
+
+  test(
+    'a file confirmation lease remains protected through installation even when larger than the cache limit',
+    () async {
+      SharedPreferences.setMockInitialValues({
+        'bank_subscription_entries': jsonEncode([
+          {
+            'bank_id': 'fixture',
+            'subscription_url': url,
+            'url': url,
+            'source_type': 'file',
+          },
+        ]),
+      });
+      final service = BankSubscriptionService(
+        loader: loader,
+        cache: BankArtifactCache(loader: loader, maxBytes: 1),
+      );
+      await service.install('fixture');
+      expect(requests, 1);
+      expect(
+        (await QuestionBankRepository().find('fixture'))!.isInstalled,
+        isTrue,
+      );
+    },
+  );
+
+  test('atomic installation disables task cancellation', () {
+    final task = BankDownloadTask();
+    task.beginInstallation();
+    task.cancel();
+    expect(task.cancelled, isFalse);
+    expect(task.canCancel, isFalse);
+    task.finish();
+    expect(task.stage, '已完成');
+    task.dispose();
+  });
+
+  test(
+    'explicit redownload fetches the same release again instead of reusing cache',
+    () async {
+      final service = BankSubscriptionService(loader: loader);
+      await service.importLink(url, subscribe: true);
+      await service.install('fixture', redownload: true);
+      expect(requests, 2);
+      expect((await QuestionBankRepository().history('fixture')).length, 2);
     },
   );
 

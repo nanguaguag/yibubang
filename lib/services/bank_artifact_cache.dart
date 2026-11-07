@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 
 import '../repositories/question_bank_repository.dart';
+import '../models/bank_download_task.dart';
 import 'bank_subscription_loader.dart';
 
 /// A lease protects a validated download from LRU cleanup until installation ends.
@@ -15,11 +16,12 @@ class BankArtifactLease {
     this.file,
     this.etag,
     this.lastModified,
-    this._release,
-  );
+    this._release, {
+    this.transportUrl,
+  });
   final Map<String, dynamic> entry;
   final File file;
-  final String? etag, lastModified;
+  final String? etag, lastModified, transportUrl;
   final Future<void> Function() _release;
   bool _closed = false;
   Future<void> dispose() async {
@@ -61,7 +63,9 @@ class BankArtifactCache {
     Map<String, dynamic>? expected,
     bool refresh = false,
     DownloadProgressCallback? onProgress,
+    BankDownloadTask? task,
   }) => _exclusive(() async {
+    task?.checkCancelled();
     final directory = await _directory();
     Map<String, dynamic>? row;
     final records = await _records(directory);
@@ -78,7 +82,7 @@ class BankArtifactCache {
       }
     }
     if (row == null) {
-      final loaded = await loader.load(url, onProgress: onProgress);
+      final loaded = await loader.load(url, onProgress: onProgress, task: task);
       try {
         if (loaded.entries.length != 1 || loaded.artifacts.length != 1) {
           throw const FormatException('请使用 ZIP 或 SQLite 题库文件链接；订阅清单请添加为来源');
@@ -103,11 +107,14 @@ class BankArtifactCache {
           'entry': entry,
           'etag': loaded.etag,
           'last_modified': loaded.lastModified,
+          'transport_url': loaded.transportUrl,
         };
       } finally {
         await loaded.dispose();
       }
     }
+    task?.checkCancelled();
+    task?.report('下载包已校验');
     final entry = Map<String, dynamic>.from(row['entry'] as Map);
     _match(entry, expected);
     row['used_at'] = DateTime.now().microsecondsSinceEpoch;
@@ -136,6 +143,7 @@ class BankArtifactCache {
         }
         await _prune(directory);
       }),
+      transportUrl: row['transport_url'] as String?,
     );
   });
 

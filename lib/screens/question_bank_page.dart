@@ -1,6 +1,5 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/question_bank.dart';
 import '../models/bank_source.dart';
@@ -8,26 +7,33 @@ import '../repositories/question_bank_repository.dart';
 import '../services/question_bank_file_service.dart';
 import '../services/bank_subscription_service.dart';
 import '../common/platform_adaptive.dart';
+import '../common/app_shapes.dart';
 import '../widgets/bank_export_button.dart';
 import '../widgets/bank_link_import_dialog.dart';
+import '../widgets/bank_update_dialog.dart';
+import '../models/bank_download_task.dart';
+import '../widgets/bank_download_progress.dart';
 import 'bank_subscriptions_page.dart';
 import 'bank_creation_page.dart';
 import 'bank_detail_page.dart';
 
 class QuestionBankPage extends StatefulWidget {
-  const QuestionBankPage({super.key});
+  const QuestionBankPage({super.key, this.subscriptionService});
 
+  final BankSubscriptionService? subscriptionService;
   @override
   State<QuestionBankPage> createState() => _QuestionBankPageState();
 }
 
 class _QuestionBankPageState extends State<QuestionBankPage> {
+  late final _service =
+      widget.subscriptionService ?? BankSubscriptionService.instance;
   final QuestionBankRepository _repository = QuestionBankRepository();
   late Future<List<QuestionBank>> _banksFuture;
   String? _activeBankId;
-  Map<String, dynamic> _remoteBanks = {};
   final Set<String> _downloading = <String>{};
   final Map<String, double?> _downloadProgress = <String, double?>{};
+  BankDownloadTask? _task;
   bool _busy = false;
   bool _exporting = false;
   final _updates = <String, BankUpdateInfo>{};
@@ -37,38 +43,21 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
   @override
   void initState() {
     super.initState();
-    _remoteBanks = {
-      for (final entry in QuestionBankRepository.configuredRemoteBanks.entries)
-        entry.key: Map<String, dynamic>.from(entry.value),
-    };
+    _service.addListener(_sourceChanged);
     _reload();
-    _loadSubscriptions();
-    _maybeAutoSync();
   }
 
-  Future<void> _loadSubscriptions() async {
-    final entries = await BankSubscriptionService.instance.cached();
-    if (!mounted) return;
-    setState(() {
-      for (final entry in entries) {
-        _remoteBanks[entry['bank_id'] as String] = entry;
-      }
-    });
+  void _sourceChanged() {
+    if (mounted && !_controlsDisabled) setState(_reload);
   }
 
   Future<void> _editSubscriptions() async {
     await pushAdaptiveModalPage<bool>(
       context,
-      builder: (_) => const BankSubscriptionsPage(),
+      builder: (_) => BankSubscriptionsPage(subscriptionService: _service),
     );
     if (mounted) {
-      setState(() {
-        _remoteBanks = Map<String, dynamic>.from(
-          QuestionBankRepository.configuredRemoteBanks,
-        );
-        _reload();
-      });
-      await _loadSubscriptions();
+      setState(_reload);
     }
   }
 
@@ -84,41 +73,52 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
   Future<void> _details(QuestionBank bank) async {
     await pushAdaptiveModalPage<void>(
       context,
-      builder: (_) => BankDetailPage(bank: bank),
+      builder: (_) => BankDetailPage(bank: bank, subscriptionService: _service),
     );
     if (!mounted) return;
-    setState(() {
-      _remoteBanks = Map<String, dynamic>.from(
-        QuestionBankRepository.configuredRemoteBanks,
-      );
-      _reload();
-    });
-    await _loadSubscriptions();
+    setState(_reload);
   }
 
   Future<void> _updateSubscription(QuestionBank bank) async {
     if (_controlsDisabled) return;
+    final action = _updates[bank.bankId];
+    if (action?.canApply == true) {
+      await _download(bank);
+      return;
+    }
+    final task = action?.status == BankUpdateStatus.needsDownload
+        ? BankDownloadTask()
+        : null;
     setState(() {
+      _task = task;
       _downloading.add(bank.bankId);
       _downloadProgress[bank.bankId] = null;
     });
     try {
-      await BankSubscriptionService.instance.check(bankId: bank.bankId);
-      final info = await BankSubscriptionService.instance.updateInfo(bank);
+      if (action?.status == BankUpdateStatus.needsDownload &&
+          action?.source != null) {
+        await _service.confirmSource(action!.source!.id, task: task);
+      } else {
+        await _service.check(bankId: bank.bankId);
+      }
+      final info = await _service.updateInfo(bank);
       if (!mounted) return;
       setState(_reload);
-      await _loadSubscriptions();
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(info.message ?? info.label)));
+    } on BankImportCancelled {
+      task?.finish();
     } catch (error) {
+      task?.finish(error: '$error');
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('更新失败：$error')));
+        ).showSnackBar(SnackBar(content: Text('检查失败：$error')));
       }
     } finally {
+      task?.finish();
       if (mounted) {
         setState(() {
           _downloading.remove(bank.bankId);
@@ -128,12 +128,11 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
     }
   }
 
-  // 「同步题库」开关开启时，进入题库管理页自动拉取远程清单。
-  Future<void> _maybeAutoSync() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (!(prefs.getBool('sync_question_bank') ?? false)) return;
-    if (!mounted) return;
-    await _refreshManifest();
+  @override
+  void dispose() {
+    _service.removeListener(_sourceChanged);
+    _task?.cancel();
+    super.dispose();
   }
 
   void _reload() {
@@ -145,9 +144,7 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
     _activeBankId = await _repository.activeBankId();
     _updates.clear();
     for (final bank in banks) {
-      _updates[bank.bankId] = await BankSubscriptionService.instance.updateInfo(
-        bank,
-      );
+      _updates[bank.bankId] = await _service.updateInfo(bank);
     }
     return banks;
   }
@@ -155,19 +152,9 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
   Future<void> _refreshManifest() async {
     setState(() => _busy = true);
     try {
-      final results = await BankSubscriptionService.instance.check();
-      final catalog = await BankSubscriptionService.instance.store.read();
-      final entries = <String, dynamic>{
-        for (final source in catalog.sources.values)
-          for (final entry in source.entries)
-            if (catalog.bindings[entry['bank_id']] == source.id)
-              entry['bank_id'] as String: entry,
-      };
+      final results = await _service.check();
       if (!mounted) return;
-      setState(() {
-        _remoteBanks = entries;
-        _reload();
-      });
+      setState(_reload);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -207,15 +194,17 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
       builder: (_) => const BankLinkImportDialog(),
     );
     if (choice == null || !mounted) return;
+    final task = BankDownloadTask();
     await _runOperation(
-      () => BankSubscriptionService.instance.importLink(
+      () => _service.importLink(
         choice.url,
         subscribe: choice.subscribe,
+        task: task,
         onConflict: _chooseImportMode,
       ),
       '题库导入成功',
+      task: task,
     );
-    await _loadSubscriptions();
   }
 
   Future<BankImportMode?> _chooseImportMode(QuestionBank existing) async {
@@ -249,15 +238,18 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
   Future<void> _download(QuestionBank bank) async {
     if (_downloading.isNotEmpty) return;
     final bankId = bank.bankId;
+    final task = BankDownloadTask();
+    setState(() => _task = task);
     setState(() {
       _downloading.add(bankId);
       _downloadProgress[bankId] = 0;
     });
     try {
-      await BankSubscriptionService.instance.install(
+      await _service.install(
         bankId,
         onConflict: _chooseImportMode,
         onResolve: _resolveUpdate,
+        task: task,
         onProgress: (receivedBytes, totalBytes) {
           if (!mounted) return;
           final progress = totalBytes == null || totalBytes <= 0
@@ -266,12 +258,16 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
           setState(() => _downloadProgress[bankId] = progress);
         },
       );
+      task.finish();
       if (!mounted) return;
       setState(_reload);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(bank.isInstalled ? '题库更新成功' : '题库下载成功')),
       );
+    } on BankImportCancelled {
+      task.finish();
     } catch (error) {
+      task.finish(error: '$error');
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -288,52 +284,36 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
   }
 
   Future<BankImportMode?> _resolveUpdate(
-    QuestionBank existing,
+    QuestionBank bank,
     BankUpdateInfo info,
     BankContentDiff diff,
   ) async {
     if (!mounted) return null;
-    return showDialog<BankImportMode>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('更新「${existing.name}」'),
-        content: Text(
-          '${info.label}\n新包新增 ${diff.added} 道题、${diff.changed} 道内容不同，本地独有 ${diff.localExtras} 道题。\n\n'
-          '合并保留本地独有题目和课程关系；同一道题采用订阅内容。替换使用完整订阅版本。个人作答、收藏和笔记会保留。',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('暂不更新'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, BankImportMode.replace),
-            child: const Text('使用订阅版本'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, BankImportMode.merge),
-            child: const Text('保留本地补充'),
-          ),
-        ],
-      ),
-    );
+    return showBankUpdateDialog(context, bank, info, diff);
   }
 
   Future<void> _runOperation(
     Future<QuestionBank> Function() operation,
-    String successMessage,
-  ) async {
-    setState(() => _busy = true);
+    String successMessage, {
+    BankDownloadTask? task,
+  }) async {
+    setState(() {
+      _busy = true;
+      _task = task;
+    });
     try {
       await operation();
+      task?.finish();
       if (!mounted) return;
       setState(_reload);
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(successMessage)));
     } on BankImportCancelled {
+      task?.finish();
       // Closing the import choice is a normal cancellation.
     } catch (error) {
+      task?.finish(error: '$error');
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -385,32 +365,37 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
         label: Text('当前使用'),
       );
     }
-    return Chip(
-      label: Text('v${bank.version}'),
-      visualDensity: VisualDensity.compact,
-    );
+    return Chip(label: const Text('已安装'), visualDensity: VisualDensity.compact);
   }
 
   Widget _bankCard(QuestionBank bank) {
-    final remote = _remoteBanks[bank.bankId] as Map<String, dynamic>?;
-    final hasUpdate =
-        bank.isInstalled &&
-        _updates[bank.bankId]?.status == BankUpdateStatus.available;
+    final info = _updates[bank.bankId];
+    final displayVersion = bank.isInstalled
+        ? bank.version
+        : info?.source?.entry(bank.bankId)?['version']?.toString() ??
+              bank.version;
+    final hasSubscription = info?.source != null;
     final canDownload =
         !bank.isInstalled &&
-        (remote?['url']?.toString().isNotEmpty == true ||
-            bank.remoteUrl?.isNotEmpty == true);
-    final canUpdate = bank.isInstalled && hasUpdate;
-    final hasSubscription =
-        bank.isInstalled &&
-        (remote?['subscription_url']?.toString().isNotEmpty == true ||
-            bank.remoteUrl?.isNotEmpty == true);
+        hasSubscription &&
+        info!.source!.entry(bank.bankId) != null;
+    final localChanges =
+        info?.content?.hasLocalChanges(bank.contentHash) == true;
     final downloading = _downloading.contains(bank.bankId);
     final downloadProgress = _downloadProgress[bank.bankId];
     return Card(
+      clipBehavior: Clip.antiAlias,
+      elevation: 0,
+      color: Theme.of(context).colorScheme.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppShapes.largeIncreased),
+        side: BorderSide(
+          color: Theme.of(context).dividerColor.withValues(alpha: 0.08),
+        ),
+      ),
       margin: const EdgeInsets.only(bottom: 12),
       child: InkWell(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(AppShapes.largeIncreased),
         onTap: _controlsDisabled ? null : () => _select(bank),
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -437,8 +422,8 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
                         const SizedBox(height: 4),
                         Text(
                           bank.description.isEmpty
-                              ? '独立 SQLite 题库'
-                              : bank.description,
+                              ? 'v$displayVersion'
+                              : 'v$displayVersion · ${bank.description}',
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
                         const SizedBox(height: 8),
@@ -453,7 +438,13 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
                                 visualDensity: VisualDensity.compact,
                               ),
                             _status(bank),
-                            if (hasUpdate) const Chip(label: Text('有更新')),
+                            if (localChanges) const Chip(label: Text('本地有补充')),
+                            if (hasSubscription && bank.isInstalled)
+                              Chip(
+                                label: Text(info!.label),
+                                shape: const StadiumBorder(),
+                                visualDensity: VisualDensity.compact,
+                              ),
                             if (!bank.isInstalled && !canDownload)
                               const Chip(label: Text('暂无下载链接')),
                           ],
@@ -479,13 +470,18 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
                     onPressed: _controlsDisabled ? null : () => _details(bank),
                     icon: const Icon(Icons.info_outline),
                   ),
-                  if (hasSubscription)
+                  if (hasSubscription && bank.isInstalled)
                     IconButton(
-                      tooltip: '检查更新',
+                      tooltip: info!.actionLabel,
                       onPressed: _controlsDisabled
                           ? null
                           : () => _updateSubscription(bank),
-                      icon: const Icon(Icons.sync_rounded),
+                      icon: Icon(
+                        info.status == BankUpdateStatus.needsDownload ||
+                                info.canApply
+                            ? Icons.download_rounded
+                            : Icons.sync_rounded,
+                      ),
                     ),
                   if (bank.isInstalled)
                     BankExportButton(
@@ -495,7 +491,7 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
                         if (mounted) setState(() => _exporting = busy);
                       },
                     ),
-                  if (downloading)
+                  if (downloading && _task == null)
                     SizedBox(
                       width: 48,
                       height: 48,
@@ -505,20 +501,20 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
                           CircularProgressIndicator(value: downloadProgress),
                           Text(
                             downloadProgress == null
-                                ? '下载中'
+                                ? '检查中'
                                 : '${(downloadProgress * 100).round()}%',
                             style: Theme.of(context).textTheme.labelSmall,
                           ),
                         ],
                       ),
                     )
-                  else if (canDownload || canUpdate)
+                  else if (canDownload)
                     IconButton(
-                      tooltip: canUpdate ? '下载并更新' : '下载题库',
+                      tooltip: '下载题库',
                       onPressed: _controlsDisabled
                           ? null
                           : () => _download(bank),
-                      icon: Icon(canUpdate ? Icons.update : Icons.download),
+                      icon: const Icon(Icons.download_rounded),
                     ),
                 ],
               ),
@@ -553,56 +549,59 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
             onPressed: _controlsDisabled ? null : _refreshManifest,
             icon: const Icon(Icons.sync),
           ),
-          IconButton(
-            tooltip: '从文件导入',
-            onPressed: _controlsDisabled ? null : _importFile,
-            icon: const Icon(Icons.file_open_outlined),
-          ),
           PopupMenuButton<String>(
             enabled: !_controlsDisabled,
             tooltip: '更多导入方式',
-            onSelected: (_) => _importLink(),
+            onSelected: (value) =>
+                value == 'link' ? _importLink() : _importFile(),
             itemBuilder: (_) => [
               const PopupMenuItem(value: 'link', child: Text('从链接导入')),
+              const PopupMenuItem(value: 'file', child: Text('从文件导入')),
             ],
           ),
         ],
       ),
-      body: FutureBuilder<List<QuestionBank>>(
-        future: _banksFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return Center(child: Text('题库目录加载失败：${snapshot.error}'));
-          }
-          final banks = snapshot.data ?? const <QuestionBank>[];
-          return RefreshIndicator(
-            onRefresh: () async => setState(_reload),
-            child: ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                //Text(
-                //  '管理独立题库',
-                //  style: Theme.of(context).textTheme.headlineSmall,
-                //),
-                //const SizedBox(height: 6),
-                //Text(
-                //  '题目状态在题库之间共享，课程和章节统计按当前题库分别计算。默认题库不可删除，只能启用或禁用。',
-                //  style: Theme.of(context).textTheme.bodyMedium,
-                //),
-                const SizedBox(height: 18),
-                ...banks.map(_bankCard),
-                if (_busy)
-                  const Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Center(child: CircularProgressIndicator()),
-                  ),
-              ],
-            ),
-          );
-        },
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 760),
+          child: FutureBuilder<List<QuestionBank>>(
+            future: _banksFuture,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState != ConnectionState.done) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              if (snapshot.hasError) {
+                return Center(child: Text('题库目录加载失败：${snapshot.error}'));
+              }
+              final banks = snapshot.data ?? const <QuestionBank>[];
+              return RefreshIndicator(
+                onRefresh: () async => setState(_reload),
+                child: ListView(
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    //Text(
+                    //  '管理独立题库',
+                    //  style: Theme.of(context).textTheme.headlineSmall,
+                    //),
+                    //const SizedBox(height: 6),
+                    //Text(
+                    //  '题目状态在题库之间共享，课程和章节统计按当前题库分别计算。默认题库不可删除，只能启用或禁用。',
+                    //  style: Theme.of(context).textTheme.bodyMedium,
+                    //),
+                    const SizedBox(height: 18),
+                    if (_task != null) BankDownloadProgress(task: _task!),
+                    ...banks.map(_bankCard),
+                    if (_busy && _task == null)
+                      const Padding(
+                        padding: EdgeInsets.all(16),
+                        child: Center(child: CircularProgressIndicator()),
+                      ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
       ),
     );
   }

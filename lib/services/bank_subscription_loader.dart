@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'dart:io';
 
 import 'package:archive/archive.dart';
@@ -8,6 +9,7 @@ import 'package:path/path.dart' as p;
 
 import '../common/github_proxy.dart';
 import '../models/bank_source.dart';
+import '../models/bank_download_task.dart';
 import '../repositories/question_bank_repository.dart';
 import 'bank_subscription_service.dart';
 
@@ -15,13 +17,14 @@ class BankSubscriptionDownload {
   final List<Map<String, dynamic>> entries;
   final Map<String, File> artifacts;
   final Directory directory;
-  final String? etag, lastModified;
+  final String? etag, lastModified, transportUrl;
   BankSubscriptionDownload(
     this.entries,
     this.artifacts,
     this.directory, {
     this.etag,
     this.lastModified,
+    this.transportUrl,
   });
 
   Future<void> dispose() => directory.delete(recursive: true);
@@ -37,7 +40,11 @@ class BankSubscriptionLoader {
     try {
       final urls = source.official && client == null
           ? await GitHubProxyConfig.getCandidateManifestUrls()
-          : [source.url];
+          : [
+              client == null
+                  ? await GitHubProxyConfig.resolveDownloadUrl(source.url)
+                  : source.url,
+            ];
       Object? lastError;
       for (final url in urls) {
         try {
@@ -193,17 +200,24 @@ class BankSubscriptionLoader {
   Future<BankSubscriptionDownload> load(
     String url, {
     DownloadProgressCallback? onProgress,
+    BankDownloadTask? task,
   }) async {
     final directory = await Directory.systemTemp.createTemp(
       'bank-subscription-',
     );
     final connection = client ?? http.Client();
     try {
-      final request = http.Request('GET', Uri.parse(url));
+      final transportUrl = client == null
+          ? await GitHubProxyConfig.resolveDownloadUrl(url)
+          : url;
+      final request = http.Request('GET', Uri.parse(transportUrl));
       request.headers.addAll(GitHubProxyConfig.defaultHeaders);
-      final response = await connection
+      task?.checkCancelled();
+      task?.report('正在下载');
+      final pending = connection
           .send(request)
           .timeout(const Duration(seconds: 120));
+      final response = await (task == null ? pending : task.wait(pending));
       if (response.statusCode != 200) {
         throw StateError('订阅下载失败（HTTP ${response.statusCode}）');
       }
@@ -211,17 +225,26 @@ class BankSubscriptionLoader {
       final sink = download.openWrite();
       var received = 0;
       onProgress?.call(0, response.contentLength);
+      task?.report('正在下载', bytes: 0, size: response.contentLength);
+      final stream = StreamIterator(
+        response.stream.timeout(const Duration(seconds: 120)),
+      );
       try {
-        await for (final chunk in response.stream.timeout(
-          const Duration(seconds: 120),
-        )) {
+        while (await (task == null
+            ? stream.moveNext()
+            : task.wait(stream.moveNext()))) {
+          final chunk = stream.current;
           sink.add(chunk);
           received += chunk.length;
           onProgress?.call(received, response.contentLength);
+          task?.report('正在下载', bytes: received, size: response.contentLength);
         }
       } finally {
+        await stream.cancel();
         await sink.close();
       }
+      task?.checkCancelled();
+      task?.report('正在校验题库');
       final handle = await download.open();
       late List<int> signature;
       try {
@@ -292,6 +315,7 @@ class BankSubscriptionLoader {
         directory,
         etag: response.headers['etag'],
         lastModified: response.headers['last-modified'],
+        transportUrl: transportUrl,
       );
     } catch (_) {
       await directory.delete(recursive: true);
