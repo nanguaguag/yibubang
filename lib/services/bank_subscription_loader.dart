@@ -15,7 +15,14 @@ class BankSubscriptionDownload {
   final List<Map<String, dynamic>> entries;
   final Map<String, File> artifacts;
   final Directory directory;
-  BankSubscriptionDownload(this.entries, this.artifacts, this.directory);
+  final String? etag, lastModified;
+  BankSubscriptionDownload(
+    this.entries,
+    this.artifacts,
+    this.directory, {
+    this.etag,
+    this.lastModified,
+  });
 
   Future<void> dispose() => directory.delete(recursive: true);
 }
@@ -183,7 +190,10 @@ class BankSubscriptionLoader {
     );
   }
 
-  Future<BankSubscriptionDownload> load(String url) async {
+  Future<BankSubscriptionDownload> load(
+    String url, {
+    DownloadProgressCallback? onProgress,
+  }) async {
     final directory = await Directory.systemTemp.createTemp(
       'bank-subscription-',
     );
@@ -199,10 +209,16 @@ class BankSubscriptionLoader {
       }
       final download = File(p.join(directory.path, 'download'));
       final sink = download.openWrite();
+      var received = 0;
+      onProgress?.call(0, response.contentLength);
       try {
-        await sink.addStream(
-          response.stream.timeout(const Duration(seconds: 120)),
-        );
+        await for (final chunk in response.stream.timeout(
+          const Duration(seconds: 120),
+        )) {
+          sink.add(chunk);
+          received += chunk.length;
+          onProgress?.call(received, response.contentLength);
+        }
       } finally {
         await sink.close();
       }
@@ -274,6 +290,8 @@ class BankSubscriptionLoader {
         [entry],
         {meta['bank_id'] as String: artifact},
         directory,
+        etag: response.headers['etag'],
+        lastModified: response.headers['last-modified'],
       );
     } catch (_) {
       await directory.delete(recursive: true);

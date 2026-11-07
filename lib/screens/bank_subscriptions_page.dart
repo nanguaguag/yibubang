@@ -26,7 +26,7 @@ class _BankSubscriptionsPageState extends State<BankSubscriptionsPage> {
     _load();
   }
 
-  Future<void> _load() async {
+  Future<void> _load({bool keepEdits = false}) async {
     final allSources = await _service.sources();
     final urls = allSources
         .where((s) => !s.official)
@@ -34,7 +34,7 @@ class _BankSubscriptionsPageState extends State<BankSubscriptionsPage> {
         .toList();
     if (mounted) {
       setState(() {
-        _urls = urls;
+        if (!keepEdits) _urls = urls;
         _sources = {for (final source in allSources) source.url: source};
         _busy = false;
       });
@@ -74,6 +74,25 @@ class _BankSubscriptionsPageState extends State<BankSubscriptionsPage> {
     try {
       await _service.saveSources(_urls);
       if (mounted) Navigator.pop(context, true);
+    } catch (error) {
+      if (mounted) setState(() => _error = error.toString());
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _checkSource(BankSource source, {bool download = false}) async {
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      if (download) {
+        await _service.confirmSource(source.id);
+      } else {
+        await _service.check(sourceId: source.id);
+      }
+      await _load(keepEdits: true);
     } catch (error) {
       if (mounted) setState(() => _error = error.toString());
     } finally {
@@ -126,12 +145,35 @@ class _BankSubscriptionsPageState extends State<BankSubscriptionsPage> {
                       onPressed: _busy ? null : () => _edit(i),
                       icon: const Icon(Icons.edit_outlined),
                     ),
-                    IconButton(
-                      tooltip: '移除订阅',
-                      onPressed: _busy
-                          ? null
-                          : () => setState(() => _urls.removeAt(i)),
-                      icon: const Icon(Icons.delete_outline),
+                    PopupMenuButton<String>(
+                      enabled: !_busy,
+                      tooltip: '来源操作',
+                      onSelected: (action) {
+                        final source = _sources[_urls[i]];
+                        if (action == 'remove') {
+                          setState(() => _urls.removeAt(i));
+                        } else if (source != null) {
+                          _checkSource(source, download: action == 'download');
+                        }
+                      },
+                      itemBuilder: (_) => [
+                        if (_sources[_urls[i]] != null) ...[
+                          const PopupMenuItem(
+                            value: 'check',
+                            child: Text('检查更新'),
+                          ),
+                          if (_sources[_urls[i]]!.status ==
+                              BankSourceStatus.needsDownload)
+                            const PopupMenuItem(
+                              value: 'download',
+                              child: Text('下载确认题库'),
+                            ),
+                        ],
+                        const PopupMenuItem(
+                          value: 'remove',
+                          child: Text('移除订阅'),
+                        ),
+                      ],
                     ),
                   ],
                 ),

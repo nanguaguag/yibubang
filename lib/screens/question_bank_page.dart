@@ -9,6 +9,7 @@ import '../services/question_bank_file_service.dart';
 import '../services/bank_subscription_service.dart';
 import '../common/platform_adaptive.dart';
 import '../widgets/bank_export_button.dart';
+import '../widgets/bank_link_import_dialog.dart';
 import 'bank_subscriptions_page.dart';
 import 'bank_creation_page.dart';
 import 'bank_detail_page.dart';
@@ -202,6 +203,23 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
     );
   }
 
+  Future<void> _importLink() async {
+    final choice = await showDialog<BankLinkImportChoice>(
+      context: context,
+      builder: (_) => const BankLinkImportDialog(),
+    );
+    if (choice == null || !mounted) return;
+    await _runOperation(
+      () => BankSubscriptionService.instance.importLink(
+        choice.url,
+        subscribe: choice.subscribe,
+        onConflict: _chooseImportMode,
+      ),
+      '题库导入成功',
+    );
+    await _loadSubscriptions();
+  }
+
   Future<BankImportMode?> _chooseImportMode(QuestionBank existing) async {
     if (!mounted) return null;
     return showDialog<BankImportMode>(
@@ -233,15 +251,14 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
   Future<void> _download(QuestionBank bank) async {
     if (_downloading.isNotEmpty) return;
     final bankId = bank.bankId;
-    final remote = _remoteBanks[bankId] as Map<String, dynamic>?;
     setState(() {
       _downloading.add(bankId);
       _downloadProgress[bankId] = 0;
     });
     try {
-      await _repository.downloadBank(
+      await BankSubscriptionService.instance.install(
         bankId,
-        remoteEntry: remote,
+        onConflict: _chooseImportMode,
         onProgress: (receivedBytes, totalBytes) {
           if (!mounted) return;
           final progress = totalBytes == null || totalBytes <= 0
@@ -509,6 +526,14 @@ class _QuestionBankPageState extends State<QuestionBankPage> {
             tooltip: '从文件导入',
             onPressed: _controlsDisabled ? null : _importFile,
             icon: const Icon(Icons.file_open_outlined),
+          ),
+          PopupMenuButton<String>(
+            enabled: !_controlsDisabled,
+            tooltip: '更多导入方式',
+            onSelected: (_) => _importLink(),
+            itemBuilder: (_) => [
+              const PopupMenuItem(value: 'link', child: Text('从链接导入')),
+            ],
           ),
         ],
       ),

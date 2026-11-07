@@ -9,6 +9,8 @@ import '../models/bank_source.dart';
 import 'bank_source_store.dart';
 import '../repositories/question_bank_repository.dart';
 import 'bank_subscription_loader.dart';
+import 'bank_artifact_cache.dart';
+import 'question_bank_file_service.dart';
 
 class BankSubscriptionService {
   static final instance = BankSubscriptionService();
@@ -21,6 +23,7 @@ class BankSubscriptionService {
   final BankSubscriptionLoader loader;
   final store = BankSourceStore();
   final _checks = <String, Future<BankSource>>{};
+  late final BankArtifactCache artifacts = BankArtifactCache(loader: loader);
   Timer? _timer;
   bool _running = false;
   int _scheduleRevision = 0;
@@ -67,7 +70,8 @@ class BankSubscriptionService {
         entry == null) {
       throw StateError('请先检查该来源');
     }
-    if (bank.isInstalled && entry['identity_id']?.toString() != bank.identityId) {
+    if (bank.isInstalled &&
+        entry['identity_id']?.toString() != bank.identityId) {
       throw const FormatException('来源学科与当前题库不一致');
     }
     await store.change((catalog) {
@@ -155,6 +159,128 @@ class BankSubscriptionService {
 
   Future<BankUpdateInfo> updateInfo(QuestionBank bank) async =>
       BankUpdateInfo.compare(bank, (await store.read()).sourceFor(bank.bankId));
+
+  /// Explicit full download to identify a file source, never called by check().
+  Future<BankSource> confirmSource(
+    String sourceId, {
+    DownloadProgressCallback? onProgress,
+  }) async {
+    final source = (await store.read()).sources[sourceId];
+    if (source == null) throw StateError('来源已移除');
+    final lease = await artifacts.acquire(
+      source.url,
+      refresh: source.status != BankSourceStatus.ready,
+      onProgress: onProgress,
+    );
+    try {
+      return await _publishArtifact(source, lease);
+    } finally {
+      await lease.dispose();
+    }
+  }
+
+  Future<BankSource> _publishArtifact(
+    BankSource source,
+    BankArtifactLease lease,
+  ) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final result = BankSource(
+      url: source.url,
+      official: source.official,
+      kind: BankSourceKind.file,
+      status: BankSourceStatus.ready,
+      entries: [
+        {...lease.entry, 'subscription_url': source.url},
+      ],
+      checkedAt: now,
+      successAt: now,
+      etag: lease.etag,
+      lastModified: lease.lastModified,
+      transportUrl: source.url,
+    );
+    await store.change((catalog) {
+      if (!catalog.sources.containsKey(source.id)) return;
+      catalog.sources[source.id] = result;
+      catalog.bindings.putIfAbsent(
+        lease.entry['bank_id'] as String,
+        () => source.id,
+      );
+    });
+    final catalog = await store.read();
+    if (catalog.bindings[lease.entry['bank_id']] == source.id) {
+      await QuestionBankRepository().registerRemoteEntries(result.entries);
+    }
+    return result;
+  }
+
+  Future<QuestionBank> importLink(
+    String value, {
+    required bool subscribe,
+    Future<BankImportMode?> Function(QuestionBank existing)? onConflict,
+    DownloadProgressCallback? onProgress,
+  }) async {
+    final url = validateUrl(value);
+    final lease = await artifacts.acquire(
+      url,
+      refresh: true,
+      onProgress: onProgress,
+    );
+    try {
+      final entry = lease.entry;
+      final bank = await QuestionBankRepository().importFile(
+        lease.file.path,
+        expectedBankId: entry['bank_id'] as String,
+        expectedIdentityId: entry['identity_id']?.toString(),
+        expectedSqliteHash: entry['sqlite_sha256'] as String?,
+        versionOverride: entry['version']?.toString(),
+        onConflict: onConflict,
+      );
+      if (subscribe) {
+        final fresh = BankSource.fresh(url);
+        await store.change(
+          (catalog) => catalog.sources.putIfAbsent(fresh.id, () => fresh),
+        );
+        await _publishArtifact(fresh, lease);
+        await selectSource(bank, fresh.id);
+      }
+      return bank;
+    } finally {
+      await lease.dispose();
+    }
+  }
+
+  Future<QuestionBank> install(
+    String bankId, {
+    Future<BankImportMode?> Function(QuestionBank existing)? onConflict,
+    DownloadProgressCallback? onProgress,
+  }) async {
+    var source = (await store.read()).sourceFor(bankId);
+    if (source == null) throw StateError('尚未设置题库来源');
+    if (source.kind == BankSourceKind.file &&
+        source.status != BankSourceStatus.ready) {
+      source = await confirmSource(source.id, onProgress: onProgress);
+    }
+    final entry = source.entry(bankId);
+    if (entry == null) throw const FormatException('来源中未找到该题库');
+    final lease = await artifacts.acquire(
+      entry['url'] as String,
+      expected: entry,
+      onProgress: onProgress,
+    );
+    try {
+      return await QuestionBankRepository().importFile(
+        lease.file.path,
+        expectedBankId: bankId,
+        expectedIdentityId: entry['identity_id']?.toString(),
+        expectedSqliteHash: entry['sqlite_sha256'] as String?,
+        versionOverride: entry['version']?.toString(),
+        updateEnabled: true,
+        onConflict: onConflict,
+      );
+    } finally {
+      await lease.dispose();
+    }
+  }
 
   Future<void> save(List<String> values, bool auto) async {
     await saveSources(values);
