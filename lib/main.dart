@@ -190,6 +190,10 @@ ThemeData _buildTheme(Brightness brightness) {
         borderRadius: BorderRadius.circular(AppShapes.large),
       ),
     ),
+    expansionTileTheme: const ExpansionTileThemeData(
+      shape: Border(),
+      collapsedShape: Border(),
+    ),
     navigationBarTheme: const NavigationBarThemeData(height: 64),
   );
 }

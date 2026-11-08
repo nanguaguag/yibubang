@@ -21,6 +21,7 @@ import '../widgets/common/styled_tile.dart';
 import '../widgets/theme_controller.dart';
 import '../widgets/bank_subscription_settings.dart';
 import 'about_page.dart';
+import 'bottom_nav_settings_page.dart';
 import 'cloud_sync_page.dart';
 import 'developer_page.dart';
 import 'question_sections_page.dart';
@@ -577,6 +578,18 @@ class _SettingsPageState extends State<SettingsPage> {
                       pushAdaptiveModalPage(
                         context,
                         builder: (context) => const QuestionSectionsPage(),
+                      );
+                    },
+                  ),
+                  IconTile(
+                    icon: Icons.navigation_outlined,
+                    label: '底栏与导航设置',
+                    value: '排序与显隐',
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () {
+                      pushAdaptiveModalPage(
+                        context,
+                        builder: (context) => const BottomNavSettingsPage(),
                       );
                     },
                   ),

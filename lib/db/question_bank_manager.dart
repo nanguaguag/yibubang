@@ -24,20 +24,26 @@ class QuestionBankDatabaseManager {
   Future<String> pathFor(String bankId) async =>
       p.join(await rootPath, bankId, '$bankId.sqlite');
 
-  Future<Database> openBank(String bankId, {String? filePath}) async {
+  Future<Database> openBank(
+    String bankId, {
+    String? filePath,
+    bool validate = true,
+  }) async {
     final cached = _databases[bankId];
     if (cached != null && cached.isOpen) return cached;
 
     final path = filePath ?? await pathFor(bankId);
-    final validation = await validateFile(path, expectedBankId: bankId);
-    if (!validation.isValid) {
-      throw FormatException(validation.message);
+    if (validate) {
+      final validation = await validateFile(path, expectedBankId: bankId);
+      if (!validation.isValid) {
+        throw FormatException(validation.message);
+      }
     }
 
     final database = await openDatabase(
       path,
       readOnly: true,
-      singleInstance: false,
+      singleInstance: true,
     );
     _databases[bankId] = database;
     return database;

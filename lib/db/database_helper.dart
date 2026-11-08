@@ -237,7 +237,7 @@ class UserDBHelper {
     String path = join(await getDatabasesPath(), 'user_data.sqlite');
     return await openDatabase(
       path,
-      version: 13,
+      version: 15,
       onConfigure: (db) async {
         // 用户库为高频写库：WAL 提升并发写性能，同时保证导出前关闭连接即可完整落盘。
         // 注意：Android 原生 SQLiteDatabase.execSQL 禁止执行有返回值的 PRAGMA（如 journal_mode），
@@ -259,6 +259,13 @@ class UserDBHelper {
       },
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
+      onOpen: (db) async {
+        try {
+          await _upgradeReviewPlansV15(db);
+        } catch (e) {
+          debugPrint('[UserDBHelper] onOpen 检查 ReviewPlans 失败: $e');
+        }
+      },
     );
   }
 
@@ -277,7 +284,11 @@ class UserDBHelper {
 
   @visibleForTesting
   Future<void> upgradeForTesting(Database db, int oldVersion) =>
-      _onUpgrade(db, oldVersion, 13);
+      _onUpgrade(db, oldVersion, 15);
+
+  @visibleForTesting
+  Future<void> createSpacedRepetitionTablesForTesting(DatabaseExecutor db) =>
+      _createSpacedRepetitionTables(db);
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     await db.transaction((txn) async {
@@ -411,8 +422,33 @@ class UserDBHelper {
       if (oldVersion < 13) {
         await _createBankContentStateTable(txn);
       }
+      if (oldVersion < 14) {
+        await _createSpacedRepetitionTables(txn);
+      }
+      if (oldVersion < 15) {
+        await _upgradeReviewPlansV15(txn);
+      }
       await _createMigrationStateTable(txn);
     });
+  }
+
+  Future<void> _upgradeReviewPlansV15(DatabaseExecutor db) async {
+    final tables = await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='ReviewPlans'",
+    );
+    if (tables.isEmpty) return;
+
+    final columns = await _columns(db, 'ReviewPlans');
+    if (!columns.contains('source_types')) {
+      await db.execute(
+        "ALTER TABLE ReviewPlans ADD COLUMN source_types TEXT DEFAULT 'wrong,collected,note'",
+      );
+    }
+    if (!columns.contains('covered_subjects')) {
+      await db.execute(
+        "ALTER TABLE ReviewPlans ADD COLUMN covered_subjects TEXT DEFAULT ''",
+      );
+    }
   }
 
   /// 医考帮题库「智能增量同步」状态表（v11）。
@@ -523,6 +559,78 @@ class UserDBHelper {
         finished_at INTEGER NOT NULL DEFAULT 0,
         error TEXT NOT NULL DEFAULT ''
       )
+    ''');
+  }
+
+  Future<void> _createSpacedRepetitionTables(DatabaseExecutor db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS ReviewPlans (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        target_type TEXT NOT NULL DEFAULT 'all',
+        bank_id TEXT,
+        identity_id TEXT,
+        subject_id TEXT,
+        source_types TEXT DEFAULT 'wrong,collected,note',
+        covered_subjects TEXT DEFAULT '',
+        daily_new_target INTEGER NOT NULL DEFAULT 20,
+        daily_review_limit INTEGER NOT NULL DEFAULT 50,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      )
+    ''');
+
+    // 兼容可能已创建旧版 ReviewPlans 的数据库，安全追加字段
+    try {
+      await db.execute("ALTER TABLE ReviewPlans ADD COLUMN source_types TEXT DEFAULT 'wrong,collected,note'");
+    } catch (_) {}
+    try {
+      await db.execute("ALTER TABLE ReviewPlans ADD COLUMN covered_subjects TEXT DEFAULT ''");
+    } catch (_) {}
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS SpacedReviewItem (
+        item_id TEXT PRIMARY KEY,
+        item_type TEXT NOT NULL DEFAULT 'question',
+        plan_id TEXT,
+        state INTEGER NOT NULL DEFAULT 0,
+        reps INTEGER NOT NULL DEFAULT 0,
+        lapses INTEGER NOT NULL DEFAULT 0,
+        interval INTEGER NOT NULL DEFAULT 0,
+        ease_factor REAL NOT NULL DEFAULT 2.5,
+        due_date INTEGER NOT NULL DEFAULT 0,
+        last_review_at INTEGER NOT NULL DEFAULT 0,
+        last_rating INTEGER NOT NULL DEFAULT 0,
+        extra TEXT
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS CustomFlashcards (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        front TEXT NOT NULL,
+        back TEXT NOT NULL,
+        tags TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      )
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_spaced_review_due
+        ON SpacedReviewItem(due_date, state)
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_spaced_review_plan
+        ON SpacedReviewItem(plan_id)
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_spaced_review_type
+        ON SpacedReviewItem(item_type)
     ''');
   }
 
@@ -724,6 +832,7 @@ class UserDBHelper {
     await _createBankHistoryTable(db);
     await _createBankContentStateTable(db);
     await _createMigrationStateTable(db);
+    await _createSpacedRepetitionTables(db);
 
     // 给 Question 表按 chapter_id 建表
     await db.execute('''

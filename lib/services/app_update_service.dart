@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:ffi';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -18,10 +19,42 @@ class AppUpdateService {
   factory AppUpdateService() => _instance;
   AppUpdateService._internal();
 
+  int? _cachedBuildNumber;
+  int? get cachedBuildNumber => _cachedBuildNumber;
+
+  /// 检测当前 Android 运行环境 ABI 架构
+  /// 优先使用 dart:ffi Abi.current() 探测，若无法直接获得，结合 split-per-abi buildNumber 偏移判定：
+  /// - 2000+: arm64-v8a
+  /// - 1000+: armeabi-v7a
+  /// - 3000+: x86_64
+  static String? detectAndroidAbi({Abi? currentAbi, int? buildNumber}) {
+    Abi? abi = currentAbi;
+    if (abi == null) {
+      try {
+        abi = Abi.current();
+      } catch (_) {
+        abi = null;
+      }
+    }
+
+    if (abi == Abi.androidArm64) return 'arm64-v8a';
+    if (abi == Abi.androidArm) return 'armeabi-v7a';
+    if (abi == Abi.androidX64) return 'x86_64';
+
+    if (buildNumber != null) {
+      if (buildNumber >= 3000 && buildNumber < 4000) return 'x86_64';
+      if (buildNumber >= 2000 && buildNumber < 3000) return 'arm64-v8a';
+      if (buildNumber >= 1000 && buildNumber < 2000) return 'armeabi-v7a';
+    }
+
+    return null;
+  }
+
   /// 检查是否存在新版本
   Future<Map<String, dynamic>?> checkUpdate() async {
     final info = await PackageInfo.fromPlatform();
     final currentVersion = info.version;
+    _cachedBuildNumber = int.tryParse(info.buildNumber);
 
     Map<String, dynamic>? manifest;
     // 多源轮询容错：优先使用用户配置的源，若受限或失败自动尝试备用镜像、jsDelivr CDN 与官方直连
@@ -65,23 +98,67 @@ class AppUpdateService {
     return decoded;
   }
 
-  /// 获取对应平台的直链下载地址
-  String _resolvePlatformDownloadUrl(Map<String, dynamic> updateData) {
+  /// 获取对应平台的直链下载地址（支持 Android 架构智能选择 arm64-v8a / armeabi-v7a / x86_64 专用包）
+  static String resolvePlatformDownloadUrl(
+    Map<String, dynamic> updateData, {
+    String? androidAbiOverride,
+    bool? isAndroidOverride,
+    bool? isWindowsOverride,
+    bool? isMacOSOverride,
+    bool? isLinuxOverride,
+    int? buildNumber,
+  }) {
     final version = VersionUtils.cleanVersion(
         updateData['latest_app']?.toString() ?? 'latest');
     final assets = updateData['assets'] as Map<String, dynamic>?;
 
+    final bool isAndroid;
+    final bool isWindows;
+    final bool isMacOS;
+    final bool isLinux;
+
+    if (isAndroidOverride != null ||
+        isWindowsOverride != null ||
+        isMacOSOverride != null ||
+        isLinuxOverride != null) {
+      isAndroid = isAndroidOverride ?? false;
+      isWindows = isWindowsOverride ?? false;
+      isMacOS = isMacOSOverride ?? false;
+      isLinux = isLinuxOverride ?? false;
+    } else {
+      isAndroid = Platform.isAndroid;
+      isWindows = Platform.isWindows;
+      isMacOS = Platform.isMacOS;
+      isLinux = Platform.isLinux;
+    }
+
     String? directUrl;
-    if (Platform.isAndroid) {
-      directUrl = assets?['android']?.toString() ??
-          'https://github.com/nanguaguag/yibubang/releases/download/v$version/yibubang-v$version-android.apk';
-    } else if (Platform.isWindows) {
+    if (isAndroid) {
+      final abi =
+          androidAbiOverride ?? detectAndroidAbi(buildNumber: buildNumber);
+      if (abi == 'arm64-v8a') {
+        directUrl = assets?['android_arm64']?.toString() ??
+            assets?['android']?.toString() ??
+            'https://github.com/nanguaguag/yibubang/releases/download/v$version/yibubang-v$version-android-arm64-v8a.apk';
+      } else if (abi == 'armeabi-v7a') {
+        directUrl = assets?['android_armv7']?.toString() ??
+            assets?['android']?.toString() ??
+            'https://github.com/nanguaguag/yibubang/releases/download/v$version/yibubang-v$version-android-armeabi-v7a.apk';
+      } else if (abi == 'x86_64') {
+        directUrl = assets?['android_x86_64']?.toString() ??
+            assets?['android']?.toString() ??
+            'https://github.com/nanguaguag/yibubang/releases/download/v$version/yibubang-v$version-android-x86_64.apk';
+      } else {
+        directUrl = assets?['android']?.toString() ??
+            'https://github.com/nanguaguag/yibubang/releases/download/v$version/yibubang-v$version-android.apk';
+      }
+    } else if (isWindows) {
       directUrl = assets?['windows']?.toString() ??
           'https://github.com/nanguaguag/yibubang/releases/download/v$version/yibubang-v$version-windows-x64.zip';
-    } else if (Platform.isMacOS) {
+    } else if (isMacOS) {
       directUrl = assets?['macos']?.toString() ??
           'https://github.com/nanguaguag/yibubang/releases/download/v$version/yibubang-v$version-macos.zip';
-    } else if (Platform.isLinux) {
+    } else if (isLinux) {
       directUrl = assets?['linux']?.toString() ??
           'https://github.com/nanguaguag/yibubang/releases/download/v$version/yibubang-v$version-linux-x64.tar.gz';
     } else {
@@ -97,7 +174,10 @@ class AppUpdateService {
     required Map<String, dynamic> updateData,
     required void Function(int received, int? total) onProgress,
   }) async {
-    final rawUrl = _resolvePlatformDownloadUrl(updateData);
+    final rawUrl = resolvePlatformDownloadUrl(
+      updateData,
+      buildNumber: _cachedBuildNumber,
+    );
     final acceleratedUrl = await GitHubProxyConfig.resolveDownloadUrl(rawUrl);
 
     final client = http.Client();
@@ -111,8 +191,12 @@ class AppUpdateService {
       }
 
       final contentLength = response.contentLength;
-      final extension = p.extension(Uri.parse(rawUrl).path);
-      final fileName = 'yibubang_v${updateData['latest_app']}$extension';
+      final uriPath = Uri.parse(rawUrl).path;
+      final extension = p.extension(uriPath);
+      final rawBaseName = p.basename(uriPath);
+      final fileName = rawBaseName.isNotEmpty
+          ? rawBaseName
+          : 'yibubang_v${updateData['latest_app']}$extension';
 
       Directory tempDir;
       if (Platform.isAndroid) {
@@ -160,13 +244,18 @@ class AppUpdateService {
     final browserUrl = updateData['latest_app_url']?.toString() ??
         'https://github.com/nanguaguag/yibubang/releases/';
 
+    final targetAbi = Platform.isAndroid
+        ? detectAndroidAbi(buildNumber: _cachedBuildNumber)
+        : null;
+
     await showDialog<void>(
       context: context,
       barrierDismissible: false,
       builder: (dialogCtx) {
         bool isDownloading = false;
         double progress = 0.0;
-        String downloadBtnText = '应用内下载';
+        String downloadBtnText =
+            targetAbi != null ? '应用内下载 ($targetAbi)' : '应用内下载';
 
         return StatefulBuilder(
           builder: (context, setDialogState) {
@@ -178,9 +267,49 @@ class AppUpdateService {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(updateInfo),
+                    if (targetAbi != null) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .primaryContainer
+                              .withValues(alpha: 0.5),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.memory,
+                              size: 16,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onPrimaryContainer,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              '适配架构包: $targetAbi',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onPrimaryContainer,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                     if (isDownloading) ...[
                       const SizedBox(height: 16),
-                      LinearProgressIndicator(value: progress > 0 ? progress : null),
+                      LinearProgressIndicator(
+                          value: progress > 0 ? progress : null),
                       const SizedBox(height: 6),
                       Text(
                         '下载进度: ${(progress * 100).toStringAsFixed(1)}%',
@@ -193,7 +322,9 @@ class AppUpdateService {
               actions: [
                 // 按钮 1：取消
                 TextButton(
-                  onPressed: isDownloading ? null : () => Navigator.of(dialogCtx).pop(),
+                  onPressed: isDownloading
+                      ? null
+                      : () => Navigator.of(dialogCtx).pop(),
                   child: const Text('取消'),
                 ),
                 // 按钮 2：应用内下载 (带 0% -> 100% 动态变化)

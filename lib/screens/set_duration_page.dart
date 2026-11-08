@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../common/app_shapes.dart';
+import '../widgets/info_hint_banner.dart';
 import '../widgets/theme_controller.dart';
 
 class SetDurationPage extends StatefulWidget {
@@ -88,8 +89,12 @@ class _SetDurationPageState extends State<SetDurationPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            const InfoHintBanner(
+              message: '调整应用内各项动画的持续时长。设置为 0 毫秒可关闭动画，获得最迅捷的响应。',
+            ),
+            const SizedBox(height: 12),
             Padding(
-              padding: const EdgeInsets.symmetric(vertical: 16.0),
+              padding: const EdgeInsets.symmetric(vertical: 8.0),
               child: Text(
                 '当前动画时长：$_tempAnimationTime 毫秒',
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(
@@ -137,31 +142,6 @@ class _SetDurationPageState extends State<SetDurationPage> {
                       size: 40,
                     ),
                   ),
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 16),
-            //SizedBox(
-            //  width: double.infinity,
-            //  child: FilledButton(
-            //    style: FilledButton.styleFrom(
-            //      padding: const EdgeInsets.symmetric(vertical: 14),
-            //      shape: RoundedRectangleBorder(
-            //        borderRadius: BorderRadius.circular(AppShapes.large),
-            //      ),
-            //    ),
-            //    onPressed: _confirmChanges,
-            //    child: const Text('确认保存设置', style: TextStyle(fontSize: 16)),
-            //  ),
-            //),
-
-            Padding(
-              padding: const EdgeInsets.only(top: 16.0),
-              child: Text(
-                '调整应用内各项动画的持续时长。设置为 0 毫秒可关闭动画，获得最迅捷的响应。',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: colorScheme.onSurfaceVariant,
                 ),
               ),
             ),

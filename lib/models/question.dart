@@ -49,9 +49,9 @@ class UserQuestion {
     final rawCut = map['cut_question']?.toString() ?? '0';
     final isCut = rawCut == '1' || rawCut == 'cutted';
     return UserQuestion(
-      id: map['id'],
-      chapterId: map['chapter_id'],
-      chapterParentId: map['chapter_parent_id'],
+      id: map['id']?.toString() ?? '',
+      chapterId: map['chapter_id']?.toString() ?? '',
+      chapterParentId: map['chapter_parent_id']?.toString() ?? '',
       cutQuestion: isCut ? '1' : '0',
       userAnswer: map['user_answer'] ?? '',
       status: map['status'] ?? 0,

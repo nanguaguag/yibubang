@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/question_section_config.dart';
+import '../widgets/info_hint_banner.dart';
 
 /// 题目页板块排序与显隐自定义设置页
 class QuestionSectionsPage extends StatefulWidget {
@@ -95,38 +96,10 @@ class _QuestionSectionsPageState extends State<QuestionSectionsPage> {
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                  child: Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.surfaceContainerHighest
-                          .withValues(alpha: 0.4),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: theme.colorScheme.outlineVariant
-                            .withValues(alpha: 0.5),
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.info_outline,
-                          size: 20,
-                          color: theme.colorScheme.primary,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            '长按并拖动右侧手柄可调整显示顺序；使用开关可按需隐藏板块。',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 12, 16, 8),
+                  child: InfoHintBanner(
+                    message: '长按并拖动右侧手柄可调整显示顺序；使用开关可按需隐藏板块。',
                   ),
                 ),
                 Expanded(

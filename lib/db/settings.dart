@@ -1,4 +1,5 @@
 import 'package:shared_preferences/shared_preferences.dart';
+import '../models/bottom_nav_config.dart';
 import '../models/question_section_config.dart';
 
 // 存储数据
@@ -104,6 +105,7 @@ Future<void> initSettings() async {
     await prefs.setBool('sync_ykb_pacing_enabled', false); // 模拟刷题节奏默认关闭
   }
   await QuestionSectionConfig.loadConfig();
+  await BottomNavConfig.loadConfig();
 }
 
 Future<void> clearUserInfo() async {

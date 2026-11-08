@@ -2,11 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../common/animation.dart';
-import '../common/app_strings.dart';
 import '../common/platform_adaptive.dart';
 import '../db/data_transfer.dart';
+import '../models/bottom_nav_config.dart';
 import '../repositories/question_bank_repository.dart';
 import '../screens/choosed_subjects_page.dart';
+import '../screens/daily_plan_page.dart';
 import '../screens/my_page.dart';
 import '../screens/statistics_page.dart';
 import '../services/app_update_service.dart';
@@ -62,6 +63,11 @@ class _HomePageState extends State<HomePage> {
       debugPrint('题库目录初始化失败：$error');
     }
     debugPrint('[startup] HomePage 题库目录初始化(${swInit.elapsedMilliseconds}ms)');
+    if (!mounted) return;
+
+    try {
+      await BottomNavConfig.loadConfig();
+    } catch (_) {}
     if (!mounted) return;
 
     final prefs = await SharedPreferences.getInstance();
@@ -129,93 +135,116 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  Widget _buildTabWidget(String id) {
+    switch (id) {
+      case 'subjects':
+        return const _KeepAliveTab(
+          key: ValueKey('tab_subjects'),
+          child: ChoosedSubjectsPage(),
+        );
+      case 'daily_plan':
+        return const _KeepAliveTab(
+          key: ValueKey('tab_daily_plan'),
+          child: DailyPlanPage(),
+        );
+      case 'statistics':
+        return const _KeepAliveTab(
+          key: ValueKey('tab_statistics'),
+          child: StatisticsPage(),
+        );
+      case 'profile':
+      default:
+        return const _KeepAliveTab(
+          key: ValueKey('tab_profile'),
+          child: MyPage(),
+        );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDesktop = isDesktopLayout(context);
 
-    final pageView = PageView(
-      controller: _pageController,
-      onPageChanged: _onPageChanged,
-      children: const [
-        _KeepAliveTab(child: ChoosedSubjectsPage()),
-        _KeepAliveTab(child: StatisticsPage()),
-        _KeepAliveTab(child: MyPage()),
-      ],
-    );
+    return ValueListenableBuilder<List<BottomNavItem>>(
+      valueListenable: BottomNavConfig.configNotifier,
+      builder: (context, allItems, _) {
+        final activeItems = allItems.where((i) => i.enabled).toList();
+        final validItems = activeItems.length < 2
+            ? BottomNavConfig.getDefaultItems()
+            : activeItems;
+        final clampedIndex = _selectedIndex.clamp(0, validItems.length - 1);
+        if (clampedIndex != _selectedIndex) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              setState(() => _selectedIndex = clampedIndex);
+              if (_pageController.hasClients) {
+                _pageController.jumpToPage(clampedIndex);
+              }
+            }
+          });
+        }
 
-    if (isDesktop) {
-      return Scaffold(
-        body: Row(
-          children: [
-            NavigationRail(
-              selectedIndex: _selectedIndex,
-              onDestinationSelected: _onItemTapped,
-              groupAlignment: -1.0,
-              labelType: NavigationRailLabelType.all,
-              destinations: const <NavigationRailDestination>[
-                NavigationRailDestination(
-                  icon: Icon(Icons.book_outlined),
-                  selectedIcon: Icon(Icons.book),
-                  label: Text(AppStrings.selectedSubjectsTitle),
+        final destinations = validItems.map((item) {
+          return NavigationDestination(
+            icon: Icon(item.icon),
+            selectedIcon: Icon(item.selectedIcon),
+            label: item.title,
+          );
+        }).toList();
+
+        final railDestinations = validItems.map((item) {
+          return NavigationRailDestination(
+            icon: Icon(item.icon),
+            selectedIcon: Icon(item.selectedIcon),
+            label: Text(item.title),
+          );
+        }).toList();
+
+        final tabPages = validItems.map((item) => _buildTabWidget(item.id)).toList();
+
+        if (isDesktop) {
+          return Scaffold(
+            body: Row(
+              children: [
+                NavigationRail(
+                  selectedIndex: clampedIndex,
+                  onDestinationSelected: _onItemTapped,
+                  groupAlignment: -1.0,
+                  labelType: NavigationRailLabelType.all,
+                  destinations: railDestinations,
                 ),
-                NavigationRailDestination(
-                  icon: Icon(Icons.insights_outlined),
-                  selectedIcon: Icon(Icons.insights),
-                  label: Text(AppStrings.statisticsTitle),
-                ),
-                NavigationRailDestination(
-                  icon: Icon(Icons.person_outline),
-                  selectedIcon: Icon(Icons.person),
-                  label: Text(AppStrings.myPageTitle),
+                const VerticalDivider(width: 1, thickness: 1),
+                Expanded(
+                  child: IndexedStack(
+                    index: clampedIndex,
+                    children: tabPages,
+                  ),
                 ),
               ],
             ),
-            const VerticalDivider(width: 1, thickness: 1),
-            Expanded(
-              child: IndexedStack(
-                index: _selectedIndex,
-                children: const [
-                  ChoosedSubjectsPage(),
-                  StatisticsPage(),
-                  MyPage(),
-                ],
-              ),
-            ),
-          ],
-        ),
-      );
-    }
+          );
+        }
 
-    return Scaffold(
-      body: pageView,
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _selectedIndex,
-        onDestinationSelected: _onItemTapped,
-        destinations: const <NavigationDestination>[
-          NavigationDestination(
-            icon: Icon(Icons.book_outlined),
-            selectedIcon: Icon(Icons.book),
-            label: AppStrings.selectedSubjectsTitle,
+        return Scaffold(
+          body: PageView(
+            controller: _pageController,
+            onPageChanged: _onPageChanged,
+            children: tabPages,
           ),
-          NavigationDestination(
-            icon: Icon(Icons.insights_outlined),
-            selectedIcon: Icon(Icons.insights),
-            label: AppStrings.statisticsTitle,
+          bottomNavigationBar: NavigationBar(
+            selectedIndex: clampedIndex,
+            onDestinationSelected: _onItemTapped,
+            destinations: destinations,
           ),
-          NavigationDestination(
-            icon: Icon(Icons.person_outline),
-            selectedIcon: Icon(Icons.person),
-            label: AppStrings.myPageTitle,
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
 
 class _KeepAliveTab extends StatefulWidget {
   final Widget child;
-  const _KeepAliveTab({required this.child});
+  const _KeepAliveTab({super.key, required this.child});
 
   @override
   State<_KeepAliveTab> createState() => _KeepAliveTabState();

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:system_theme/system_theme.dart';
-import '../common/app_shapes.dart';
+import '../widgets/info_hint_banner.dart';
 import '../widgets/theme_controller.dart';
 
 class SetThemeColorPage extends StatefulWidget {
@@ -122,9 +122,8 @@ class _SetThemeColorPageState extends State<SetThemeColorPage> {
               padding: const EdgeInsets.all(12.0),
               child: Column(
                 children: [
-                  const _HintCard(
-                    title: '提示',
-                    child: Text('自定义主题色将影响应用内的主要色调，包括按钮、高亮以及底栏图标。'),
+                  const InfoHintBanner(
+                    message: '自定义主题色将影响应用内的主要色调，包括按钮、高亮以及底栏图标。',
                   ),
                   const SizedBox(height: 12),
                   Padding(
@@ -180,61 +179,6 @@ class _SetThemeColorPageState extends State<SetThemeColorPage> {
             ),
           );
         },
-      ),
-    );
-  }
-}
-
-class _HintCard extends StatelessWidget {
-  final String title;
-  final Widget child;
-
-  const _HintCard({required this.title, required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      alignment: Alignment.topLeft,
-      decoration: ShapeDecoration(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadiusDirectional.circular(
-            AppShapes.largeIncreased,
-          ),
-        ),
-        color: Theme.of(context).colorScheme.secondaryContainer,
-        shadows: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            spreadRadius: 0.1,
-            blurRadius: 10,
-          ),
-        ],
-      ),
-      width: double.infinity,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 14, 20, 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  title,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                Icon(
-                  Icons.info_outline,
-                  color: Theme.of(context).colorScheme.onSecondaryContainer,
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            child,
-          ],
-        ),
       ),
     );
   }
