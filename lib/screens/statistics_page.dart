@@ -193,6 +193,17 @@ class _StatisticsPageState extends State<StatisticsPage> {
                 _buildChartToggle(context),
                 const SizedBox(height: 16),
                 _ChartCard(
+                  title: '答题正确率全景 ($_chartPeriodTitle)',
+                  chart: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 250),
+                    child: KeyedSubtree(
+                      key: ValueKey('pie_${_chartPeriod.name}'),
+                      child: _buildAccuracyPieChart(_currentStats(data)),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                _ChartCard(
                   title: '刷题数量',
                   chart: AnimatedSwitcher(
                     duration: const Duration(milliseconds: 250),
@@ -370,6 +381,231 @@ class _StatisticsPageState extends State<StatisticsPage> {
           ),
         ),
       ),
+    );
+  }
+
+  PeriodStats _currentStats(_AllStats data) {
+    switch (_chartPeriod) {
+      case _Period.today:
+        return data.today;
+      case _Period.week:
+        return data.week;
+      case _Period.month:
+        return data.month;
+    }
+  }
+
+  String get _chartPeriodTitle {
+    switch (_chartPeriod) {
+      case _Period.today:
+        return '今日';
+      case _Period.week:
+        return '本周';
+      case _Period.month:
+        return '本月';
+    }
+  }
+
+  Widget _buildAccuracyPieChart(PeriodStats stats) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final answered = stats.answeredCount;
+    final correct = stats.correctCount;
+    final wrong = answered - correct;
+    final accuracyPct = answered == 0 ? 0.0 : (stats.accuracy * 100);
+
+    if (answered == 0) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.pie_chart_outline_rounded,
+                size: 40, color: scheme.outlineVariant),
+            const SizedBox(height: 8),
+            Text(
+              '当前周期暂无答题记录',
+              style: TextStyle(
+                fontSize: 13,
+                color: scheme.onSurfaceVariant.withValues(alpha: 0.8),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final String ratingText;
+    final Color ratingColor;
+    if (accuracyPct >= 85) {
+      ratingText = '状态极佳';
+      ratingColor = Colors.teal;
+    } else if (accuracyPct >= 70) {
+      ratingText = '表现良好';
+      ratingColor = Colors.green;
+    } else if (accuracyPct >= 60) {
+      ratingText = '需要巩固';
+      ratingColor = Colors.orange;
+    } else {
+      ratingText = '强化突破';
+      ratingColor = Colors.deepOrange;
+    }
+
+    return Row(
+      children: [
+        // 环形饼图与中心正确率
+        Expanded(
+          flex: 5,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              PieChart(
+                PieChartData(
+                  sectionsSpace: wrong > 0 && correct > 0 ? 3 : 0,
+                  centerSpaceRadius: 38,
+                  sections: [
+                    if (correct > 0)
+                      PieChartSectionData(
+                        value: correct.toDouble(),
+                        title: '${accuracyPct.toStringAsFixed(0)}%',
+                        color: Colors.teal,
+                        radius: 20,
+                        titleStyle: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    if (wrong > 0)
+                      PieChartSectionData(
+                        value: wrong.toDouble(),
+                        title: '${(100 - accuracyPct).toStringAsFixed(0)}%',
+                        color: Colors.redAccent.shade400,
+                        radius: 20,
+                        titleStyle: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                  ],
+                ),
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeOutCubic,
+              ),
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '${accuracyPct.toStringAsFixed(1)}%',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: -0.5,
+                    ),
+                  ),
+                  Text(
+                    '正确率',
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 12),
+        // 右侧图例与详细统计指标
+        Expanded(
+          flex: 6,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: ratingColor.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.workspace_premium_rounded, size: 14, color: ratingColor),
+                    const SizedBox(width: 4),
+                    Text(
+                      ratingText,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: ratingColor,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 10),
+              _buildAccuracyLegendItem(
+                color: Colors.teal,
+                label: '答对题数',
+                value: '$correct 题',
+                percentage: '${accuracyPct.toStringAsFixed(1)}%',
+              ),
+              const SizedBox(height: 8),
+              _buildAccuracyLegendItem(
+                color: Colors.redAccent.shade400,
+                label: '答错题数',
+                value: '$wrong 题',
+                percentage: '${(100 - accuracyPct).toStringAsFixed(1)}%',
+              ),
+              const SizedBox(height: 8),
+              _buildAccuracyLegendItem(
+                color: scheme.primary,
+                label: '总作答数',
+                value: '$answered 题',
+                percentage: '100%',
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAccuracyLegendItem({
+    required Color color,
+    required String label,
+    required String value,
+    required String percentage,
+  }) {
+    return Row(
+      children: [
+        Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            label,
+            style: const TextStyle(fontSize: 12),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        Text(
+          value,
+          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(width: 4),
+        Text(
+          '($percentage)',
+          style: TextStyle(
+            fontSize: 10,
+            color: Theme.of(context).colorScheme.outline,
+          ),
+        ),
+      ],
     );
   }
 

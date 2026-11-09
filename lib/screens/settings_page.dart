@@ -34,6 +34,12 @@ enum _UpdateCheckState { idle, checking, hasUpdate, latest }
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
 
+  /// 获取“复习笔记时先做一次题”的设置状态（默认 false，直接看笔记自评）
+  static Future<bool> getReviewNoteWithQuestion() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_SettingsPageState.keyReviewNoteWithQuestion) ?? false;
+  }
+
   @override
   State<SettingsPage> createState() => _SettingsPageState();
 }
@@ -68,9 +74,13 @@ class _SettingsPageState extends State<SettingsPage> {
 
   // 题库智能增量同步
   bool smartBankSyncEnabled = true;
+  String spacedAlgorithm = 'sm2';
+  bool reviewNoteWithQuestion = false;
 
   static const String keyAcceptUpdate = 'accept_update';
   static const String keyAutoResume = 'autoResume';
+  static const String keySpacedAlgorithm = 'spaced_algorithm';
+  static const String keyReviewNoteWithQuestion = 'review_note_with_question';
   static const String keySyncAnswersToYkb = 'sync_answers_to_ykb';
   static const String keySyncCutToYkb = 'sync_cut_to_ykb';
   static const String keySyncNotesToYkb = 'sync_notes_to_ykb';
@@ -108,6 +118,8 @@ class _SettingsPageState extends State<SettingsPage> {
     syncYkbJitter = _prefs.getBool(keySyncYkbJitter) ?? false;
     syncYkbPacing = _prefs.getBool(keySyncYkbPacing) ?? false;
     smartBankSyncEnabled = _prefs.getBool(keySmartBankSync) ?? true;
+    spacedAlgorithm = _prefs.getString(keySpacedAlgorithm) ?? 'sm2';
+    reviewNoteWithQuestion = _prefs.getBool(keyReviewNoteWithQuestion) ?? false;
     mode = _prefs.getInt('mode') ?? 0;
     fontScale = _normalizeFontScale(_prefs.getDouble('fontScale') ?? 1.0);
     developerModeEnabled =
@@ -676,6 +688,24 @@ class _SettingsPageState extends State<SettingsPage> {
                   if (mounted) setState(() {});
                 },
               ),
+              IconTile(
+                icon: Icons.psychology_outlined,
+                label: '记忆复习调度算法',
+                value: spacedAlgorithm == 'fsrs_lite' ? '轻量化 FSRS (DSR)' : '经典 SM-2',
+                trailing: const Icon(Icons.chevron_right),
+                onTap: _showSpacedAlgorithmDialog,
+              ),
+              IconTile(
+                icon: Icons.edit_note_rounded,
+                label: '复习笔记时先做一次题',
+                trailing: Switch(
+                  value: reviewNoteWithQuestion,
+                  onChanged: (v) {
+                    setState(() => reviewNoteWithQuestion = v);
+                    _setBool(keyReviewNoteWithQuestion, v);
+                  },
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 14),
@@ -993,6 +1023,84 @@ class _SettingsPageState extends State<SettingsPage> {
         );
       },
     );
+  }
+
+  Future<void> _showSpacedAlgorithmDialog() async {
+    final selected = await showDialog<String>(
+      context: context,
+      builder: (ctx) {
+        String current = spacedAlgorithm;
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final theme = Theme.of(context);
+            final scheme = theme.colorScheme;
+
+            return AlertDialog(
+              title: const Text('记忆复习调度算法'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // ignore: deprecated_member_use
+                    RadioListTile<String>(
+                      title: const Text('经典 SM-2 算法'),
+                      subtitle: const Text('SuperMemo 经典启发式算法，规律稳定，根据简易度因子(EF)动态调整复习间隔。'),
+                      value: 'sm2',
+                      // ignore: deprecated_member_use
+                      groupValue: current,
+                      // ignore: deprecated_member_use
+                      onChanged: (val) {
+                        if (val != null) setDialogState(() => current = val);
+                      },
+                    ),
+                    const Divider(),
+                    // ignore: deprecated_member_use
+                    RadioListTile<String>(
+                      title: const Text('轻量化 FSRS 算法 (DSR模型)'),
+                      subtitle: const Text('现代科学记忆模型，基于记忆稳定性与难度双维度推演，杜绝遗忘陷阱，复习效率更优。'),
+                      value: 'fsrs_lite',
+                      // ignore: deprecated_member_use
+                      groupValue: current,
+                      // ignore: deprecated_member_use
+                      onChanged: (val) {
+                        if (val != null) setDialogState(() => current = val);
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        '提示：轻量化 FSRS 采用成熟神经记忆参数集，无需在手机本地运行耗电拟合，切换后新复习题目即刻生效。',
+                        style: TextStyle(fontSize: 11.5, color: scheme.onSurfaceVariant),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: const Text('取消'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.of(ctx).pop(current),
+                  child: const Text('保存'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (selected != null && selected != spacedAlgorithm) {
+      setState(() => spacedAlgorithm = selected);
+      await _prefs.setString(keySpacedAlgorithm, selected);
+    }
   }
 }
 

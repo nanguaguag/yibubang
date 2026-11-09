@@ -247,7 +247,7 @@ class _DailyReviewPlanDialogState extends State<DailyReviewPlanDialog> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '优先循环强化精华高频卡片，避免重复刷无意义的简单题。',
+                      '建议选择需要反复温习的收藏/笔记，不要重复刷无意义的简单题。',
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: scheme.onSurfaceVariant,
                       ),
@@ -257,10 +257,11 @@ class _DailyReviewPlanDialogState extends State<DailyReviewPlanDialog> {
                       spacing: 8,
                       runSpacing: 6,
                       children: [
-                        _buildSourceChip('错题 (重点攻克)', 'wrong', Icons.error_outline),
-                        _buildSourceChip('我的收藏 (强化难点)', 'collected', Icons.star_border),
-                        _buildSourceChip('笔记卡片 (核心速记)', 'note', Icons.edit_note_rounded),
-                        _buildSourceChip('包含未做新题', 'all', Icons.auto_awesome_outlined),
+                        _buildSourceChip('错题', 'wrong', Icons.error_outline),
+                        _buildSourceChip('收藏', 'collected', Icons.star_border),
+                        _buildSourceChip('笔记卡片', 'note', Icons.edit_note_rounded),
+                        _buildSourceChip('自制闪卡', 'flashcard', Icons.style_outlined),
+                        _buildSourceChip('未做新题', 'all', Icons.auto_awesome_outlined),
                       ],
                     ),
                     const SizedBox(height: 18),

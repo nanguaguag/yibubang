@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -202,12 +204,6 @@ class QuestionExplainView extends StatelessWidget {
     const Color orangeAccent = Color(0xFFB39D6B);
     void copySection() {
       Clipboard.setData(ClipboardData(text: analysisText));
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('$title已复制'),
-          duration: const Duration(seconds: 1),
-        ),
-      );
     }
 
     return Column(
@@ -228,11 +224,10 @@ class QuestionExplainView extends StatelessWidget {
               ),
             ),
             const Spacer(),
-            IconButton(
-              icon:
-                  const Icon(Icons.copy_rounded, size: 18, color: orangeAccent),
+            _CopyFeedbackButton(
+              text: analysisText,
               tooltip: '复制$title',
-              onPressed: copySection,
+              color: orangeAccent,
             ),
           ],
         ),
@@ -362,3 +357,66 @@ class QuestionExplainView extends StatelessWidget {
     );
   }
 }
+
+/// 复制成功后原地切换为绿色勾选图标，并在 1.5 秒后自动复原
+class _CopyFeedbackButton extends StatefulWidget {
+  final String text;
+  final String tooltip;
+  final Color color;
+
+  const _CopyFeedbackButton({
+    required this.text,
+    required this.tooltip,
+    required this.color,
+  });
+
+  @override
+  State<_CopyFeedbackButton> createState() => _CopyFeedbackButtonState();
+}
+
+class _CopyFeedbackButtonState extends State<_CopyFeedbackButton> {
+  bool _copied = false;
+  Timer? _timer;
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _handleCopy() {
+    Clipboard.setData(ClipboardData(text: widget.text));
+    _timer?.cancel();
+    setState(() => _copied = true);
+    _timer = Timer(const Duration(milliseconds: 1500), () {
+      if (mounted) {
+        setState(() => _copied = false);
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      icon: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 200),
+        child: _copied
+            ? const Icon(
+                Icons.check_rounded,
+                key: ValueKey('check'),
+                size: 18,
+                color: Colors.green,
+              )
+            : Icon(
+                Icons.copy_rounded,
+                key: const ValueKey('copy'),
+                size: 18,
+                color: widget.color,
+              ),
+      ),
+      tooltip: _copied ? '已复制' : widget.tooltip,
+      onPressed: _handleCopy,
+    );
+  }
+}
+

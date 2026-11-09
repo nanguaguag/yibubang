@@ -126,6 +126,7 @@ class DailyReviewSummary {
   final int poolWrongCount;
   final int poolCollectedCount;
   final int poolNoteCount;
+  final int poolFlashcardCount;
   final int poolLearningCount;
   final int poolMasteredCount;
 
@@ -144,6 +145,7 @@ class DailyReviewSummary {
     this.poolWrongCount = 0,
     this.poolCollectedCount = 0,
     this.poolNoteCount = 0,
+    this.poolFlashcardCount = 0,
     this.poolLearningCount = 0,
     this.poolMasteredCount = 0,
   });

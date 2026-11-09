@@ -3,17 +3,21 @@ import 'package:flutter/material.dart';
 
 import '../common/adaptive_route.dart';
 import '../common/app_shapes.dart';
+import '../models/chapter.dart';
 import '../models/daily_review_session.dart';
 import '../models/note.dart';
 import '../models/question.dart';
 import '../models/spaced_review_item.dart';
+import '../screens/question_detail_page.dart';
 import '../screens/question_detail/question_detail_controller.dart';
+import '../screens/settings_page.dart';
 import '../services/daily_review_service.dart';
 import '../services/note_service.dart';
 import '../services/spaced_repetition_engine.dart';
 import '../widgets/common/app_network_image.dart';
 import '../widgets/daily_review_celebration_dialog.dart';
 import '../widgets/daily_review_plan_dialog.dart';
+import '../widgets/flashcard_flip_card.dart';
 import '../widgets/image_view.dart';
 
 /// 百词斩风格：每日抽题与记忆曲线刷题页面
@@ -37,7 +41,7 @@ class DailyReviewPage extends StatefulWidget {
 
 class _DailyReviewPageState extends State<DailyReviewPage> {
   late final DailyReviewService _service;
-  final SpacedRepetitionEngine _engine = const SpacedRepetitionEngine();
+  SpacedRepetitionEngine _engine = const SpacedRepetitionEngine();
 
   bool _loading = true;
   String? _errorMessage;
@@ -54,6 +58,7 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
   DateTime _questionStartTime = DateTime.now();
   List<QuestionNote> _currentNotes = [];
   bool _isCramMode = false;
+  bool _reviewNoteWithQuestion = false;
 
   int _sessionNewCount = 0;
   int _sessionReviewCount = 0;
@@ -63,6 +68,12 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
   void initState() {
     super.initState();
     _service = widget.service ?? DailyReviewService();
+    SpacedRepetitionEngine.loadConfigured().then((eng) {
+      if (mounted) setState(() => _engine = eng);
+    });
+    SettingsPage.getReviewNoteWithQuestion().then((val) {
+      if (mounted) setState(() => _reviewNoteWithQuestion = val);
+    });
     if (widget.initialSession != null) {
       _applySession(widget.initialSession!);
     } else {
@@ -160,6 +171,44 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
     return _queue[_currentIndex];
   }
 
+  /// 跳转至原题目详情页面（查看完整题干、解析、全科评论与全部历史记录）
+  void _openOriginalQuestion(DailyReviewQueueItem item) {
+    final q = item.question;
+    if (q == null) return;
+    final uq = item.userQuestion ??
+        UserQuestion(
+          id: q.id,
+          chapterId: q.chapterId ?? '',
+          chapterParentId: q.chapterParentId ?? '',
+          cutQuestion: '0',
+          userAnswer: '',
+          status: 0,
+          collection: 0,
+          updatedAt: 0,
+        );
+    final chapter = Chapter(
+      id: q.chapterId ?? '',
+      name: '记忆曲线原题',
+      subjectId: q.chapterParentId ?? '',
+      correct: 0,
+      incorrect: 0,
+      total: 1,
+      identityId: q.identityId,
+    );
+    Navigator.push(
+      context,
+      adaptivePageRoute(
+        builder: (_) => QuestionDetailPage(
+          chapter: chapter,
+          questions: [q],
+          userQuestions: [uq],
+          questionIndex: 0,
+          bankId: item.bankId,
+        ),
+      ),
+    );
+  }
+
   /// 提交并进入下一题
   Future<void> _onRatingSelected(ReviewRating rating) async {
     final item = _currentItem;
@@ -217,16 +266,19 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
     }
   }
 
-  /// 斩题处理：直接标记为已斩且已完全掌握，跳过后续复习
+  /// 斩题/斩卡处理：直接标记为已斩且已完全掌握，跳过后续复习
   Future<void> _handleCutQuestion() async {
     final item = _currentItem;
     if (item == null) return;
+    final isFlashcard = item.itemType == ReviewItemType.flashcard;
 
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('熟练斩题'),
-        content: const Text('确定将本题标记为已斩吗？\n斩题后该题将自动归档为完全掌握，移出每日复习计划。'),
+        title: Text(isFlashcard ? '熟练斩卡' : '熟练斩题'),
+        content: Text(isFlashcard
+            ? '确定将本闪卡标记为已斩吗？\n斩卡后该闪卡将自动归档为完全掌握，移出每日复习计划。'
+            : '确定将本题标记为已斩吗？\n斩题后该题将自动归档为完全掌握，移出每日复习计划。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
@@ -234,7 +286,7 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
           ),
           FilledButton.tonal(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('斩掉此题'),
+            child: Text(isFlashcard ? '斩掉此卡' : '斩掉此题'),
           ),
         ],
       ),
@@ -269,14 +321,15 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final isFlashcard = _currentItem?.itemType == ReviewItemType.flashcard;
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('今日记忆卡片'),
+        title: Text(isFlashcard ? '今日闪卡记忆' : '今日记忆卡片'),
         actions: [
           if (_currentItem != null)
             IconButton(
-              tooltip: '熟练斩题',
+              tooltip: isFlashcard ? '熟练斩卡' : '熟练斩题',
               icon: const Icon(Icons.content_cut_rounded),
               onPressed: _handleCutQuestion,
             ),
@@ -331,25 +384,43 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _buildQuestionCard(context, item, question, theme, scheme),
-                const SizedBox(height: 16),
-
-                // 选项或主观题答案区
-                if (question != null && !question.isSubjective && question.option != null)
-                  _buildChoiceOptions(question, theme, scheme)
-                else
-                  _buildSubjectiveOrFlashcardContent(item, question, theme, scheme),
-
-                // 个人速记笔记展开区（作答后或翻转后优先呈现，唤醒浓缩知识点）
-                if ((_isAnswerSubmitted || _isAnswerRevealed) && _currentNotes.isNotEmpty) ...[
+                if (item.itemType == ReviewItemType.flashcard) ...[
+                  // 专属 3D 物理翻牌动效卡片
+                  FlashcardFlipCard(
+                    queueItem: item,
+                    onFlipped: (isBack) {
+                      setState(() {
+                        _isAnswerRevealed = isBack;
+                      });
+                    },
+                    onOpenOriginalQuestion: question != null
+                        ? () => _openOriginalQuestion(item)
+                        : null,
+                  ),
+                ] else ...[
+                  _buildQuestionCard(context, item, question, theme, scheme),
                   const SizedBox(height: 16),
-                  _buildNotesCard(context, theme, scheme),
-                ],
 
-                // 解析展开区
-                if (_isAnswerSubmitted || _isAnswerRevealed) ...[
-                  const SizedBox(height: 16),
-                  _buildExplanationCard(item, question, theme, scheme),
+                  // 选项或主观题/纯笔记卡片直背区
+                  if (question != null &&
+                      !question.isSubjective &&
+                      question.option != null &&
+                      (!item.isFromNote || _reviewNoteWithQuestion))
+                    _buildChoiceOptions(question, theme, scheme)
+                  else
+                    _buildSubjectiveOrFlashcardContent(item, question, theme, scheme),
+
+                  // 个人速记笔记展开区（作答后或翻转后优先呈现，唤醒浓缩知识点）
+                  if ((_isAnswerSubmitted || _isAnswerRevealed) && _currentNotes.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    _buildNotesCard(context, theme, scheme),
+                  ],
+
+                  // 解析展开区
+                  if (_isAnswerSubmitted || _isAnswerRevealed) ...[
+                    const SizedBox(height: 16),
+                    _buildExplanationCard(item, question, theme, scheme),
+                  ],
                 ],
               ],
             ),
@@ -433,7 +504,31 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
                   ],
                 ),
               ),
-              if (item?.isFromNote == true || _currentNotes.isNotEmpty) ...[
+              if (item?.itemType == ReviewItemType.flashcard) ...[
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: Colors.purple.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(AppShapes.full),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.style_rounded, size: 14, color: Colors.purple.shade700),
+                      const SizedBox(width: 4),
+                      Text(
+                        '自制闪卡',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.purple.shade700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ] else if (item?.isFromNote == true || _currentNotes.isNotEmpty) ...[
                 const SizedBox(width: 6),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -511,17 +606,43 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (question?.typeLabel != null)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Text(
-                  question!.typeLabel,
-                  style: theme.textTheme.labelMedium?.copyWith(
-                    color: scheme.primary,
-                    fontWeight: FontWeight.bold,
+            Row(
+              children: [
+                if (question?.typeLabel != null)
+                  Text(
+                    question!.typeLabel,
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: scheme.primary,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                ),
-              ),
+                const Spacer(),
+                if (question != null)
+                  InkWell(
+                    borderRadius: BorderRadius.circular(AppShapes.full),
+                    onTap: () => _openOriginalQuestion(item),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.open_in_new_rounded, size: 14, color: scheme.primary),
+                          const SizedBox(width: 4),
+                          Text(
+                            '原题详情',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: scheme.primary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
             if (publicTitle != null && publicTitle.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),
@@ -596,18 +717,73 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
           BorderSide borderSide = BorderSide(
             color: scheme.outlineVariant.withValues(alpha: 0.4),
           );
+          Color badgeColor = scheme.surfaceContainerHighest;
+          Color badgeTextColor = scheme.onSurface;
+          Widget? statusTrailing;
 
           if (_isAnswerSubmitted) {
-            if (isCorrectAnswer) {
+            if (isCorrectAnswer && isSelected) {
+              // 1. 选对：标准绿色
               tileColor = Colors.green.withValues(alpha: 0.12);
               borderSide = const BorderSide(color: Colors.green, width: 1.5);
-            } else if (isSelected && !isCorrectAnswer) {
+              badgeColor = Colors.green;
+              badgeTextColor = Colors.white;
+              statusTrailing = const Icon(Icons.check_circle, color: Colors.green, size: 20);
+            } else if (isCorrectAnswer && !isSelected) {
+              // 2. 漏选：红框警示，标注“漏选”
+              tileColor = Colors.red.withValues(alpha: 0.08);
+              borderSide = BorderSide(color: Colors.red.shade400, width: 1.5);
+              badgeColor = Colors.red.shade400;
+              badgeTextColor = Colors.white;
+              statusTrailing = Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '漏选',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.red.shade700,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Icon(Icons.check_circle_outline, color: Colors.red.shade700, size: 20),
+                ],
+              );
+            } else if (!isCorrectAnswer && isSelected) {
+              // 3. 错选：红色背景与叉号
               tileColor = Colors.red.withValues(alpha: 0.12);
               borderSide = const BorderSide(color: Colors.red, width: 1.5);
+              badgeColor = Colors.red;
+              badgeTextColor = Colors.white;
+              statusTrailing = Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '错选',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.red.shade700,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  const Icon(Icons.cancel, color: Colors.red, size: 20),
+                ],
+              );
             }
           } else if (isMulti && isSelected) {
             tileColor = scheme.primaryContainer.withValues(alpha: 0.35);
             borderSide = BorderSide(color: scheme.primary, width: 1.5);
+            badgeColor = scheme.primary;
+            badgeTextColor = scheme.onPrimary;
+            statusTrailing = Icon(Icons.check_box_rounded, color: scheme.primary, size: 20);
+          } else if (isMulti && !isSelected) {
+            statusTrailing = Icon(
+              Icons.check_box_outline_blank_rounded,
+              color: scheme.outlineVariant,
+              size: 20,
+            );
           }
 
           return Container(
@@ -648,23 +824,13 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
                       decoration: BoxDecoration(
                         shape: isMulti ? BoxShape.rectangle : BoxShape.circle,
                         borderRadius: isMulti ? BorderRadius.circular(6) : null,
-                        color: _isAnswerSubmitted && isCorrectAnswer
-                            ? Colors.green
-                            : (_isAnswerSubmitted && isSelected && !isCorrectAnswer
-                                ? Colors.red
-                                : (isSelected && !_isAnswerSubmitted
-                                    ? scheme.primary
-                                    : scheme.surfaceContainerHighest)),
+                        color: badgeColor,
                       ),
                       child: Text(
                         key,
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
-                          color: _isAnswerSubmitted && (isCorrectAnswer || isSelected)
-                              ? Colors.white
-                              : (isSelected && !_isAnswerSubmitted
-                                  ? scheme.onPrimary
-                                  : scheme.onSurface),
+                          color: badgeTextColor,
                         ),
                       ),
                     ),
@@ -678,15 +844,7 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
                         ),
                       ),
                     ),
-                    if (_isAnswerSubmitted && isCorrectAnswer)
-                      const Icon(Icons.check_circle, color: Colors.green, size: 20)
-                    else if (_isAnswerSubmitted && isSelected && !isCorrectAnswer)
-                      const Icon(Icons.cancel, color: Colors.red, size: 20)
-                    else if (isMulti && isSelected && !_isAnswerSubmitted)
-                      Icon(Icons.check_box_rounded, color: scheme.primary, size: 20)
-                    else if (isMulti && !isSelected && !_isAnswerSubmitted)
-                      Icon(Icons.check_box_outline_blank_rounded,
-                          color: scheme.outlineVariant, size: 20),
+                    if (statusTrailing != null) statusTrailing,
                   ],
                 ),
               ),
@@ -868,6 +1026,20 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
                   height: 160,
                   fit: BoxFit.contain,
                 ),
+              ),
+            ),
+          ],
+          if (question != null) ...[
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                ),
+                onPressed: () => _openOriginalQuestion(item),
+                icon: const Icon(Icons.open_in_new_rounded, size: 16),
+                label: const Text('进入原题详情（查看考点与考友笔记）'),
               ),
             ),
           ],

@@ -6,10 +6,12 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../../common/adaptive_route.dart';
+import '../../db/database_helper.dart';
 import '../../models/note.dart';
 import '../../models/question.dart';
 import '../../services/note_service.dart';
 import '../../widgets/common/app_network_image.dart';
+import '../../widgets/flashcard_edit_dialog.dart';
 import '../../widgets/image_view.dart';
 
 /// 题目笔记展示与管理组件
@@ -91,6 +93,65 @@ class QuestionNoteViewState extends State<QuestionNoteView> {
       context,
       initialContent: initialContent,
       existingNote: existingNote,
+    );
+  }
+
+  /// 一键将笔记转为闪卡（题干为 Front，笔记为 Back）
+  Future<void> _convertNoteToFlashcard(BuildContext context, QuestionNote note) async {
+    final frontText = widget.question.title ?? '';
+    final backText = note.content;
+
+    final resolved = await DatabaseHelper.resolveSubjectAndChapter(
+      subjectId: widget.question.chapterParentId,
+      chapterId: widget.question.chapterId,
+    );
+    final subject = resolved['subject'] ?? '';
+    final chapter = resolved['chapter'] ?? '';
+    final defaultTags = [
+      if (subject.isNotEmpty) subject,
+      if (chapter.isNotEmpty) chapter,
+      '笔记转化',
+    ];
+
+    if (!context.mounted) return;
+
+    FlashcardEditDialog.showAsBottomSheet(
+      context,
+      initialFront: frontText,
+      initialBack: backText,
+      questionId: widget.question.id,
+      initialTags: defaultTags,
+      restoreText: widget.question.restore,
+      explainText: widget.question.explain,
+      dialogTitle: '✨ 一键转为双面闪卡',
+    );
+  }
+
+  /// 为本题制作自制闪卡
+  Future<void> _createFlashcardFromQuestion(BuildContext context) async {
+    final frontText = widget.question.title ?? '';
+
+    final resolved = await DatabaseHelper.resolveSubjectAndChapter(
+      subjectId: widget.question.chapterParentId,
+      chapterId: widget.question.chapterId,
+    );
+    final subject = resolved['subject'] ?? '';
+    final chapter = resolved['chapter'] ?? '';
+    final defaultTags = [
+      if (subject.isNotEmpty) subject,
+      if (chapter.isNotEmpty) chapter,
+    ];
+
+    if (!context.mounted) return;
+
+    FlashcardEditDialog.showAsBottomSheet(
+      context,
+      initialFront: frontText,
+      questionId: widget.question.id,
+      initialTags: defaultTags,
+      restoreText: widget.question.restore,
+      explainText: widget.question.explain,
+      dialogTitle: '制作自制闪卡',
     );
   }
 
@@ -447,6 +508,16 @@ class QuestionNoteViewState extends State<QuestionNoteView> {
             ],
             const Spacer(),
             TextButton.icon(
+              icon: const Icon(Icons.style_outlined, size: 17),
+              label: const Text('制作闪卡'),
+              style: TextButton.styleFrom(
+                foregroundColor: theme.colorScheme.secondary,
+                visualDensity: VisualDensity.compact,
+              ),
+              onPressed: () => _createFlashcardFromQuestion(context),
+            ),
+            const SizedBox(width: 4),
+            TextButton.icon(
               icon: const Icon(Icons.add, size: 18),
               label: const Text('写笔记'),
               style: TextButton.styleFrom(
@@ -538,6 +609,33 @@ class QuestionNoteViewState extends State<QuestionNoteView> {
                                 size: 14, color: Colors.grey),
                           ),
                         const Spacer(),
+                        InkWell(
+                          borderRadius: BorderRadius.circular(8),
+                          onTap: () => _convertNoteToFlashcard(context, note),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.primaryContainer.withValues(alpha: 0.45),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.auto_awesome_rounded, size: 13, color: theme.colorScheme.primary),
+                                const SizedBox(width: 4),
+                                Text(
+                                  '一键转闪卡',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: theme.colorScheme.primary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
                         IconButton(
                           icon: const Icon(Icons.edit_outlined, size: 18),
                           visualDensity: VisualDensity.compact,

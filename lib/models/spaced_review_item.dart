@@ -409,15 +409,17 @@ class CustomFlashcard {
   final String title;
   final String front;
   final String back;
+  final String? questionId;
   final String? tags;
   final int createdAt;
   final int updatedAt;
 
   const CustomFlashcard({
     required this.id,
-    required this.title,
+    this.title = '',
     required this.front,
     required this.back,
+    this.questionId,
     this.tags,
     this.createdAt = 0,
     this.updatedAt = 0,
@@ -426,9 +428,12 @@ class CustomFlashcard {
   Map<String, dynamic> toMap() {
     return {
       'id': id,
-      'title': title,
+      'title': title.isNotEmpty
+          ? title
+          : (front.length > 30 ? '${front.substring(0, 30)}...' : front),
       'front': front,
       'back': back,
+      'question_id': questionId,
       'tags': tags,
       'created_at': createdAt,
       'updated_at': updatedAt,
@@ -441,9 +446,32 @@ class CustomFlashcard {
       title: map['title']?.toString() ?? '',
       front: map['front']?.toString() ?? '',
       back: map['back']?.toString() ?? '',
+      questionId: map['question_id']?.toString(),
       tags: map['tags']?.toString(),
       createdAt: (map['created_at'] as num?)?.toInt() ?? 0,
       updatedAt: (map['updated_at'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  CustomFlashcard copyWith({
+    String? id,
+    String? title,
+    String? front,
+    String? back,
+    String? questionId,
+    String? tags,
+    int? createdAt,
+    int? updatedAt,
+  }) {
+    return CustomFlashcard(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      front: front ?? this.front,
+      back: back ?? this.back,
+      questionId: questionId ?? this.questionId,
+      tags: tags ?? this.tags,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
     );
   }
 }

@@ -225,5 +225,41 @@ void main() {
       expect(preview[ReviewRating.good], (6 * 2.5).round()); // 15
       expect(preview[ReviewRating.easy], (6 * 2.5 * 1.3).round()); // 20
     });
+
+    test('FSRS-Lite algorithm schedules intervals using DSR stability expansion', () {
+      const fsrsEngine = SpacedRepetitionEngine(
+        algorithmType: SpacedAlgorithmType.fsrsLite,
+      );
+
+      final newItem = const SpacedReviewItem(itemId: 'fsrs_1');
+
+      // 初次学习评分 Good -> 初始间隔 3 天
+      final step1 = fsrsEngine.evaluateRating(
+        item: newItem,
+        rating: ReviewRating.good,
+        now: fixedNow,
+      );
+      expect(step1.interval, 3);
+      expect(step1.reps, 1);
+      expect(step1.state, ReviewState.review);
+
+      // 再次复习评分 Good -> 稳定性乘数递增，间隔显著延展
+      final step2 = fsrsEngine.evaluateRating(
+        item: step1,
+        rating: ReviewRating.good,
+        now: fixedNow.add(const Duration(days: 3)),
+      );
+      expect(step2.interval, greaterThan(3));
+      expect(step2.reps, 2);
+
+      // 遗忘评分 Again -> 重新回退到 1 天进入巩固阶段
+      final step3 = fsrsEngine.evaluateRating(
+        item: step2,
+        rating: ReviewRating.again,
+        now: fixedNow.add(const Duration(days: 10)),
+      );
+      expect(step3.interval, 1);
+      expect(step3.state, ReviewState.learning);
+    });
   });
 }

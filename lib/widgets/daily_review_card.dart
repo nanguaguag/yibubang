@@ -24,16 +24,41 @@ class DailyReviewCard extends StatefulWidget {
   State<DailyReviewCard> createState() => _DailyReviewCardState();
 }
 
-class _DailyReviewCardState extends State<DailyReviewCard> {
+class _DailyReviewCardState extends State<DailyReviewCard> with WidgetsBindingObserver {
   late final DailyReviewService _service;
   bool _loading = true;
   DailyReviewSummary? _summary;
+  String _lastLoadedDay = '';
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _service = widget.service ?? DailyReviewService();
+    _lastLoadedDay = _currentDayString();
     _loadSummary();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      final todayStr = _currentDayString();
+      if (todayStr != _lastLoadedDay || !_loading) {
+        _lastLoadedDay = todayStr;
+        _loadSummary();
+      }
+    }
+  }
+
+  String _currentDayString() {
+    final now = DateTime.now();
+    return '${now.year}-${now.month}-${now.day}';
   }
 
   Future<void> _loadSummary() async {
@@ -217,7 +242,7 @@ class _DailyReviewCardState extends State<DailyReviewCard> {
                   ),
                   const Spacer(),
                   Text(
-                    '已学 $totalCompleted 题',
+                    '已学 $totalCompleted 题 (新学 ${summary.completedNewToday} · 复习 ${summary.completedReviewToday})',
                     style: TextStyle(fontSize: 12, color: Colors.teal.shade700),
                   ),
                 ],
@@ -226,17 +251,18 @@ class _DailyReviewCardState extends State<DailyReviewCard> {
               Row(
                 children: [
                   Text(
-                    '今日待刷: ${summary.remainingNewCount} 新题 · ${summary.remainingDueCount} 复习',
+                    '今日总进度: $totalCompleted / $totalTarget 题',
                     style: theme.textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
+                      fontWeight: FontWeight.bold,
                       color: scheme.onSurface,
                     ),
                   ),
                   const Spacer(),
                   Text(
-                    '$totalCompleted / $totalTarget 题',
+                    '新学 ${summary.completedNewToday}/${summary.dailyNewTarget} · 复习 ${summary.completedReviewToday}/${summary.completedReviewToday + summary.remainingDueCount}',
                     style: theme.textTheme.bodySmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
+                      color: scheme.primary,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ],
@@ -250,6 +276,42 @@ class _DailyReviewCardState extends State<DailyReviewCard> {
                   backgroundColor: scheme.surfaceContainerHighest,
                   valueColor: AlwaysStoppedAnimation(scheme.primary),
                 ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
+                    decoration: BoxDecoration(
+                      color: Colors.teal.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(AppShapes.full),
+                    ),
+                    child: Text(
+                      '待学新题: ${summary.remainingNewCount} 题',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.teal.shade800,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(AppShapes.full),
+                    ),
+                    child: Text(
+                      '待到期复习: ${summary.remainingDueCount} 题',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.amber.shade900,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ],
 

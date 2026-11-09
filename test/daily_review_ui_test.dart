@@ -14,6 +14,10 @@ import 'package:yibubang/widgets/daily_review_plan_dialog.dart';
 void main() {
   group('DailyReviewPlanDialog Widget Tests', () {
     testWidgets('renders initial plan and allows selecting new targets', (tester) async {
+      tester.view.physicalSize = const Size(800, 1000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() => tester.view.resetPhysicalSize());
+
       const initialPlan = ReviewPlan(
         id: 'plan_test',
         name: '考研二战计划',
@@ -53,10 +57,12 @@ void main() {
       expect(find.text('30 题'), findsOneWidget); // new target preset
 
       // 选择新题量 30 题
+      await tester.ensureVisible(find.widgetWithText(ChoiceChip, '30 题'));
       await tester.tap(find.widgetWithText(ChoiceChip, '30 题'));
       await tester.pumpAndSettle();
 
       // 点击保存
+      await tester.ensureVisible(find.text('保存计划'));
       await tester.tap(find.text('保存计划'));
       await tester.pumpAndSettle();
 
@@ -129,7 +135,8 @@ void main() {
 
       expect(find.text('口腔每日计划'), findsOneWidget);
       expect(find.text('已连续打卡 3 天'), findsOneWidget);
-      expect(find.text('今日待刷: 15 新题 · 10 复习'), findsOneWidget);
+      expect(find.text('待学新题: 15 题'), findsOneWidget);
+      expect(find.text('待到期复习: 10 题'), findsOneWidget);
       expect(find.text('开始今日打卡'), findsOneWidget);
     });
 
@@ -281,10 +288,92 @@ void main() {
       expect(find.text('已连续打卡 4 天'), findsOneWidget);
       expect(find.text('抽题范围: 错题 · 收藏 · 笔记 | 覆盖 2 门课程'), findsOneWidget);
       expect(find.text('记忆精粹卡片池'), findsOneWidget);
+      expect(find.text('闪卡卡包'), findsOneWidget);
+      expect(find.text('自制闪卡'), findsOneWidget);
       expect(find.text('42'), findsOneWidget); // 错题攻克
       expect(find.text('19'), findsOneWidget); // 星标收藏
       expect(find.text('未来 7 天到期预测'), findsOneWidget);
       expect(find.text('开始今日打卡'), findsOneWidget);
+    });
+
+    testWidgets('reviews flashcard with 3D flip card and self-eval rating bar', (tester) async {
+      const plan = ReviewPlan(
+        id: 'plan_flashcard',
+        name: '闪卡自测计划',
+        targetType: 'all',
+        dailyNewTarget: 10,
+        dailyReviewLimit: 20,
+      );
+
+      final flashcard = const CustomFlashcard(
+        id: 'fc_pharmacology_1',
+        title: '利多卡因抗心律失常机制',
+        front: '简述利多卡因治疗室性心律失常的作用靶点与机制。',
+        back: '抑制钠通道，降低自律性，缩短动作电位时程(APD)及有效不应期(ERP)。',
+        tags: '药理学,心血管',
+      );
+
+      final queueItem = DailyReviewQueueItem(
+        questionId: flashcard.id,
+        itemType: ReviewItemType.flashcard,
+        isNew: true,
+        customFlashcard: flashcard,
+      );
+
+      final session = DailyReviewSession(
+        plan: plan,
+        date: DateTime.now(),
+        dueQueue: [],
+        newQueue: [queueItem],
+      );
+
+      final fakeService = _FakeDailyReviewService(session: session);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: DailyReviewPage(
+            plan: plan,
+            service: fakeService,
+            initialSession: session,
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      // 1. 验证闪卡卡片正面渲染
+      expect(find.text('今日闪卡记忆'), findsOneWidget);
+      expect(find.text('闪卡 · 正面'), findsOneWidget);
+      expect(find.text('自制闪卡'), findsOneWidget);
+      expect(find.text(flashcard.front), findsOneWidget);
+      expect(find.text('轻触卡片 3D 翻转至背面查看解析 ✨'), findsOneWidget);
+
+      // 自评按钮在未翻转前不应出现
+      expect(find.text('良好'), findsNothing);
+
+      // 2. 点击卡片进行 3D 物理翻转
+      await tester.tap(find.text(flashcard.front));
+      await tester.pumpAndSettle();
+
+      // 3. 翻转至背面：展示背面答案及滑出自评按钮
+      expect(find.text('闪卡 · 背面 (答案与解析)'), findsOneWidget);
+      expect(find.text(flashcard.back), findsOneWidget);
+
+      expect(find.text('重来'), findsOneWidget);
+      expect(find.text('困难'), findsOneWidget);
+      expect(find.text('良好'), findsOneWidget);
+      expect(find.text('简单'), findsOneWidget);
+
+      // 4. 用户点击 "良好" 自评评级
+      await tester.tap(find.text('良好'));
+      await tester.pumpAndSettle();
+
+      // 5. 校验 Service 提交结果
+      expect(fakeService.lastSubmittedQuestionId, 'fc_pharmacology_1');
+      expect(fakeService.lastSubmittedRating, ReviewRating.good);
+
+      // 6. 验证完成打卡弹窗
+      expect(find.text('今日计划打卡成功！'), findsOneWidget);
     });
   });
 }

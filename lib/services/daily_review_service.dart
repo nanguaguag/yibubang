@@ -148,23 +148,27 @@ class DailyReviewService {
     );
     await _spacedRepo.saveItem(item, executor);
 
-    // 2. 更新用户库为已斩
     final userDb = executor ?? await _userDbHelper.database;
-    await userDb.rawInsert('''
-      INSERT INTO Question (id, cut_question, status, updated_at)
-      VALUES (?, '1', 1, ?)
-      ON CONFLICT(id) DO UPDATE SET
-        cut_question = '1',
-        status = 1,
-        updated_at = excluded.updated_at
-    ''', [questionId, currentTime.millisecondsSinceEpoch]);
+    final isFlashcard = item.itemType == ReviewItemType.flashcard;
+
+    if (!isFlashcard) {
+      // 2. 更新用户库为已斩
+      await userDb.rawInsert('''
+        INSERT INTO Question (id, cut_question, status, updated_at)
+        VALUES (?, '1', 1, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          cut_question = '1',
+          status = 1,
+          updated_at = excluded.updated_at
+      ''', [questionId, currentTime.millisecondsSinceEpoch]);
+    }
 
     // 3. 记录刷题流水到 Activities
     final activityId = 'cut_${currentTime.millisecondsSinceEpoch}_$questionId';
     await userDb.insert('Activities', {
       'id': activityId,
-      'title': '熟练斩题',
-      'description': '在记忆复习中彻底斩除该题',
+      'title': isFlashcard ? '熟练斩卡' : '熟练斩题',
+      'description': isFlashcard ? '在记忆复习中彻底斩除该闪卡' : '在记忆复习中彻底斩除该题',
       'timestamp': currentTime.millisecondsSinceEpoch,
       'bank_id': bankId,
       'question_id': questionId,
@@ -201,31 +205,50 @@ class DailyReviewService {
     );
     await _spacedRepo.saveItem(updatedItem, executor);
 
+    final isFlashcard = item.itemType == ReviewItemType.flashcard;
+
     // 3. 同步写入用户库作答记录与流水历史 (Activities)
     final userDb = executor ?? await _userDbHelper.database;
     final isRight = rating != ReviewRating.again ? '1' : '0';
     final currentStatus = rating != ReviewRating.again ? 1 : 2;
 
-    // 更新或补入 user_data.Question
-    await userDb.rawInsert('''
-      INSERT INTO Question (id, user_answer, status, cut_question, updated_at)
-      VALUES (?, ?, ?, '0', ?)
-      ON CONFLICT(id) DO UPDATE SET
-        user_answer = excluded.user_answer,
-        status = excluded.status,
-        updated_at = excluded.updated_at
-    ''', [
-      questionId,
-      userAnswer ?? (rating != ReviewRating.again ? 'PASS' : 'FAIL'),
-      currentStatus,
-      currentTime.millisecondsSinceEpoch,
-    ]);
+    // 仅针对题库题目（非自制闪卡）更新 user_data.Question，纯背卡片自评不污染原题作答记录
+    if (!isFlashcard) {
+      if (userAnswer != null && userAnswer.isNotEmpty) {
+        await userDb.rawInsert('''
+          INSERT INTO Question (id, user_answer, status, cut_question, updated_at)
+          VALUES (?, ?, ?, '0', ?)
+          ON CONFLICT(id) DO UPDATE SET
+            user_answer = excluded.user_answer,
+            status = excluded.status,
+            updated_at = excluded.updated_at
+        ''', [
+          questionId,
+          userAnswer,
+          currentStatus,
+          currentTime.millisecondsSinceEpoch,
+        ]);
+      } else {
+        await userDb.rawInsert('''
+          INSERT INTO Question (id, cut_question, updated_at)
+          VALUES (?, '0', ?)
+          ON CONFLICT(id) DO UPDATE SET
+            updated_at = excluded.updated_at
+        ''', [
+          questionId,
+          currentTime.millisecondsSinceEpoch,
+        ]);
+      }
+    }
 
     // 记录刷题流水到 Activities
     final activityId = 'rev_${currentTime.millisecondsSinceEpoch}_$questionId';
+    final activityTitle = isFlashcard
+        ? '闪卡复习'
+        : (userAnswer != null ? '记忆曲线复习' : '记忆卡片复习');
     await userDb.insert('Activities', {
       'id': activityId,
-      'title': '记忆曲线复习',
+      'title': activityTitle,
       'description': '评级: ${rating.name.toUpperCase()} (间隔: ${updatedItem.interval}天)',
       'timestamp': currentTime.millisecondsSinceEpoch,
       'bank_id': bankId,
@@ -246,17 +269,20 @@ class DailyReviewService {
     final currentTime = now ?? DateTime.now();
     final todayStart = DateTime(currentTime.year, currentTime.month, currentTime.day)
         .millisecondsSinceEpoch;
+    final todayEnd = todayStart + 86400000 - 1;
 
     final plan = customPlan ?? await _spacedRepo.getOrCreateActivePlan(executor);
 
     final completedNew = await _countCompletedToday(
       todayStart: todayStart,
+      todayEnd: todayEnd,
       isNew: true,
       planId: plan.id,
       executor: executor,
     );
     final completedReview = await _countCompletedToday(
       todayStart: todayStart,
+      todayEnd: todayEnd,
       isNew: false,
       planId: plan.id,
       executor: executor,
@@ -291,6 +317,7 @@ class DailyReviewService {
       userDb: userDb,
       coveredSubjects: coveredSubjects,
     );
+    final poolFlashcard = await _countFlashcardPool(userDb: userDb);
     final poolLearning = await _countSpacedItemState(
       userDb: userDb,
       state: ReviewState.learning.value,
@@ -302,6 +329,8 @@ class DailyReviewService {
       coveredSubjects: coveredSubjects,
     );
 
+    final streak = await _calculateStreakDays(userDb, currentTime);
+
     return DailyReviewSummary(
       planId: plan.id,
       planName: plan.name,
@@ -311,15 +340,71 @@ class DailyReviewService {
       completedReviewToday: completedReview,
       remainingDueCount: remainingDue,
       remainingNewCount: remainingNew,
-      streakDays: 1,
+      streakDays: streak,
       sourceTypes: plan.sourceTypes,
       coveredSubjects: plan.coveredSubjects,
       poolWrongCount: poolWrong,
       poolCollectedCount: poolCollected,
       poolNoteCount: poolNote,
+      poolFlashcardCount: poolFlashcard,
       poolLearningCount: poolLearning,
       poolMasteredCount: poolMastered,
     );
+  }
+
+  /// 统计自制闪卡总量
+  Future<int> _countFlashcardPool({required DatabaseExecutor userDb}) async {
+    try {
+      final rows = await userDb.rawQuery('SELECT COUNT(*) as count FROM CustomFlashcards');
+      return Sqflite.firstIntValue(rows) ?? 0;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  /// 真实计算连续打卡天数（支持跨天平滑过渡，昨天打卡保持连续性，断签归零）
+  Future<int> _calculateStreakDays(DatabaseExecutor userDb, DateTime now) async {
+    try {
+      final rows = await userDb.rawQuery('''
+        SELECT DISTINCT strftime('%Y-%m-%d', timestamp / 1000, 'unixepoch', 'localtime') as day
+        FROM Activities
+        WHERE title LIKE '%复习%' OR title LIKE '%斩题%' OR title LIKE '%打卡%' OR duration > 0 OR is_right IS NOT NULL
+        ORDER BY day DESC
+        LIMIT 60
+      ''');
+      if (rows.isEmpty) return 0;
+
+      final todayStr = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+      final yesterday = now.subtract(const Duration(days: 1));
+      final yesterdayStr = '${yesterday.year}-${yesterday.month.toString().padLeft(2, '0')}-${yesterday.day.toString().padLeft(2, '0')}';
+
+      final days = rows.map((r) => r['day']?.toString() ?? '').where((d) => d.isNotEmpty).toList();
+      if (days.isEmpty) return 0;
+
+      int streak = 0;
+      DateTime checkDate;
+
+      if (days.contains(todayStr)) {
+        checkDate = now;
+      } else if (days.contains(yesterdayStr)) {
+        checkDate = yesterday;
+      } else {
+        return 0;
+      }
+
+      while (true) {
+        final dateStr = '${checkDate.year}-${checkDate.month.toString().padLeft(2, '0')}-${checkDate.day.toString().padLeft(2, '0')}';
+        if (days.contains(dateStr)) {
+          streak++;
+          checkDate = checkDate.subtract(const Duration(days: 1));
+        } else {
+          break;
+        }
+      }
+      return streak;
+    } catch (_) {
+      return 1;
+    }
   }
 
   // -------------------------------------------------------------
@@ -329,17 +414,20 @@ class DailyReviewService {
   /// 统计今日已完成的新题或复习题数量
   Future<int> _countCompletedToday({
     required int todayStart,
+    int? todayEnd,
     required bool isNew,
     required String planId,
     DatabaseExecutor? executor,
   }) async {
     final userDb = executor ?? await _userDbHelper.database;
+    final end = todayEnd ?? (todayStart + 86400000 - 1);
     final whereParts = <String>[
       'last_review_at >= ?',
+      'last_review_at <= ?',
       'state != ?',
       isNew ? 'lapses = 0 AND reps = 1' : '(reps > 1 OR lapses > 0)',
     ];
-    final whereArgs = <dynamic>[todayStart, ReviewState.new_.value];
+    final whereArgs = <dynamic>[todayStart, end, ReviewState.new_.value];
 
     if (planId.isNotEmpty) {
       whereParts.add('(plan_id = ? OR plan_id IS NULL)');
@@ -371,6 +459,13 @@ class DailyReviewService {
     final userDb = executor ?? await _userDbHelper.database;
     final itemIds = rawDueItems.map((e) => e.itemId).toList();
 
+    // 批量拉取闪卡实体
+    final flashcardIds = rawDueItems
+        .where((e) => e.itemType == ReviewItemType.flashcard)
+        .map((e) => e.itemId)
+        .toList();
+    final flashcardsMap = await _spacedRepo.getFlashcardsByIds(flashcardIds, userDb);
+
     // 检查已斩题目与所属课程
     final userQuestionsMap = await _loadUserQuestionsByIds(itemIds, executor: userDb);
 
@@ -391,6 +486,19 @@ class DailyReviewService {
 
     final validDueItems = <SpacedReviewItem>[];
     for (final it in rawDueItems) {
+      if (it.itemType == ReviewItemType.flashcard) {
+        final fc = flashcardsMap[it.itemId];
+        if (fc == null) continue;
+
+        if (needFilterSource && !sourceTypes.contains('flashcard')) {
+          continue;
+        }
+
+        validDueItems.add(it);
+        if (validDueItems.length >= limit) break;
+        continue;
+      }
+
       final uq = userQuestionsMap[it.itemId];
       if (uq != null && uq.isCut) {
         // 若已斩，自动归档为 mastered
@@ -426,23 +534,42 @@ class DailyReviewService {
 
     if (validDueItems.isEmpty) return [];
 
-    // 加载 Question 实体
+    // 加载 Question 实体（包含关联原题）
+    final targetQuestionIds = <String>{};
+    for (final item in validDueItems) {
+      if (item.itemType != ReviewItemType.flashcard) {
+        targetQuestionIds.add(item.itemId);
+      } else {
+        final fc = flashcardsMap[item.itemId];
+        if (fc?.questionId != null && fc!.questionId!.isNotEmpty) {
+          targetQuestionIds.add(fc.questionId!);
+        }
+      }
+    }
+
     final questionsMap = await _loadQuestionsByIds(
-      validDueItems.map((e) => e.itemId).toList(),
+      targetQuestionIds.toList(),
       plan: plan,
       executor: executor,
     );
 
     return validDueItems.map((rev) {
       final qId = rev.itemId;
+      final isFc = rev.itemType == ReviewItemType.flashcard;
+      final fc = isFc ? flashcardsMap[qId] : null;
+      final linkedQuestion = isFc
+          ? (fc?.questionId != null ? questionsMap[fc!.questionId] : null)
+          : questionsMap[qId];
+
       return DailyReviewQueueItem(
         questionId: qId,
         itemType: rev.itemType,
         isNew: false,
-        question: questionsMap[qId],
+        question: linkedQuestion,
         userQuestion: userQuestionsMap[qId],
         reviewItem: rev,
         bankId: plan.bankId,
+        customFlashcard: fc,
         isFromNote: noteQuestionIds.contains(qId),
       );
     }).toList();
@@ -526,7 +653,21 @@ class DailyReviewService {
       } catch (_) {}
     }
 
-    // 4. 从题库未做新题抽选（若勾选了 'all'）
+    // 4. 从自制闪卡抽选 (sourceTypes.contains('flashcard'))
+    if (sourceTypes.contains('flashcard')) {
+      try {
+        final rows = await userDb.query(
+          'CustomFlashcards',
+          columns: ['id'],
+        );
+        for (final r in rows) {
+          final id = r['id']?.toString();
+          if (id != null && id.isNotEmpty) candidateIds.add(id);
+        }
+      } catch (_) {}
+    }
+
+    // 5. 从题库未做新题抽选（若勾选了 'all'）
     if (sourceTypes.contains('all')) {
       final bankNewIds = await _queryBankNewQuestionIds(
         plan: plan,
@@ -539,7 +680,7 @@ class DailyReviewService {
 
     if (candidateIds.isEmpty) return [];
 
-    // 5. 过滤掉已斩题目与已在记忆曲线中（state != 0）的题目
+    // 6. 过滤掉已斩题目与已在记忆曲线中（state != 0）的题目
     // 先随机打乱候选池，分批（每批 100 项）检测，凑满 count 个可用新题即可停止，
     // 杜绝万级候选池全量 IN 语句超出 SQLite 999 变量上限
     final candidateList = candidateIds.toList()..shuffle();
@@ -576,8 +717,24 @@ class DailyReviewService {
 
     if (selectedIds.isEmpty) return [];
 
+    // 批量加载闪卡实体
+    final flashcardsMap = await _spacedRepo.getFlashcardsByIds(selectedIds, userDb);
+
+    // 收集需要加载的题目 ID（包括普通题和闪卡关联题）
+    final questionIdsToLoad = <String>{};
+    for (final id in selectedIds) {
+      final fc = flashcardsMap[id];
+      if (fc != null) {
+        if (fc.questionId != null && fc.questionId!.isNotEmpty) {
+          questionIdsToLoad.add(fc.questionId!);
+        }
+      } else {
+        questionIdsToLoad.add(id);
+      }
+    }
+
     // 批量加载题目实体与用户记录
-    final questionsMap = await _loadQuestionsByIds(selectedIds, plan: plan, executor: userDb);
+    final questionsMap = await _loadQuestionsByIds(questionIdsToLoad.toList(), plan: plan, executor: userDb);
     final userQuestionsMap = await _loadUserQuestionsByIds(selectedIds, executor: userDb);
 
     // 查询抽取的题目中哪些包含笔记
@@ -593,19 +750,27 @@ class DailyReviewService {
     } catch (_) {}
 
     return selectedIds.map((id) {
+      final fc = flashcardsMap[id];
+      final isFc = fc != null;
       final initialItem = SpacedReviewItem(
         itemId: id,
         planId: plan.id,
+        itemType: isFc ? ReviewItemType.flashcard : ReviewItemType.question,
         state: ReviewState.new_,
       );
+      final linkedQuestion = isFc
+          ? (fc.questionId != null ? questionsMap[fc.questionId] : null)
+          : questionsMap[id];
+
       return DailyReviewQueueItem(
         questionId: id,
-        itemType: ReviewItemType.question,
+        itemType: isFc ? ReviewItemType.flashcard : ReviewItemType.question,
         isNew: true,
-        question: questionsMap[id],
+        question: linkedQuestion,
         userQuestion: userQuestionsMap[id],
         reviewItem: initialItem,
         bankId: plan.bankId,
+        customFlashcard: fc,
         isFromNote: noteQuestionIds.contains(id),
       );
     }).toList();
@@ -639,6 +804,14 @@ class DailyReviewService {
 
     final cramItems = rows.map((r) => SpacedReviewItem.fromMap(r)).toList();
     final itemIds = cramItems.map((e) => e.itemId).toList();
+
+    // 批量加载闪卡实体
+    final flashcardIds = cramItems
+        .where((e) => e.itemType == ReviewItemType.flashcard)
+        .map((e) => e.itemId)
+        .toList();
+    final flashcardsMap = await _spacedRepo.getFlashcardsByIds(flashcardIds, userDb);
+
     final userQuestionsMap = await _loadUserQuestionsByIds(itemIds, executor: userDb);
 
     // 查询笔记
@@ -655,6 +828,11 @@ class DailyReviewService {
 
     final validItems = <SpacedReviewItem>[];
     for (final it in cramItems) {
+      if (it.itemType == ReviewItemType.flashcard) {
+        validItems.add(it);
+        if (validItems.length >= limit) break;
+        continue;
+      }
       final uq = userQuestionsMap[it.itemId];
       if (uq != null && uq.isCut) continue;
       if (plan.coveredSubjects.isNotEmpty) {
@@ -669,22 +847,41 @@ class DailyReviewService {
 
     if (validItems.isEmpty) return [];
 
+    final targetQuestionIds = <String>{};
+    for (final item in validItems) {
+      if (item.itemType != ReviewItemType.flashcard) {
+        targetQuestionIds.add(item.itemId);
+      } else {
+        final fc = flashcardsMap[item.itemId];
+        if (fc?.questionId != null && fc!.questionId!.isNotEmpty) {
+          targetQuestionIds.add(fc.questionId!);
+        }
+      }
+    }
+
     final questionsMap = await _loadQuestionsByIds(
-      validItems.map((e) => e.itemId).toList(),
+      targetQuestionIds.toList(),
       plan: plan,
       executor: executor,
     );
 
     return validItems.map((rev) {
       final qId = rev.itemId;
+      final isFc = rev.itemType == ReviewItemType.flashcard;
+      final fc = isFc ? flashcardsMap[qId] : null;
+      final linkedQuestion = isFc
+          ? (fc?.questionId != null ? questionsMap[fc!.questionId] : null)
+          : questionsMap[qId];
+
       return DailyReviewQueueItem(
         questionId: qId,
         itemType: rev.itemType,
         isNew: false,
-        question: questionsMap[qId],
+        question: linkedQuestion,
         userQuestion: userQuestionsMap[qId],
         reviewItem: rev,
         bankId: plan.bankId,
+        customFlashcard: fc,
         isFromNote: noteQuestionIds.contains(qId),
       );
     }).toList();

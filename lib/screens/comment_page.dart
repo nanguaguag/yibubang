@@ -12,6 +12,8 @@ import '../models/note.dart';
 import '../common/request.dart';
 import '../db/settings.dart';
 import '../services/note_service.dart';
+import '../widgets/flashcard_edit_dialog.dart';
+import '../db/database_helper.dart';
 
 import 'my_page.dart';
 import 'comment_reply_page.dart';
@@ -632,6 +634,37 @@ class _CommentItemState extends State<CommentItem> {
                     const SnackBar(content: Text('已成功将评论保存为笔记！')),
                   );
                 }
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.style_outlined),
+              title: const Text('制作成闪卡'),
+              onTap: () async {
+                Navigator.pop(ctx);
+                final resolved = await DatabaseHelper.resolveSubjectAndChapter(
+                  subjectId: widget.question.chapterParentId,
+                  chapterId: widget.question.chapterId,
+                );
+                final subject = resolved['subject'] ?? '';
+                final chapter = resolved['chapter'] ?? '';
+                final defaultTags = [
+                  if (subject.isNotEmpty) subject,
+                  if (chapter.isNotEmpty) chapter,
+                  '评论精选',
+                ];
+
+                if (!context.mounted) return;
+
+                FlashcardEditDialog.showAsBottomSheet(
+                  context,
+                  initialFront: widget.question.title ?? '',
+                  initialBack: comment.content,
+                  questionId: widget.question.id,
+                  initialTags: defaultTags,
+                  restoreText: widget.question.restore,
+                  explainText: widget.question.explain,
+                  dialogTitle: '💬 评论制作闪卡',
+                );
               },
             ),
             const SizedBox(height: 20),

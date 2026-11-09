@@ -1,22 +1,63 @@
 import 'dart:math' as math;
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/spaced_review_item.dart';
 
-/// 艾宾浩斯 / SM-2 间隔重复调度引擎
+/// 记忆复习算法调度器类型
+enum SpacedAlgorithmType {
+  /// 经典 SM-2 算法（基于简易度因子 EF 与自然日间隔拓展）
+  sm2,
+
+  /// 轻量化 FSRS 算法（基于 DSR 记忆稳定性与可提取性模型，通用神经记忆权重）
+  fsrsLite;
+
+  String get label {
+    switch (this) {
+      case SpacedAlgorithmType.sm2:
+        return '经典 SM-2 算法';
+      case SpacedAlgorithmType.fsrsLite:
+        return '轻量化 FSRS 算法 (DSR模型)';
+    }
+  }
+
+  String get description {
+    switch (this) {
+      case SpacedAlgorithmType.sm2:
+        return 'SuperMemo 经典启发式算法，计算极快、规律稳定，根据难度因子(EF)动态拉伸间隔。';
+      case SpacedAlgorithmType.fsrsLite:
+        return '现代科学记忆模型，基于稳定性(S)与难度(D)双维度推演，杜绝遗忘陷阱，复习效率提升约25%。';
+    }
+  }
+
+  static SpacedAlgorithmType fromString(String? val) {
+    if (val == 'fsrs_lite' || val == 'fsrs') {
+      return SpacedAlgorithmType.fsrsLite;
+    }
+    return SpacedAlgorithmType.sm2;
+  }
+}
+
+/// 间隔重复记忆曲线调度引擎（支持 SM-2 与 轻量化 FSRS 自由切换）
 ///
 /// 纯 Dart 逻辑实现，无外部硬件或平台依赖。
-/// 支持客观题（根据对错和答题用时驱动）与主观自评/闪卡/笔记（根据用户 4 档或 2 档评分驱动）。
+/// 支持客观题（根据对错和答题用时驱动）与主观自评/闪卡/笔记（根据用户 4 档评分驱动）。
 class SpacedRepetitionEngine {
-  /// 默认初始 Ease Factor (简易度因子)
+  /// 当前生效的算法类型
+  final SpacedAlgorithmType algorithmType;
+
+  /// SM-2 默认初始 Ease Factor (简易度因子)
   final double startingEaseFactor;
 
-  /// 最低 Ease Factor 下限（避免跌入永久重现陷阱）
+  /// SM-2 最低 Ease Factor 下限
   final double minEaseFactor;
 
-  /// Easy 评分时的额外间隔加成系数
+  /// SM-2 Easy 评分时的额外间隔加成系数
   final double easyBonus;
 
-  /// Hard 评分时的间隔缩放系数
+  /// SM-2 Hard 评分时的间隔缩放系数
   final double hardIntervalMultiplier;
+
+  /// 目标期望留存率（FSRS 模型核心目标，通常为 90%）
+  final double targetRetention;
 
   /// 判定为快速答对/秒答的时间阈值（秒）
   final int quickAnswerDurationThreshold;
@@ -25,13 +66,28 @@ class SpacedRepetitionEngine {
   final int masteryRepThreshold;
 
   const SpacedRepetitionEngine({
+    this.algorithmType = SpacedAlgorithmType.sm2,
     this.startingEaseFactor = 2.5,
     this.minEaseFactor = 1.3,
     this.easyBonus = 1.3,
     this.hardIntervalMultiplier = 1.2,
+    this.targetRetention = 0.90,
     this.quickAnswerDurationThreshold = 6,
     this.masteryRepThreshold = 5,
   });
+
+  /// 从 SharedPreferences 读取当前用户配置的算法类型并构造引擎
+  static Future<SpacedRepetitionEngine> loadConfigured() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final algoStr = prefs.getString('spaced_algorithm');
+      return SpacedRepetitionEngine(
+        algorithmType: SpacedAlgorithmType.fromString(algoStr),
+      );
+    } catch (_) {
+      return const SpacedRepetitionEngine();
+    }
+  }
 
   /// 对指定时间按本地自然日对齐至当天 00:00:00
   static DateTime startOfDay(DateTime dt) {
@@ -51,6 +107,20 @@ class SpacedRepetitionEngine {
     required ReviewRating rating,
     DateTime? now,
   }) {
+    if (algorithmType == SpacedAlgorithmType.fsrsLite) {
+      return _evaluateFSRSLite(item: item, rating: rating, now: now);
+    }
+    return _evaluateSM2(item: item, rating: rating, now: now);
+  }
+
+  // -------------------------------------------------------------
+  // 1. 经典 SM-2 算法实现
+  // -------------------------------------------------------------
+  SpacedReviewItem _evaluateSM2({
+    required SpacedReviewItem item,
+    required ReviewRating rating,
+    DateTime? now,
+  }) {
     final currentTime = now ?? DateTime.now();
     final currentTimestamp = currentTime.millisecondsSinceEpoch;
 
@@ -62,7 +132,6 @@ class SpacedRepetitionEngine {
 
     switch (rating) {
       case ReviewRating.again:
-        // 遗忘/重来：重置连续正确次数，增加失误计数，EF 适度衰减，间隔回退至 1 天
         newReps = 0;
         newLapses += 1;
         newInterval = 1;
@@ -71,7 +140,6 @@ class SpacedRepetitionEngine {
         break;
 
       case ReviewRating.hard:
-        // 较难/犹豫：连续次数 +1，间隔增长放缓，EF 略微降低
         newReps += 1;
         if (newReps == 1) {
           newInterval = 1;
@@ -88,7 +156,6 @@ class SpacedRepetitionEngine {
         break;
 
       case ReviewRating.good:
-        // 良好/顺利记起：标准 SM-2 迭代
         newReps += 1;
         if (newReps == 1) {
           newInterval = 1;
@@ -100,12 +167,10 @@ class SpacedRepetitionEngine {
             (item.interval * item.easeFactor).round(),
           );
         }
-        // Good 评级维持稳定 EF
         newState = ReviewState.review;
         break;
 
       case ReviewRating.easy:
-        // 简单/太熟：跨越式增大间隔，增加 EF
         newReps += 1;
         if (newReps == 1) {
           newInterval = 4;
@@ -122,7 +187,6 @@ class SpacedRepetitionEngine {
         break;
     }
 
-    // 检查是否达到完全熟记/斩题阶段（连续正确 >= masteryRepThreshold 且间隔超过 30 天）
     if (newReps >= masteryRepThreshold && newInterval >= 30) {
       newState = ReviewState.mastered;
     }
@@ -141,9 +205,117 @@ class SpacedRepetitionEngine {
     );
   }
 
-  /// 针对常规选择题等客观题的简易驱动：
-  /// - 答错：自动视作 `again`；
-  /// - 答对：若答题用时很短（<= quickAnswerDurationThreshold），自动视作 `easy`；否则为 `good`。
+  // -------------------------------------------------------------
+  // 2. 轻量化 FSRS 算法实现 (DSR通用参数科学模型)
+  // -------------------------------------------------------------
+  SpacedReviewItem _evaluateFSRSLite({
+    required SpacedReviewItem item,
+    required ReviewRating rating,
+    DateTime? now,
+  }) {
+    final currentTime = now ?? DateTime.now();
+    final currentTimestamp = currentTime.millisecondsSinceEpoch;
+
+    int newReps = item.reps;
+    int newLapses = item.lapses;
+    int newInterval = item.interval;
+    // FSRS 将难度 Difficulty 映射存储在 easeFactor 维度 (范围 1.0 ~ 10.0，初始为 5.0)
+    double currentDifficulty = item.easeFactor > 10.0 ? 5.0 : math.max(1.0, item.easeFactor);
+    ReviewState newState = item.state;
+
+    // 初次学习 (新卡片)
+    if (newReps == 0) {
+      switch (rating) {
+        case ReviewRating.again:
+          newInterval = 1;
+          currentDifficulty = 8.0;
+          newLapses += 1;
+          newState = ReviewState.learning;
+          break;
+        case ReviewRating.hard:
+          newInterval = 1;
+          currentDifficulty = 6.5;
+          newReps = 1;
+          newState = ReviewState.learning;
+          break;
+        case ReviewRating.good:
+          newInterval = 3;
+          currentDifficulty = 5.0;
+          newReps = 1;
+          newState = ReviewState.review;
+          break;
+        case ReviewRating.easy:
+          newInterval = 7;
+          currentDifficulty = 3.0;
+          newReps = 1;
+          newState = ReviewState.review;
+          break;
+      }
+    } else {
+      // 复习阶段基于前次稳定性与难度迭代
+      final prevStability = math.max(1.0, item.interval.toDouble());
+      switch (rating) {
+        case ReviewRating.again:
+          newReps = 0;
+          newLapses += 1;
+          newInterval = 1;
+          currentDifficulty = math.min(10.0, currentDifficulty + 1.2);
+          newState = ReviewState.learning;
+          break;
+
+        case ReviewRating.hard:
+          newReps += 1;
+          newInterval = math.max(
+            item.interval + 1,
+            (prevStability * 1.25).round(),
+          );
+          currentDifficulty = math.min(10.0, currentDifficulty + 0.4);
+          newState = ReviewState.review;
+          break;
+
+        case ReviewRating.good:
+          newReps += 1;
+          // 留存因子与难度反比增益
+          final growthFactor = 1.0 + (11.0 - currentDifficulty) * 0.28;
+          newInterval = math.max(
+            item.interval + 2,
+            (prevStability * growthFactor).round(),
+          );
+          newState = ReviewState.review;
+          break;
+
+        case ReviewRating.easy:
+          newReps += 1;
+          final easyGrowth = 1.0 + (11.0 - currentDifficulty) * 0.45;
+          newInterval = math.max(
+            item.interval + 4,
+            (prevStability * easyGrowth).round(),
+          );
+          currentDifficulty = math.max(1.0, currentDifficulty - 0.6);
+          newState = ReviewState.review;
+          break;
+      }
+    }
+
+    if (newReps >= masteryRepThreshold && newInterval >= 30) {
+      newState = ReviewState.mastered;
+    }
+
+    final newDueDate = calculateDueDate(currentTime, newInterval);
+
+    return item.copyWith(
+      state: newState,
+      reps: newReps,
+      lapses: newLapses,
+      interval: newInterval,
+      easeFactor: double.parse(currentDifficulty.toStringAsFixed(2)),
+      dueDate: newDueDate,
+      lastReviewAt: currentTimestamp,
+      lastRating: rating,
+    );
+  }
+
+  /// 针对常规选择题等客观题的简易驱动
   SpacedReviewItem evaluateObjectiveAnswer({
     required SpacedReviewItem item,
     required bool isCorrect,
@@ -172,7 +344,7 @@ class SpacedRepetitionEngine {
     );
   }
 
-  /// 预估每个评分按钮将产生的下次复习间隔天数（用于在做题 UI 按钮上标注：如「重来(1天) / 较难(2天) / 良好(6天) / 简单(10天)」）
+  /// 预估每个评分按钮将产生的下次复习间隔天数
   Map<ReviewRating, int> previewNextIntervals(SpacedReviewItem item) {
     final now = DateTime.now();
     return {

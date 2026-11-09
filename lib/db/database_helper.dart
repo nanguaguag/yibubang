@@ -43,6 +43,11 @@ class DatabaseHelper {
   factory DatabaseHelper() => _instance;
   static Database? _database;
 
+  @visibleForTesting
+  static void setDatabaseForTesting(Database? db) {
+    _database = db;
+  }
+
   DatabaseHelper._internal();
 
   // Open the database
@@ -216,6 +221,45 @@ class DatabaseHelper {
     }
     return bankPath;
   }
+
+  /// 根据科目ID与章节ID解析科目名称（课程名）与章节名称
+  static Future<Map<String, String>> resolveSubjectAndChapter({
+    String? subjectId,
+    String? chapterId,
+    String? knownChapterName,
+  }) async {
+    String subjectName = '';
+    String chapterName = knownChapterName ?? '';
+    final hasSubject = subjectId != null && subjectId.isNotEmpty;
+    final hasChapter = chapterId != null && chapterId.isNotEmpty;
+    if (!hasSubject && (!hasChapter || chapterName.isNotEmpty)) {
+      return {'subject': subjectName, 'chapter': chapterName};
+    }
+    try {
+      final db = await DatabaseHelper().database;
+      if (hasSubject) {
+        final rows = await db.rawQuery(
+          'SELECT name FROM Subject WHERE id = ? LIMIT 1',
+          [subjectId],
+        );
+        if (rows.isNotEmpty) {
+          subjectName = rows.first['name'] as String? ?? '';
+        }
+      }
+      if (chapterName.isEmpty && hasChapter) {
+        final rows = await db.rawQuery(
+          'SELECT name FROM Chapter WHERE id = ? LIMIT 1',
+          [chapterId],
+        );
+        if (rows.isNotEmpty) {
+          chapterName = rows.first['name'] as String? ?? '';
+        }
+      }
+    } catch (e) {
+      debugPrint('[DatabaseHelper] 解析科目与章节名称失败: $e');
+    }
+    return {'subject': subjectName, 'chapter': chapterName};
+  }
 }
 
 class UserDBHelper {
@@ -265,6 +309,16 @@ class UserDBHelper {
         } catch (e) {
           debugPrint('[UserDBHelper] onOpen 检查 ReviewPlans 失败: $e');
         }
+        try {
+          await _repairCustomFlashcards(db);
+        } catch (e) {
+          debugPrint('[UserDBHelper] onOpen 自愈 CustomFlashcards 失败: $e');
+        }
+        try {
+          await _repairNotesForeignKey(db);
+        } catch (e) {
+          debugPrint('[UserDBHelper] onOpen 自愈 Notes 表外键失败: $e');
+        }
       },
     );
   }
@@ -280,6 +334,11 @@ class UserDBHelper {
     if (db != null && db.isOpen) {
       await db.close();
     }
+  }
+
+  @visibleForTesting
+  static void setDatabaseForTesting(Database? db) {
+    _database = db;
   }
 
   @visibleForTesting
@@ -451,6 +510,83 @@ class UserDBHelper {
     }
   }
 
+  /// 自愈修复 CustomFlashcards 缺失的 question_id 字段
+  Future<void> _repairCustomFlashcards(DatabaseExecutor db) async {
+    final tables = await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='CustomFlashcards'",
+    );
+    if (tables.isEmpty) return;
+
+    final columns = await _columns(db, 'CustomFlashcards');
+    if (!columns.contains('question_id')) {
+      await db.execute('ALTER TABLE CustomFlashcards ADD COLUMN question_id TEXT');
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_custom_flashcards_qid ON CustomFlashcards(question_id)',
+      );
+    }
+  }
+
+  /// 自愈修复 Notes 表历史外键误指向 questions(id) 的问题
+  Future<void> _repairNotesForeignKey(Database db) async {
+    final res = await db.rawQuery(
+      "SELECT sql FROM sqlite_master WHERE type='table' AND name='Notes'",
+    );
+    if (res.isEmpty) return;
+    final sql = res.first['sql'] as String? ?? '';
+    if (RegExp(r'REFERENCES\s+questions\s*\(', caseSensitive: false).hasMatch(sql)) {
+      debugPrint('[UserDBHelper] 检测到 Notes 表外键指向不存在的 questions 表，自动迁移修复...');
+      await db.execute('PRAGMA foreign_keys = OFF');
+      await db.transaction((txn) async {
+        await txn.execute('''
+          CREATE TABLE Notes_new (
+            id TEXT PRIMARY KEY,
+            remote_id TEXT,
+            question_id TEXT NOT NULL,
+            content TEXT NOT NULL,
+            imgs TEXT NOT NULL DEFAULT '[]',
+            timestamp INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL DEFAULT 0,
+            sync_status INTEGER NOT NULL DEFAULT 0,
+            FOREIGN KEY (question_id) REFERENCES Question(id)
+          )
+        ''');
+        final oldColumns = await _columns(txn, 'Notes');
+        final selectCols = [
+          'id',
+          if (oldColumns.contains('remote_id')) 'remote_id' else 'NULL AS remote_id',
+          'question_id',
+          'content',
+          'imgs',
+          'timestamp',
+          if (oldColumns.contains('updated_at')) 'updated_at' else '0 AS updated_at',
+          if (oldColumns.contains('sync_status')) 'sync_status' else '0 AS sync_status',
+        ];
+        // 保证旧笔记对应的题目在 Question 表中存在，防止外键检查报错
+        await txn.execute('''
+          INSERT OR IGNORE INTO Question (id, chapter_id, chapter_parent_id, updated_at)
+          SELECT DISTINCT question_id, '', '', 0 FROM Notes WHERE question_id NOT IN (SELECT id FROM Question)
+        ''');
+        await txn.execute(
+          'INSERT INTO Notes_new (id, remote_id, question_id, content, imgs, timestamp, updated_at, sync_status) '
+          'SELECT ${selectCols.join(", ")} FROM Notes',
+        );
+        await txn.execute('DROP TABLE Notes');
+        await txn.execute('ALTER TABLE Notes_new RENAME TO Notes');
+        await txn.execute(
+          'CREATE INDEX IF NOT EXISTS idx_notes_question ON Notes(question_id)',
+        );
+      });
+      await db.execute('PRAGMA foreign_keys = ON');
+      debugPrint('[UserDBHelper] Notes 表外键修复完成！');
+    }
+  }
+
+  @visibleForTesting
+  Future<void> repairDatabaseForTesting(Database db) async {
+    await _repairCustomFlashcards(db);
+    await _repairNotesForeignKey(db);
+  }
+
   /// 医考帮题库「智能增量同步」状态表（v11）。
   ///
   /// 只记录同步游标/哈希/远端章节到本地章节的映射，不改变题库内容表。
@@ -588,6 +724,9 @@ class UserDBHelper {
     try {
       await db.execute("ALTER TABLE ReviewPlans ADD COLUMN covered_subjects TEXT DEFAULT ''");
     } catch (_) {}
+    try {
+      await db.execute("ALTER TABLE CustomFlashcards ADD COLUMN question_id TEXT");
+    } catch (_) {}
 
     await db.execute('''
       CREATE TABLE IF NOT EXISTS SpacedReviewItem (
@@ -609,13 +748,19 @@ class UserDBHelper {
     await db.execute('''
       CREATE TABLE IF NOT EXISTS CustomFlashcards (
         id TEXT PRIMARY KEY,
-        title TEXT NOT NULL,
+        title TEXT NOT NULL DEFAULT '',
         front TEXT NOT NULL,
         back TEXT NOT NULL,
+        question_id TEXT,
         tags TEXT,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
       )
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_custom_flashcards_qid
+        ON CustomFlashcards(question_id)
     ''');
 
     await db.execute('''

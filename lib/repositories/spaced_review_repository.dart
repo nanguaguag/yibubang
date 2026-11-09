@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'dart:math' as math;
 import 'package:sqflite/sqflite.dart';
 import '../db/database_helper.dart';
 import '../models/spaced_review_item.dart';
@@ -344,7 +346,7 @@ class SpacedReviewRepository {
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
 
-      // 若尚未建立复习项，自动登记一条初始项
+      // 检查复习项是否存在
       final existing = await tx.query(
         'SpacedReviewItem',
         where: 'item_id = ?',
@@ -361,9 +363,27 @@ class SpacedReviewRepository {
             'front': card.front,
             'back': card.back,
             'tags': card.tags,
+            if (card.questionId != null) 'question_id': card.questionId,
           },
         );
         await tx.insert('SpacedReviewItem', item.toMap());
+      } else {
+        // 同步更新 extra 缓存
+        final existingItem = SpacedReviewItem.fromMap(existing.first);
+        final extraMap = Map<String, dynamic>.from(existingItem.extra ?? {});
+        extraMap['title'] = card.title;
+        extraMap['front'] = card.front;
+        extraMap['back'] = card.back;
+        extraMap['tags'] = card.tags;
+        if (card.questionId != null) {
+          extraMap['question_id'] = card.questionId;
+        }
+        await tx.update(
+          'SpacedReviewItem',
+          {'extra': jsonEncode(extraMap)},
+          where: 'item_id = ?',
+          whereArgs: [card.id],
+        );
       }
     }
 
@@ -387,11 +407,121 @@ class SpacedReviewRepository {
     return CustomFlashcard.fromMap(rows.first);
   }
 
+  /// 批量根据 ID 获取自制卡片
+  Future<Map<String, CustomFlashcard>> getFlashcardsByIds(
+    List<String> ids, [
+    DatabaseExecutor? executor,
+  ]) async {
+    if (ids.isEmpty) return {};
+    final db = await _getExecutor(executor);
+    final map = <String, CustomFlashcard>{};
+    const chunkSize = 100;
+    for (var i = 0; i < ids.length; i += chunkSize) {
+      final end = math.min(i + chunkSize, ids.length);
+      final chunk = ids.sublist(i, end);
+      final rows = await db.query(
+        'CustomFlashcards',
+        where: 'id IN (${List.filled(chunk.length, '?').join(',')})',
+        whereArgs: chunk,
+      );
+      for (final r in rows) {
+        final card = CustomFlashcard.fromMap(r);
+        map[card.id] = card;
+      }
+    }
+    return map;
+  }
+
+  /// 根据关联原题 ID 获取所有闪卡
+  Future<List<CustomFlashcard>> getFlashcardsByQuestionId(
+    String questionId, [
+    DatabaseExecutor? executor,
+  ]) async {
+    final db = await _getExecutor(executor);
+    try {
+      final rows = await db.query(
+        'CustomFlashcards',
+        where: 'question_id = ?',
+        whereArgs: [questionId],
+        orderBy: 'created_at DESC',
+      );
+      return rows.map((r) => CustomFlashcard.fromMap(r)).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
   /// 获取所有自制卡片
   Future<List<CustomFlashcard>> getAllFlashcards([DatabaseExecutor? executor]) async {
     final db = await _getExecutor(executor);
     final rows = await db.query('CustomFlashcards', orderBy: 'created_at DESC');
     return rows.map((r) => CustomFlashcard.fromMap(r)).toList();
+  }
+
+  /// 获取所有自制卡片的去重标签列表（按字母排序）
+  Future<List<String>> getAllFlashcardTags([DatabaseExecutor? executor]) async {
+    final db = await _getExecutor(executor);
+    try {
+      final rows = await db.rawQuery(
+        "SELECT DISTINCT tags FROM CustomFlashcards WHERE tags IS NOT NULL AND tags != ''",
+      );
+      final Set<String> tagSet = {};
+      for (final r in rows) {
+        final raw = r['tags'] as String?;
+        if (raw == null) continue;
+        final parts = raw
+            .split(RegExp(r'[,，\s]+'))
+            .map((e) => e.trim())
+            .where((e) => e.isNotEmpty);
+        tagSet.addAll(parts);
+      }
+      final list = tagSet.toList();
+      list.sort();
+      return list;
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// 条件检索闪卡（支持关键字、标签筛选）
+  Future<List<CustomFlashcard>> searchFlashcards({
+    String? query,
+    String? tag,
+    DatabaseExecutor? executor,
+  }) async {
+    final db = await _getExecutor(executor);
+    final whereParts = <String>[];
+    final whereArgs = <dynamic>[];
+
+    if (query != null && query.trim().isNotEmpty) {
+      final q = '%${query.trim()}%';
+      whereParts.add('(front LIKE ? OR back LIKE ? OR title LIKE ?)');
+      whereArgs.addAll([q, q, q]);
+    }
+
+    if (tag != null && tag.trim().isNotEmpty && tag != '全部') {
+      whereParts.add('tags LIKE ?');
+      whereArgs.add('%${tag.trim()}%');
+    }
+
+    final rows = await db.query(
+      'CustomFlashcards',
+      where: whereParts.isEmpty ? null : whereParts.join(' AND '),
+      whereArgs: whereArgs.isEmpty ? null : whereArgs,
+      orderBy: 'created_at DESC',
+    );
+    return rows.map((r) => CustomFlashcard.fromMap(r)).toList();
+  }
+
+  /// 切换闪卡斩卡状态（在 mastered 与在学 review 状态间切换）
+  Future<bool> toggleFlashcardMastered(String id, [DatabaseExecutor? executor]) async {
+    final db = await _getExecutor(executor);
+    final item = await getItem(id, db);
+    if (item == null) return false;
+    final isMastered = item.state == ReviewState.mastered;
+    final newState = isMastered ? ReviewState.review : ReviewState.mastered;
+    await saveItem(item.copyWith(state: newState), db);
+    return !isMastered;
   }
 
   /// 删除自制卡片及对应的复习状态

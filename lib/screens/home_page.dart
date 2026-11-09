@@ -21,7 +21,7 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   int _selectedIndex = 0; // 默认主页为“我的课程”
-  late final PageController _pageController;
+  late PageController _pageController;
   Map<String, dynamic> updateData = {}; // 更新信息
 
   // 当前应用版本号
@@ -89,6 +89,19 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  void _ensurePageController(int targetIndex) {
+    if (!_pageController.hasClients) {
+      if (_pageController.initialPage != targetIndex) {
+        _pageController.dispose();
+        _pageController = PageController(initialPage: targetIndex);
+      }
+    } else {
+      if (_pageController.page?.round() != targetIndex) {
+        _pageController.jumpToPage(targetIndex);
+      }
+    }
+  }
+
   void _onItemTapped(int index) {
     if (_selectedIndex == index) return;
     setState(() {
@@ -102,15 +115,17 @@ class _HomePageState extends State<HomePage> {
       return;
     }
 
-    final duration = AppAnimation.duration;
-    if (duration == Duration.zero) {
-      _pageController.jumpToPage(index);
-    } else {
-      _pageController.animateToPage(
-        index,
-        duration: duration,
-        curve: AppAnimation.curve,
-      );
+    if (_pageController.hasClients) {
+      final duration = AppAnimation.duration;
+      if (duration == Duration.zero) {
+        _pageController.jumpToPage(index);
+      } else {
+        _pageController.animateToPage(
+          index,
+          duration: duration,
+          curve: AppAnimation.curve,
+        );
+      }
     }
   }
 
@@ -173,6 +188,7 @@ class _HomePageState extends State<HomePage> {
             ? BottomNavConfig.getDefaultItems()
             : activeItems;
         final clampedIndex = _selectedIndex.clamp(0, validItems.length - 1);
+        _ensurePageController(clampedIndex);
         if (clampedIndex != _selectedIndex) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted) {

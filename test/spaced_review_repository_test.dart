@@ -271,5 +271,71 @@ void main() {
         await db.close();
       }
     });
+
+    test('CustomFlashcards search, question link, batch load and master toggle', () async {
+      final db = await openDatabase(dbPath);
+      await UserDBHelper().createSpacedRepetitionTablesForTesting(db);
+
+      try {
+        final repo = SpacedReviewRepository();
+
+        final card1 = const CustomFlashcard(
+          id: 'fc_q1001_1',
+          front: '阿司匹林抗血小板机制',
+          back: '不可逆抑制血小板环氧化酶-1 (COX-1)，减少TXA2生成。',
+          questionId: 'q_1001',
+          tags: '药理学,心血管,笔记转化',
+        );
+
+        final card2 = const CustomFlashcard(
+          id: 'fc_concept_2',
+          front: '何谓奥森现象(Osler node)',
+          back: '亚急性感染性心内膜炎指趾垫处发生的紫红色微小痛性结节。',
+          tags: '诊断学,考点自制',
+        );
+
+        await repo.saveFlashcard(card1, db);
+        await repo.saveFlashcard(card2, db);
+
+        // 1. 测试按关联题目 ID 获取
+        final qCards = await repo.getFlashcardsByQuestionId('q_1001', db);
+        expect(qCards.length, 1);
+        expect(qCards.first.id, 'fc_q1001_1');
+        expect(qCards.first.questionId, 'q_1001');
+
+        // 2. 测试批量获取
+        final batch = await repo.getFlashcardsByIds(['fc_q1001_1', 'fc_concept_2'], db);
+        expect(batch.length, 2);
+        expect(batch['fc_q1001_1']?.front, contains('阿司匹林'));
+        expect(batch['fc_concept_2']?.front, contains('奥森现象'));
+
+        // 3. 测试搜索与标签检索
+        final searchResults = await repo.searchFlashcards(query: 'COX-1', executor: db);
+        expect(searchResults.length, 1);
+        expect(searchResults.first.id, 'fc_q1001_1');
+
+        final tagResults = await repo.searchFlashcards(tag: '诊断学', executor: db);
+        expect(tagResults.length, 1);
+        expect(tagResults.first.id, 'fc_concept_2');
+
+        // 4. 测试斩卡/恢复斩卡状态切换
+        final wasMastered = await repo.toggleFlashcardMastered('fc_concept_2', db);
+        expect(wasMastered, isTrue);
+        var item2 = await repo.getItem('fc_concept_2', db);
+        expect(item2?.state, ReviewState.mastered);
+
+        // 再次切换恢复在学
+        final wasRestored = await repo.toggleFlashcardMastered('fc_concept_2', db);
+        expect(wasRestored, isFalse);
+        item2 = await repo.getItem('fc_concept_2', db);
+        expect(item2?.state, ReviewState.review);
+
+        // 清理
+        await repo.deleteFlashcard('fc_q1001_1', db);
+        await repo.deleteFlashcard('fc_concept_2', db);
+      } finally {
+        await db.close();
+      }
+    });
   });
 }

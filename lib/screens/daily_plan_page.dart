@@ -4,8 +4,10 @@ import '../common/app_shapes.dart';
 import '../models/daily_review_session.dart';
 import '../repositories/spaced_review_repository.dart';
 import '../services/daily_review_service.dart';
+import '../widgets/daily_retention_analytics_dialog.dart';
 import '../widgets/daily_review_card.dart';
 import '../widgets/daily_review_plan_dialog.dart';
+import '../widgets/flashcard_deck_dialog.dart';
 
 /// 独立的“每日复习计划”导航页（新 Tab）
 class DailyPlanPage extends StatefulWidget {
@@ -22,20 +24,45 @@ class DailyPlanPage extends StatefulWidget {
   State<DailyPlanPage> createState() => _DailyPlanPageState();
 }
 
-class _DailyPlanPageState extends State<DailyPlanPage> {
+class _DailyPlanPageState extends State<DailyPlanPage> with WidgetsBindingObserver {
   late final DailyReviewService _service;
   late final SpacedReviewRepository _repo;
 
   bool _loading = true;
   DailyReviewSummary? _summary;
   Map<String, int> _forecast = {};
+  String _lastLoadedDay = '';
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _service = widget.service ?? DailyReviewService();
     _repo = widget.repository ?? SpacedReviewRepository();
+    _lastLoadedDay = _currentDayString();
     _loadData();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      final todayStr = _currentDayString();
+      if (todayStr != _lastLoadedDay || !_loading) {
+        _lastLoadedDay = todayStr;
+        _loadData();
+      }
+    }
+  }
+
+  String _currentDayString() {
+    final now = DateTime.now();
+    return '${now.year}-${now.month}-${now.day}';
   }
 
   Future<void> _loadData() async {
@@ -72,9 +99,9 @@ class _DailyPlanPageState extends State<DailyPlanPage> {
         title: const Text('每日复习计划'),
         actions: [
           IconButton(
-            tooltip: '计划与抽题范围设置',
-            icon: const Icon(Icons.tune_rounded),
-            onPressed: _openPlanSettings,
+            tooltip: '记忆量化与遗忘曲线统计',
+            icon: const Icon(Icons.insights_rounded),
+            onPressed: () => DailyRetentionAnalyticsDialog.show(context, service: _service),
           ),
         ],
       ),
@@ -83,6 +110,7 @@ class _DailyPlanPageState extends State<DailyPlanPage> {
           : RefreshIndicator(
               onRefresh: _loadData,
               child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.only(bottom: 32),
                 children: [
                   // 1. 顶部打卡核心操作卡片
@@ -132,6 +160,7 @@ class _DailyPlanPageState extends State<DailyPlanPage> {
     if (sources.contains('wrong')) sourceLabels.add('错题');
     if (sources.contains('collected')) sourceLabels.add('收藏');
     if (sources.contains('note')) sourceLabels.add('笔记');
+    if (sources.contains('flashcard')) sourceLabels.add('闪卡');
     if (sources.contains('all')) sourceLabels.add('包含新题');
 
     final subjectCount = summary.coveredSubjects.length;
@@ -196,17 +225,29 @@ class _DailyPlanPageState extends State<DailyPlanPage> {
                     color: scheme.onSurface,
                   ),
                 ),
+                const Spacer(),
+                TextButton.icon(
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    foregroundColor: scheme.primary,
+                  ),
+                  icon: const Icon(Icons.style_rounded, size: 16),
+                  label: const Text('闪卡卡包'),
+                  onPressed: () => _openFlashcardDeck(context),
+                ),
               ],
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 12),
             Row(
               children: [
                 _buildStatPill('错题攻克', '${summary.poolWrongCount}', Colors.red.shade700, scheme),
-                const SizedBox(width: 8),
+                const SizedBox(width: 6),
                 _buildStatPill('星标收藏', '${summary.poolCollectedCount}', Colors.amber.shade800, scheme),
-                const SizedBox(width: 8),
+                const SizedBox(width: 6),
                 _buildStatPill('速记笔记', '${summary.poolNoteCount}', Colors.blue.shade700, scheme),
-                const SizedBox(width: 8),
+                const SizedBox(width: 6),
+                _buildStatPill('自制闪卡', '${summary.poolFlashcardCount}', Colors.purple.shade700, scheme, onTap: () => _openFlashcardDeck(context)),
+                const SizedBox(width: 6),
                 _buildStatPill('熟练斩题', '${summary.poolMasteredCount}', Colors.teal.shade700, scheme),
               ],
             ),
@@ -216,33 +257,57 @@ class _DailyPlanPageState extends State<DailyPlanPage> {
     );
   }
 
-  Widget _buildStatPill(String label, String value, Color color, ColorScheme scheme) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(AppShapes.medium),
-        ),
-        child: Column(
-          children: [
-            Text(
-              value,
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: color,
-              ),
+  Widget _buildStatPill(
+    String label,
+    String value,
+    Color color,
+    ColorScheme scheme, {
+    VoidCallback? onTap,
+  }) {
+    final pill = Container(
+      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(AppShapes.medium),
+        border: Border.all(color: color.withValues(alpha: 0.2)),
+      ),
+      child: Column(
+        children: [
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: color,
             ),
-            const SizedBox(height: 2),
-            Text(
-              label,
-              style: TextStyle(fontSize: 11, color: Colors.grey[600]),
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+            textAlign: TextAlign.center,
+          ),
+        ],
       ),
     );
+
+    if (onTap != null) {
+      return Expanded(
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(AppShapes.medium),
+          child: pill,
+        ),
+      );
+    }
+    return Expanded(child: pill);
+  }
+
+  Future<void> _openFlashcardDeck(BuildContext context) async {
+    final modified = await FlashcardDeckDialog.show(context);
+    if (modified == true) {
+      _loadData();
+    }
   }
 
   /// 未来 7 天到期复习量预测
