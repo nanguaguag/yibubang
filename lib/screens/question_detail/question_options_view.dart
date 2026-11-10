@@ -414,6 +414,7 @@ class _QuestionOptionsViewState extends State<QuestionOptionsView> {
                 groupValue: getLastAnswer(widget.userQuestion.userAnswer),
                 // ignore: deprecated_member_use
                 onChanged: (String? value) {
+                  if(widget.controller.isSaving) return;
                   widget.userQuestion.userAnswer = changeLastAnswer(
                     widget.userQuestion.userAnswer,
                     value ?? '',
@@ -438,6 +439,7 @@ class _QuestionOptionsViewState extends State<QuestionOptionsView> {
                 value: checked,
                 controlAffinity: ListTileControlAffinity.leading,
                 onChanged: (bool? value) {
+                  if(widget.controller.isSaving) return;
                   if (value == true && !checked) {
                     widget.userQuestion.userAnswer = changeLastAnswer(
                       widget.userQuestion.userAnswer,
@@ -452,7 +454,7 @@ class _QuestionOptionsViewState extends State<QuestionOptionsView> {
                   if (mode == 2) {
                     widget.userQuestion.status = 4;
                     widget.controller.userQuestions[widget.index].status = 4;
-                    updateQuestionSimple(widget.userQuestion, widget.question);
+                    widget.controller.savePendingSelection(widget.question,widget.userQuestion,context:context);
                   }
                   widget.onStateChanged();
                 },

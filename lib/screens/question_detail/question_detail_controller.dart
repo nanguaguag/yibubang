@@ -14,7 +14,69 @@ import '../../services/ykb_sync_service.dart';
 /// 采用精准订阅模式（基于 ValueNotifier/ChangeNotifier），
 /// 将高频的 1 秒定时器、单题作答刷新、页码切换与全局组件解耦，
 /// 彻底避免每秒全树 setState() 重绘。
-class QuestionDetailController extends ChangeNotifier {
+class QuestionDetailController extends ChangeNotifier
+    with WidgetsBindingObserver {
+  final Set<Future<void>> _pendingWrites = {};
+  bool _disposed = false;
+  final Stopwatch _answerWatch = Stopwatch()..start();
+  bool _foreground = true;
+  Object? lastSaveError;
+  bool get isSaving => _pendingWrites.isNotEmpty;
+  void trackLocalWrite(
+    Future<void> write, {
+    BuildContext? context,
+    VoidCallback? rollback,
+    VoidCallback? onSaved,
+  }) {
+    late Future<void> pending;
+    pending = write
+        .then((_) {
+          lastSaveError = null;
+          onSaved?.call();
+        })
+        .catchError((Object error) {
+          lastSaveError = error;
+          if (!_disposed) {
+            rollback?.call();
+            if (context?.mounted == true) {
+              ScaffoldMessenger.of(
+                context!,
+              ).showSnackBar(const SnackBar(content: Text('保存失败，请重试')));
+            }
+            notifyListeners();
+          }
+        })
+        .whenComplete(() => _pendingWrites.remove(pending));
+    _pendingWrites.add(pending);
+  }
+
+  Future<void> flushPendingWrites() async {
+    while (_pendingWrites.isNotEmpty) {
+      await Future.wait(_pendingWrites.toList());
+    }
+  }
+
+  void savePendingSelection(
+    Question q,
+    UserQuestion uq, {
+    BuildContext? context,
+  }) {
+    trackLocalWrite(
+      updateQuestionSimple(uq, q, fields: const {'status', 'user_answer'}),
+      context: context,
+    );
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _foreground = state == AppLifecycleState.resumed;
+    if (_foreground) {
+      _answerWatch.start();
+    } else {
+      _answerWatch.stop();
+    }
+  }
+
   final Chapter chapter;
   final List<Question> questions;
   final List<UserQuestion> userQuestions;
@@ -60,6 +122,7 @@ class QuestionDetailController extends ChangeNotifier {
     this.bankId,
     this.defaultShowCutContent = false,
   }) {
+    WidgetsBinding.instance.addObserver(this);
     _currentPage = initialIndex;
     currentPageNotifier.value = initialIndex;
     pageController = PageController(initialPage: initialIndex);
@@ -160,6 +223,8 @@ class QuestionDetailController extends ChangeNotifier {
     _currentPage = page;
     currentPageNotifier.value = page;
     pageOpenedAt = DateTime.now().millisecondsSinceEpoch;
+    _answerWatch.reset();
+    if (_foreground) _answerWatch.start();
     _saveLastQIndex();
     notifyListeners();
   }
@@ -187,6 +252,7 @@ class QuestionDetailController extends ChangeNotifier {
   /// 单选题选择后立即判题（与点击选项一致）；
   /// 多选题切换勾选状态，由「提交答案」快捷键提交。
   bool selectOptionByShortcut(int optionIndex, BuildContext context) {
+    if (isSaving) return false;
     final int index = _currentPage;
     final Question question = questions[index];
     final UserQuestion userQuestion = userQuestions[index];
@@ -201,10 +267,22 @@ class QuestionDetailController extends ChangeNotifier {
 
     if (question.isSubjective) {
       if (optionIndex == 0) {
-        submitSubjectiveAnswer(question, userQuestion, index, context, isCorrect: true);
+        submitSubjectiveAnswer(
+          question,
+          userQuestion,
+          index,
+          context,
+          isCorrect: true,
+        );
         return true;
       } else if (optionIndex == 1) {
-        submitSubjectiveAnswer(question, userQuestion, index, context, isCorrect: false);
+        submitSubjectiveAnswer(
+          question,
+          userQuestion,
+          index,
+          context,
+          isCorrect: false,
+        );
         return true;
       }
       return false;
@@ -238,7 +316,7 @@ class QuestionDetailController extends ChangeNotifier {
       if (_mode == 2) {
         userQuestion.status = 4;
         userQuestions[index].status = 4;
-        updateQuestionSimple(userQuestion, question);
+        savePendingSelection(question, userQuestion, context: context);
       }
     }
     notifyListeners();
@@ -297,8 +375,9 @@ class QuestionDetailController extends ChangeNotifier {
     BuildContext context, {
     VoidCallback? onStateChanged,
   }) {
-    final int elapsedMs = (DateTime.now().millisecondsSinceEpoch - pageOpenedAt)
-        .clamp(0, 1 << 62);
+    if (isSaving) return;
+    final previousStatus = userQuestion.status;
+    final int elapsedMs = _answerWatch.elapsedMilliseconds;
     final String userAnswer = getLastAnswer(userQuestion.userAnswer);
 
     if (question.type == '1' && userAnswer.isEmpty) {
@@ -321,7 +400,7 @@ class QuestionDetailController extends ChangeNotifier {
 
     if (_mode == 2) {
       userQuestion.status = 4; // 测试模式 - 待提交
-      updateQuestionSimple(userQuestion, question);
+      savePendingSelection(question, userQuestion, context: context);
       userQuestions[index].status = 4;
       _updateAnsweredCount();
       onStateChanged?.call();
@@ -334,12 +413,22 @@ class QuestionDetailController extends ChangeNotifier {
       } else {
         userQuestion.status = 2; // 回答错误
       }
-      updateQuestion(
-        userQuestion,
-        question,
-        durationMs: elapsedMs,
-        bankId: bankId,
-        chapter: chapter,
+      final expectedStatus = userQuestion.status;
+      trackLocalWrite(
+        updateQuestion(
+          userQuestion,
+          question,
+          durationMs: elapsedMs,
+          bankId: bankId,
+          chapter: chapter,
+        ),
+        context: context,
+        rollback: () {
+          if (userQuestion.status == expectedStatus) {
+            userQuestion.status = previousStatus;
+          }
+          onStateChanged?.call();
+        },
       );
       userQuestions[index].status = userQuestion.status;
       onStateChanged?.call();
@@ -359,26 +448,37 @@ class QuestionDetailController extends ChangeNotifier {
     required bool isCorrect,
     VoidCallback? onStateChanged,
   }) {
-    final int elapsedMs = (DateTime.now().millisecondsSinceEpoch - pageOpenedAt)
-        .clamp(0, 1 << 62);
+    if (isSaving) return;
+    final previousStatus = userQuestion.status;
+    final int elapsedMs = _answerWatch.elapsedMilliseconds;
 
     userQuestion.userAnswer = isCorrect ? '已掌握' : '未掌握';
 
     if (_mode == 2) {
       userQuestion.status = 4; // 测试模式 - 待提交
-      updateQuestionSimple(userQuestion, question);
+      savePendingSelection(question, userQuestion, context: context);
       userQuestions[index].status = 4;
       _updateAnsweredCount();
       onStateChanged?.call();
       nextPage();
     } else {
       userQuestion.status = isCorrect ? 1 : 2;
-      updateQuestion(
-        userQuestion,
-        question,
-        durationMs: elapsedMs,
-        bankId: bankId,
-        chapter: chapter,
+      final expectedStatus = userQuestion.status;
+      trackLocalWrite(
+        updateQuestion(
+          userQuestion,
+          question,
+          durationMs: elapsedMs,
+          bankId: bankId,
+          chapter: chapter,
+        ),
+        context: context,
+        rollback: () {
+          if (userQuestion.status == expectedStatus) {
+            userQuestion.status = previousStatus;
+          }
+          onStateChanged?.call();
+        },
       );
       userQuestions[index].status = userQuestion.status;
       onStateChanged?.call();
@@ -400,12 +500,14 @@ class QuestionDetailController extends ChangeNotifier {
   }) {
     userQuestion.userAnswer = isCorrect ? '已掌握' : '未掌握';
     userQuestion.status = isCorrect ? 1 : 2;
-    updateQuestion(
-      userQuestion,
-      question,
-      durationMs: 0,
-      bankId: bankId,
-      chapter: chapter,
+    trackLocalWrite(
+      updateQuestion(
+        userQuestion,
+        question,
+        durationMs: 0,
+        bankId: bankId,
+        chapter: chapter,
+      ),
     );
     userQuestions[index].status = userQuestion.status;
     onStateChanged?.call();
@@ -415,8 +517,21 @@ class QuestionDetailController extends ChangeNotifier {
   void toggleCollection(BuildContext context, {VoidCallback? onStateChanged}) {
     final UserQuestion userQuestion = userQuestions[_currentPage];
     final Question question = questions[_currentPage];
-    userQuestion.collection = userQuestion.collection == 0 ? 1 : 0;
-    updateQuestionSimple(userQuestion, question);
+    final previous = userQuestion.collection;
+    userQuestion.collection = previous == 0 ? 1 : 0;
+    final sent = userQuestion.collection;
+    trackLocalWrite(
+      updateQuestionSimple(
+        userQuestion,
+        question,
+        fields: const {'collection'},
+      ),
+      context: context,
+      rollback: () {
+        if (userQuestion.collection == sent) userQuestion.collection = previous;
+        onStateChanged?.call();
+      },
+    );
     userQuestions[_currentPage].collection = userQuestion.collection;
     onStateChanged?.call();
     notifyListeners();
@@ -427,22 +542,32 @@ class QuestionDetailController extends ChangeNotifier {
     final Question question = questions[_currentPage];
     // 斩题状态变化后，重新收起临时显示的题目内容
     _cutContentReveal.remove(_currentPage);
+    final previous = userQuestion.cutQuestion;
     userQuestion.isCut = !userQuestion.isCut;
-    if (!userQuestion.isCut && userQuestion.status == 3) {
-      userQuestion.status = 0;
-    }
-    updateQuestionSimple(userQuestion, question);
+    final cut = userQuestion.isCut;
+    if (!cut && userQuestion.status == 3) userQuestion.status = 0;
+    trackLocalWrite(
+      updateQuestionSimple(
+        userQuestion,
+        question,
+        fields: const {'cut_question'},
+      ),
+      context: context,
+      rollback: () {
+        if (userQuestion.isCut == cut) userQuestion.cutQuestion = previous;
+        onStateChanged?.call();
+      },
+      onSaved: () => unawaited(
+        YkbSyncService.instance.syncCutQuestion(
+          question: question,
+          isCut: cut,
+          chapter: chapter,
+        ),
+      ),
+    );
     userQuestions[_currentPage].cutQuestion = userQuestion.cutQuestion;
-    userQuestions[_currentPage].status = userQuestion.status;
     onStateChanged?.call();
     notifyListeners();
-
-    // 同步斩题状态到医考帮
-    YkbSyncService.instance.syncCutQuestion(
-      question: question,
-      isCut: userQuestion.isCut,
-      chapter: chapter,
-    );
 
     // 斩题后自动切到下一题
     if (userQuestion.isCut) {
@@ -667,6 +792,10 @@ class QuestionDetailController extends ChangeNotifier {
 
   @override
   void dispose() {
+    if (_disposed) return;
+    _disposed = true;
+    WidgetsBinding.instance.removeObserver(this);
+    _answerWatch.stop();
     if (_mode == 2) {
       _testStopwatch.stop();
       _testTicker?.cancel();

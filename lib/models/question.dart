@@ -488,23 +488,41 @@ Future<List<UserQuestion>> getUserQuestions(
 
 Future<void> updateQuestionSimple(
   UserQuestion uq,
-  Question q,
-) async {
-  final now = DateTime.now().millisecondsSinceEpoch;
-  uq.updatedAt = now;
+  Question q, {
+  required Set<String> fields,
+}) async {
+  const allowed = {'status', 'user_answer', 'collection', 'cut_question'};
+  if (fields.isEmpty || !allowed.containsAll(fields)) {
+    throw ArgumentError('无效题目字段更新');
+  }
+  final snapshot = uq.toMap();
+  final patch = <String, Object?>{
+    for (final field in fields) field: snapshot[field],
+    'updated_at': DateTime.now().millisecondsSinceEpoch,
+  };
   final userDb = await UserDBHelper().database;
-  await userDb.update(
-    'Question',
-    {
-      'status': uq.status,
-      'collection': uq.collection,
-      'user_answer': uq.userAnswer,
-      'cut_question': uq.cutQuestion,
-      'updated_at': now,
-    },
-    where: 'id = ?',
-    whereArgs: [uq.id],
-  );
+  await userDb.transaction((tx) async {
+    await tx.rawInsert(
+      'INSERT OR IGNORE INTO Question(id,chapter_id,chapter_parent_id) VALUES (?,?,?)',
+      [
+        snapshot['id'],
+        q.chapterId ?? snapshot['chapter_id'],
+        q.chapterParentId ?? snapshot['chapter_parent_id'],
+      ],
+    );
+    await tx.update(
+      'Question',
+      patch,
+      where: 'id=?',
+      whereArgs: [snapshot['id']],
+    );
+    if (fields.contains('cut_question') && snapshot['cut_question'] == '0') {
+      await tx.rawUpdate(
+        "UPDATE Question SET status=0 WHERE id=? AND status=3",
+        [snapshot['id']],
+      );
+    }
+  });
 }
 
 Future<void> updateQuestion(
@@ -515,6 +533,8 @@ Future<void> updateQuestion(
   String? bankId,
   Chapter? chapter,
 }) async {
+  // 在第一个 await 前固定作答快照，后续页面选择不能改变本次提交。
+  uq = UserQuestion.fromMap(uq.toMap());
   final prefs = await SharedPreferences.getInstance();
   final resolvedBankId = bankId ?? prefs.getString('activeBankId');
   if (resolvedBankId == null || resolvedBankId.isEmpty) {
@@ -652,8 +672,6 @@ Future<void> updateQuestion(
     'Question',
     {
       'status': uq.status,
-      'collection': uq.collection,
-      'cut_question': uq.cutQuestion,
       'user_answer': uq.userAnswer,
       'updated_at': nowMs,
     },

@@ -101,3 +101,11 @@ test('重复ACK零写入，相同字段新事件不改投影与拉取序号', as
   await assert.rejects(pushMutations(db,'u','d',[mutation(1,{collection:0})],4),/identity reused/);
   sqlite.close();
 });
+
+test('历史斩题状态3仍可同步，放回题库只改变cut和条件状态', async () => {
+  const {db,sqlite}=fixture();
+  await pushMutations(db,'u','d',[mutation(1,{status:3,cut_question:'1'})],1);
+  await pushMutations(db,'u','d',[mutation(2,{status:0,cut_question:'0'})],2);
+  assert.equal(sqlite.prepare('SELECT status FROM sync_questions').get().status,0);
+  sqlite.close();
+});

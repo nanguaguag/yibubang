@@ -72,12 +72,12 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
   Chapter? _prevChapter;
   Chapter? _nextChapter;
   bool _isSwitchingChapter = false;
+  bool _isLeaving=false;
   double _transitionDirection = 1.0;
   Key _chapterKey = UniqueKey();
 
   /// 预加载相邻章节题目缓存，杜绝切换时的网络/磁盘卡顿
   final Map<String, List<Question>> _prefetchedQuestions = {};
-  final Map<String, List<UserQuestion>> _prefetchedUserQuestions = {};
 
   /// 边缘持续滑动状态 Notifier（仅驱动微指示器局部渲染，不触发整页重绘）
   final ValueNotifier<_OverscrollState> _overscrollNotifier =
@@ -176,9 +176,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
       if (_prefetchedQuestions.containsKey(ch.id)) continue;
       try {
         final qs = await getQuestionsFromChapter(ch);
-        final uqs = await getUserQuestions(Future.value(qs));
         _prefetchedQuestions[ch.id] = qs;
-        _prefetchedUserQuestions[ch.id] = uqs;
       } catch (_) {}
     }
   }
@@ -298,7 +296,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
 
     // 获取目标题目
     List<Question> newQuestions = _prefetchedQuestions[targetChapter.id] ?? [];
-    List<UserQuestion> newUserQuestions = _prefetchedUserQuestions[targetChapter.id] ?? [];
+    List<UserQuestion> newUserQuestions = [];
     if (newQuestions.isEmpty) {
       try {
         newQuestions = await getQuestionsFromChapter(targetChapter);
@@ -308,6 +306,10 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
       }
     }
 
+    if(newQuestions.isNotEmpty) {
+      await _controller.flushPendingWrites();
+      newUserQuestions=await getUserQuestions(Future.value(newQuestions));
+    }
     if (newQuestions.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -377,7 +379,12 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<double>(
+    return PopScope<Object?>(canPop:false,onPopInvokedWithResult:(didPop,result) async {
+      if(didPop || _isLeaving) return;
+      _isLeaving=true;
+      await _controller.flushPendingWrites();
+      if(context.mounted) Navigator.of(context).pop(_currentChapter);
+    },child:ValueListenableBuilder<double>(
       valueListenable: _controller.fontScaleNotifier,
       builder: (context, fontScale, child) {
         return MediaQuery(
@@ -496,7 +503,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
           ),
         ),
       ),
-    );
+    ));
   }
 
   /// 章节切换顶部浮现小徽章

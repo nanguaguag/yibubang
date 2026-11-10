@@ -18,7 +18,7 @@ export async function pushMutations(db: D1Database, user: string, device: string
         if (Object.prototype.hasOwnProperty.call(q,f) && q[f] !== null && typeof q[f] !== 'string') throw new Error('Invalid question relation');
       }
       if (('collection' in q && ![0,1].includes(q.collection)) ||
-          ('status' in q && ![0,1,2,4].includes(q.status)) ||
+          ('status' in q && ![0,1,2,3,4].includes(q.status)) ||
           ('cut_question' in q && !['0','1'].includes(q.cut_question)) ||
           ('user_answer' in q && typeof q.user_answer !== 'string')) throw new Error('Invalid question fields');
     }

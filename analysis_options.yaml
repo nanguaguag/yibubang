@@ -26,3 +26,8 @@ linter:
 
 # Additional information about this file can be found at
 # https://dart.dev/guides/language/analysis-options
+
+# 历史审计探针只适用于 aa0a2d9，不作为当前源码正确性门禁。
+analyzer:
+  exclude:
+    - docs/antigravity/audits/v2_2_3_reproduction_test.dart
