@@ -1,3 +1,4 @@
+import 'review_events.dart';
 import 'package:sqflite/sqflite.dart';
 
 /// 用户库事务内捕获字段变更；序号与设备时钟无关，下载合并不会再次入队。
@@ -227,7 +228,9 @@ class CloudOutbox {
       for (final value in data['pull_activities'] as List) {
         await tx.insert(
           'Activities',
-          Map<String, dynamic>.from(value as Map),
+          ReviewEvents.normalizeActivity(
+            Map<String, dynamic>.from(value as Map),
+          ),
           conflictAlgorithm: ConflictAlgorithm.ignore,
         );
       }

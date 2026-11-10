@@ -1,3 +1,4 @@
+import 'review_events.dart';
 import 'question_projection.dart';
 export 'user_database_coordinator.dart' show UserDatabaseVersion;
 import 'user_database_coordinator.dart';
@@ -273,7 +274,7 @@ class UserDBHelper {
   factory UserDBHelper() => _instance;
   UserDBHelper._internal();
 
-  static const schemaVersion = 20;
+  static const schemaVersion = 21;
   static Database? _database;
 
   Future<Database> get database =>
@@ -526,6 +527,10 @@ class UserDBHelper {
       if (oldVersion < 20 && newVersion >= 20) {
         await QuestionProjection.install(txn);
       }
+      if (oldVersion < 21 && newVersion >= 21) {
+        await ReviewEvents.install(txn);
+        await ReviewEvents.migrateLegacyActivities(txn);
+      }
       await _createMigrationStateTable(txn);
     });
   }
@@ -752,6 +757,7 @@ class UserDBHelper {
   }
 
   Future<void> _createSpacedRepetitionTables(DatabaseExecutor db) async {
+    await ReviewEvents.install(db);
     await db.execute('''
       CREATE TABLE IF NOT EXISTS ReviewPlans (
         id TEXT PRIMARY KEY,

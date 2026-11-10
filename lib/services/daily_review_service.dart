@@ -1,3 +1,5 @@
+import '../db/data_transfer.dart';
+import '../models/answer_statistics.dart';
 import 'dart:io';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
@@ -144,7 +146,7 @@ class DailyReviewService {
     DateTime? now,
     DatabaseExecutor? executor,
   }) async {
-    return _atomic(
+    await _atomic(
       executor,
       (tx) => _cutInTransaction(
         questionId: questionId,
@@ -154,6 +156,7 @@ class DailyReviewService {
         executor: tx,
       ),
     );
+    notifyAnswersChanged();
   }
 
   Future<void> _cutInTransaction({
@@ -167,6 +170,11 @@ class DailyReviewService {
 
     // 1. 获取或构建 SpacedReviewItem 并直接标记为 mastered
     var item = await _spacedRepo.getItem(questionId, executor);
+    final wasNew = item?.lastReviewAt == null || item!.lastReviewAt == 0;
+    final effectivePlan =
+        planId ??
+        item?.planId ??
+        (await _spacedRepo.getOrCreateActivePlan(executor)).id;
     item =
         (item ??
                 SpacedReviewItem(
@@ -175,6 +183,7 @@ class DailyReviewService {
                   planId: planId,
                 ))
             .copyWith(
+              planId: effectivePlan,
               state: ReviewState.mastered,
               dueDate: 0,
               lastReviewAt: currentTime.millisecondsSinceEpoch,
@@ -219,6 +228,15 @@ class DailyReviewService {
       'is_right': '1',
       'duration': 0,
     });
+    await userDb.insert('ReviewEvents', {
+      'id': activityId,
+      'item_id': questionId,
+      'plan_id': effectivePlan,
+      'kind': isFlashcard ? 'CutFlashcard' : 'CutQuestion',
+      'was_new': wasNew ? 1 : 0,
+      'duration_ms': 0,
+      'timestamp': currentTime.millisecondsSinceEpoch,
+    });
   }
 
   /// 提交作答或复习评分结果
@@ -231,9 +249,17 @@ class DailyReviewService {
     DateTime? now,
     DatabaseExecutor? executor,
     String? eventId,
+    String? planId,
   }) async {
     final requestId = eventId ?? generateSimpleId();
-    return _atomic(
+    if (executor == null && bankId?.isNotEmpty == true) {
+      final existing = await _spacedRepo.getItem(questionId);
+      if (existing?.itemType != ReviewItemType.flashcard) {
+        final bank = await _dbManager.openBank(bankId!);
+        await ensureQuestionCountProjection(bankId, bankPath: bank.path);
+      }
+    }
+    final result = await _atomic(
       executor,
       (tx) => _submitInTransaction(
         questionId: questionId,
@@ -243,9 +269,12 @@ class DailyReviewService {
         bankId: bankId,
         now: now,
         eventId: requestId,
+        planId: planId,
         executor: tx,
       ),
     );
+    notifyAnswersChanged();
+    return result;
   }
 
   Future<SpacedReviewItem> _submitInTransaction({
@@ -256,6 +285,7 @@ class DailyReviewService {
     String? bankId,
     DateTime? now,
     required String eventId,
+    String? planId,
     required DatabaseExecutor executor,
   }) async {
     final currentTime = now ?? DateTime.now();
@@ -282,6 +312,12 @@ class DailyReviewService {
       state: ReviewState.learning,
     );
 
+    final wasNew = item.lastReviewAt == 0;
+    final effectivePlan =
+        planId ??
+        item.planId ??
+        (await _spacedRepo.getOrCreateActivePlan(executor)).id;
+    item = item.copyWith(planId: effectivePlan);
     // 2. 调度算法状态演进
     final updatedItem = _engine.evaluateRating(
       item: item,
@@ -343,21 +379,66 @@ class DailyReviewService {
     // 记录刷题流水到 Activities
     final activityId = eventId;
     final activityTitle = isFlashcard
-        ? '闪卡复习'
-        : (userAnswer != null ? '记忆曲线复习' : '记忆卡片复习');
+        ? 'FlashcardReview'
+        : (userAnswer != null ? 'ReviewAnswer' : 'ReviewMemory');
+    final uqRows = await userDb.query(
+      'Question',
+      where: 'id=?',
+      whereArgs: [questionId],
+    );
+    final relation = executor is Transaction || executor is Database
+        ? await _reviewRelation(userDb, questionId, bankId)
+        : <String, dynamic>{};
     await userDb.insert('Activities', {
       'id': activityId,
       'title': activityTitle,
       'description':
           '评级: ${rating.name.toUpperCase()} (间隔: ${updatedItem.interval}天)',
       'timestamp': currentTime.millisecondsSinceEpoch,
-      'bank_id': bankId,
+      'bank_id': relation['bank_id'] ?? bankId,
+      'identity_id': relation['identity_id'],
+      'subject_id':
+          relation['subject_id'] ??
+          (uqRows.isEmpty ? null : uqRows.first['chapter_parent_id']),
+      'chapter_id':
+          relation['chapter_id'] ??
+          (uqRows.isEmpty ? null : uqRows.first['chapter_id']),
       'question_id': questionId,
       'is_right': isRight,
-      'duration': durationSeconds,
+      'duration': Duration(
+        seconds: durationSeconds < 0 ? 0 : durationSeconds,
+      ).inMilliseconds,
     });
 
+    await userDb.insert('ReviewEvents', {
+      'id': eventId,
+      'item_id': questionId,
+      'plan_id': effectivePlan,
+      'kind': activityTitle,
+      'was_new': wasNew ? 1 : 0,
+      'duration_ms': Duration(
+        seconds: durationSeconds < 0 ? 0 : durationSeconds,
+      ).inMilliseconds,
+      'rating': rating.value,
+      'timestamp': currentTime.millisecondsSinceEpoch,
+    });
     return updatedItem;
+  }
+
+  Future<Map<String, dynamic>> _reviewRelation(
+    DatabaseExecutor db,
+    String id,
+    String? bankId,
+  ) async {
+    final tables = await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE name='QuestionRelations'",
+    );
+    if (tables.isEmpty) return {};
+    final rows = await db.rawQuery(
+      'SELECT * FROM QuestionRelations WHERE question_id=? ORDER BY CASE WHEN bank_id=? THEN 0 ELSE 1 END,bank_id LIMIT 1',
+      [id, bankId],
+    );
+    return rows.isEmpty ? {} : Map<String, dynamic>.from(rows.single);
   }
 
   /// 获取今日学习概览与卡片统计
@@ -537,23 +618,23 @@ class DailyReviewService {
   }) async {
     final userDb = executor ?? await _userDbHelper.database;
     final end = todayEnd ?? (todayStart + 86400000 - 1);
-    final whereParts = <String>[
-      'last_review_at >= ?',
-      'last_review_at <= ?',
-      'state != ?',
-      isNew ? 'lapses = 0 AND reps = 1' : '(reps > 1 OR lapses > 0)',
-    ];
-    final whereArgs = <dynamic>[todayStart, end, ReviewState.new_.value];
-
-    if (planId.isNotEmpty) {
-      whereParts.add('(plan_id = ? OR plan_id IS NULL)');
-      whereArgs.add(planId);
-    }
-
     final rows = await userDb.rawQuery(
-      'SELECT COUNT(*) as count FROM SpacedReviewItem WHERE ${whereParts.join(' AND ')}',
-      whereArgs,
+      '''
+      SELECT COUNT(*) AS count FROM (
+        SELECT item_id FROM ReviewEvents
+        WHERE timestamp>=? AND timestamp<=? AND (plan_id=? OR plan_id IS NULL)
+        GROUP BY item_id HAVING MAX(was_new)=?
+        UNION ALL
+        SELECT item_id FROM SpacedReviewItem
+        WHERE last_review_at>=? AND last_review_at<=? AND state!=0
+          AND (plan_id=? OR plan_id IS NULL)
+          AND ${isNew ? 'lapses=0 AND reps=1' : '(reps>1 OR lapses>0)'}
+          AND NOT EXISTS(SELECT 1 FROM ReviewEvents e WHERE e.item_id=SpacedReviewItem.item_id)
+      )
+    ''',
+      [todayStart, end, planId, isNew ? 1 : 0, todayStart, end, planId],
     );
+    // 升级前未保存事件类型，只对无事件的历史记忆项保留原估算；新记录完全按事件统计。
     return Sqflite.firstIntValue(rows) ?? 0;
   }
 

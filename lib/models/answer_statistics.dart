@@ -61,13 +61,19 @@ Future<List<Map<String, dynamic>>> _queryAnswersInRange({
 }) async {
   final userDb = await UserDBHelper().database;
   final conditions = <String>[
-    'title IN (?, ?)',
+    'title IN (?, ?, ?)',
     'timestamp >= ?',
     'timestamp < ?',
     "(is_right = '0' OR is_right = '1' OR is_right = 0 OR is_right = 1)",
   ];
   // NewAnswer 为实时答题流水；Backfill 为历史数据修复补记，两者都计入统计。
-  final args = <Object>['NewAnswer', 'Backfill', startMs, endMs];
+  final args = <Object>[
+    'NewAnswer',
+    'Backfill',
+    'ReviewAnswer',
+    startMs,
+    endMs,
+  ];
   if (bankId != null) {
     conditions.add('bank_id = ?');
     args.add(bankId);
@@ -162,7 +168,7 @@ Future<List<DailyStat>> getDailyAggregation({
     final existing = dayData[k] ?? (0, 0);
     dayData[k] = (
       existing.$1 + 1,
-      existing.$2 + ((row['duration'] as num?)?.toInt() ?? 0)
+      existing.$2 + ((row['duration'] as num?)?.toInt() ?? 0),
     );
   }
 
@@ -170,9 +176,11 @@ Future<List<DailyStat>> getDailyAggregation({
   final startDay = dayKey(DateTime.fromMillisecondsSinceEpoch(startMs));
   final endDay = dayKey(DateTime.fromMillisecondsSinceEpoch(endMs));
   final result = <DailyStat>[];
-  for (var d = startDay;
-      !d.isAfter(endDay);
-      d = DateTime(d.year, d.month, d.day + 1)) {
+  for (
+    var d = startDay;
+    !d.isAfter(endDay);
+    d = DateTime(d.year, d.month, d.day + 1)
+  ) {
     final k = formatDayKey(d);
     final data = dayData[k] ?? (0, 0);
     result.add(DailyStat(date: d, count: data.$1, durationMs: data.$2));
@@ -219,7 +227,7 @@ Future<List<DailyStat>> getHourlyAggregation({
     final existing = hourData[hour];
     hourData[hour] = (
       existing.$1 + 1,
-      existing.$2 + ((row['duration'] as num?)?.toInt() ?? 0)
+      existing.$2 + ((row['duration'] as num?)?.toInt() ?? 0),
     );
   }
   final start = DateTime.fromMillisecondsSinceEpoch(dayStartMs);
@@ -311,12 +319,18 @@ Future<List<AnsweredRecordItem>> getAnsweredRecordsInRange({
 }) async {
   final userDb = await UserDBHelper().database;
   final conditions = <String>[
-    'title IN (?, ?)',
+    'title IN (?, ?, ?)',
     'timestamp >= ?',
     'timestamp < ?',
     "(is_right = '0' OR is_right = '1' OR is_right = 0 OR is_right = 1)",
   ];
-  final args = <Object>['NewAnswer', 'Backfill', startMs, endMs];
+  final args = <Object>[
+    'NewAnswer',
+    'Backfill',
+    'ReviewAnswer',
+    startMs,
+    endMs,
+  ];
   if (bankId != null) {
     conditions.add('bank_id = ?');
     args.add(bankId);
@@ -379,8 +393,9 @@ Future<List<AnsweredRecordItem>> getAnsweredRecordsInRange({
     } catch (_) {}
   }
 
-  final missingQids =
-      questionIds.where((id) => !questionMap.containsKey(id)).toList();
+  final missingQids = questionIds
+      .where((id) => !questionMap.containsKey(id))
+      .toList();
   if (missingQids.isNotEmpty) {
     try {
       final qDb = await dbManager.openBank(currentBankId);
@@ -415,19 +430,21 @@ Future<List<AnsweredRecordItem>> getAnsweredRecordsInRange({
       userAns = getLastAnswer(userQuestionsMap[qid]!.userAnswer);
     }
 
-    result.add(AnsweredRecordItem(
-      activityId: row['id']?.toString() ?? '',
-      questionId: qid,
-      timestamp: timestamp,
-      isRight: isRight,
-      durationMs: duration,
-      userAnswer: userAns,
-      bankId: (row['bank_id'] as String?) ?? currentBankId,
-      subjectId: row['subject_id'] as String?,
-      chapterId: row['chapter_id'] as String?,
-      question: questionMap[qid],
-      userQuestion: userQuestionsMap[qid],
-    ));
+    result.add(
+      AnsweredRecordItem(
+        activityId: row['id']?.toString() ?? '',
+        questionId: qid,
+        timestamp: timestamp,
+        isRight: isRight,
+        durationMs: duration,
+        userAnswer: userAns,
+        bankId: (row['bank_id'] as String?) ?? currentBankId,
+        subjectId: row['subject_id'] as String?,
+        chapterId: row['chapter_id'] as String?,
+        question: questionMap[qid],
+        userQuestion: userQuestionsMap[qid],
+      ),
+    );
   }
   return result;
 }

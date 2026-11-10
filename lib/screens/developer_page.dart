@@ -69,8 +69,9 @@ class _DeveloperPageState extends State<DeveloperPage>
 
   Future<void> _checkAuthStatus() async {
     setState(() => _isCheckingAuth = true);
-    final res =
-        await AuthService.instance.checkTokenValidity(promptRelogin: false);
+    final res = await AuthService.instance.checkTokenValidity(
+      promptRelogin: false,
+    );
     await _loadCredentials();
     if (mounted) {
       setState(() {
@@ -132,8 +133,10 @@ class _DeveloperPageState extends State<DeveloperPage>
     }
 
     try {
-      final noteRows =
-          await db.query('NoteSyncQueue', orderBy: 'created_at ASC');
+      final noteRows = await db.query(
+        'NoteSyncQueue',
+        orderBy: 'created_at ASC',
+      );
       _noteQueueItems = List<Map<String, dynamic>>.from(noteRows);
     } catch (_) {
       _noteQueueItems = [];
@@ -174,7 +177,8 @@ class _DeveloperPageState extends State<DeveloperPage>
     final counts = <String, int>{};
     for (final table in tables) {
       try {
-        final count = Sqflite.firstIntValue(
+        final count =
+            Sqflite.firstIntValue(
               await db.rawQuery('SELECT COUNT(*) FROM $table'),
             ) ??
             0;
@@ -302,9 +306,9 @@ class _DeveloperPageState extends State<DeveloperPage>
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('校验失败：$e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('校验失败：$e')));
     }
   }
 
@@ -314,23 +318,23 @@ class _DeveloperPageState extends State<DeveloperPage>
       await db.rawQuery('PRAGMA wal_checkpoint(TRUNCATE);');
       await _loadDatabaseStats();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('WAL 日志落盘与截断完成')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('WAL 日志落盘与截断完成')));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('执行失败：$e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('执行失败：$e')));
     }
   }
 
   void _clearImageCache() {
     PaintingBinding.instance.imageCache.clear();
     PaintingBinding.instance.imageCache.clearLiveImages();
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('内存图片缓存已清空')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('内存图片缓存已清空')));
   }
 
   String _formatBytes(int bytes) {
@@ -470,13 +474,17 @@ class _DeveloperPageState extends State<DeveloperPage>
                   children: [
                     const Icon(Icons.verified_user_outlined, size: 20),
                     const SizedBox(width: 8),
-                    const Text('账号状态自检 (Token 诊断)',
-                        style: TextStyle(fontWeight: FontWeight.bold)),
+                    const Text(
+                      '账号状态自检 (Token 诊断)',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
                     const Spacer(),
                     if (_authCheckResult != null)
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 2),
+                          horizontal: 8,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
                           color: _authCheckResult!.isValid
                               ? Colors.green.withValues(alpha: 0.15)
@@ -484,7 +492,9 @@ class _DeveloperPageState extends State<DeveloperPage>
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: Text(
-                          _authCheckResult!.isValid ? 'Token 有效' : 'Token 已失效/异常',
+                          _authCheckResult!.isValid
+                              ? 'Token 有效'
+                              : 'Token 已失效/异常',
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.bold,
@@ -527,7 +537,10 @@ class _DeveloperPageState extends State<DeveloperPage>
                       onPressed: () {
                         pushAdaptiveModalPage(
                           context,
-                          desktopConstraints: const BoxConstraints(maxWidth: 480, maxHeight: 560),
+                          desktopConstraints: const BoxConstraints(
+                            maxWidth: 480,
+                            maxHeight: 560,
+                          ),
                           builder: (_) => LoginPage(
                             onLoggedIn: () {
                               _loadCredentials();
@@ -613,8 +626,9 @@ class _DeveloperPageState extends State<DeveloperPage>
           IconButton(
             icon: const Icon(Icons.copy, size: 20),
             tooltip: '复制',
-            onPressed:
-                value.isEmpty ? null : () => _copyToClipboard(field, value),
+            onPressed: value.isEmpty
+                ? null
+                : () => _copyToClipboard(field, value),
           ),
         ],
       ),
@@ -667,7 +681,8 @@ class _DeveloperPageState extends State<DeveloperPage>
                 ),
               )
             else
-              for (final item in _ykbQueueItems) _buildYkbQueueTile(theme, item),
+              for (final item in _ykbQueueItems)
+                _buildYkbQueueTile(theme, item),
           ],
         ),
         const SizedBox(height: 16),
@@ -748,8 +763,14 @@ class _DeveloperPageState extends State<DeveloperPage>
                           const SnackBar(content: Text('已清空同步响应缓存')),
                         );
                       },
-                      icon: const Icon(Icons.cleaning_services_outlined, size: 16),
-                      label: const Text('清理响应缓存', style: TextStyle(fontSize: 12)),
+                      icon: const Icon(
+                        Icons.cleaning_services_outlined,
+                        size: 16,
+                      ),
+                      label: const Text(
+                        '清理响应缓存',
+                        style: TextStyle(fontSize: 12),
+                      ),
                     ),
                     const SizedBox(width: 4),
                     Text(
@@ -767,8 +788,10 @@ class _DeveloperPageState extends State<DeveloperPage>
                 const Padding(
                   padding: EdgeInsets.all(16),
                   child: Center(
-                    child: Text('暂无作答流水记录',
-                        style: TextStyle(color: Colors.grey)),
+                    child: Text(
+                      '暂无作答流水记录',
+                      style: TextStyle(color: Colors.grey),
+                    ),
                   ),
                 )
               else
@@ -826,8 +849,9 @@ class _DeveloperPageState extends State<DeveloperPage>
                           Expanded(
                             child: Text(
                               mainTitle,
-                              style:
-                                  const TextStyle(fontWeight: FontWeight.w600),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                              ),
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
@@ -854,7 +878,8 @@ class _DeveloperPageState extends State<DeveloperPage>
                             icon: const Icon(Icons.reply_outlined, size: 18),
                             tooltip: '查看 respond',
                             onPressed: () {
-                              final respJson = cached?.rawResponse ??
+                              final respJson =
+                                  cached?.rawResponse ??
                                   const JsonEncoder.withIndent('  ').convert({
                                     'title': title,
                                     'question_id': qId,
@@ -909,12 +934,16 @@ class _DeveloperPageState extends State<DeveloperPage>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(title,
-                          style: const TextStyle(fontWeight: FontWeight.bold)),
+                      Text(
+                        title,
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
                       const SizedBox(height: 4),
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 2),
+                          horizontal: 8,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
                           color: badgeColor.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(6),
@@ -963,7 +992,18 @@ class _DeveloperPageState extends State<DeveloperPage>
     Color bg;
     Color fg;
 
-    if (title == 'CutQuestion') {
+    if (title == 'FlashcardReview' ||
+        title == 'ReviewMemory' ||
+        title == '熟练斩卡' ||
+        title == '熟练斩题') {
+      text = title == 'FlashcardReview'
+          ? '闪卡自评'
+          : title == 'ReviewMemory'
+          ? '记忆自评'
+          : title;
+      bg = Colors.purple.withValues(alpha: 0.15);
+      fg = Colors.purple.shade700;
+    } else if (title == 'CutQuestion') {
       text = isRight == 'cut' ? '斩题' : '恢复';
       bg = Colors.purple.withValues(alpha: 0.15);
       fg = Colors.purple.shade700;
@@ -1015,11 +1055,7 @@ class _DeveloperPageState extends State<DeveloperPage>
       child: Text(
         text,
         textAlign: TextAlign.center,
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.bold,
-          color: fg,
-        ),
+        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: fg),
       ),
     );
   }
@@ -1086,7 +1122,9 @@ class _DeveloperPageState extends State<DeveloperPage>
     } else if (code.contains('重做') || code == 'redo') {
       bg = Colors.teal.withValues(alpha: 0.15);
       fg = Colors.teal.shade700;
-    } else if (code.contains('笔记') || code.contains('上传') || code.contains('拉取')) {
+    } else if (code.contains('笔记') ||
+        code.contains('上传') ||
+        code.contains('拉取')) {
       bg = Colors.blue.withValues(alpha: 0.15);
       fg = Colors.blue.shade700;
     } else if (code.startsWith('4') || code == '错题') {
@@ -1134,15 +1172,12 @@ class _DeveloperPageState extends State<DeveloperPage>
     final queueId = item['id']?.toString() ?? '';
     final itemId = item['item_id']?.toString();
 
-    final cached = SyncResponseCache.instance.getByQueueId(queueId) ??
+    final cached =
+        SyncResponseCache.instance.getByQueueId(queueId) ??
         SyncResponseCache.instance.getByItemId(itemId);
     final String statusCode = cached?.code ?? (retry > 0 ? '重试' : '待同步');
 
-    final typeNames = {
-      'cut': '斩题同步',
-      'answer': '做题提交',
-      'redo_chapter': '章节重做',
-    };
+    final typeNames = {'cut': '斩题同步', 'answer': '做题提交', 'redo_chapter': '章节重做'};
 
     return ListTile(
       dense: true,
@@ -1243,7 +1278,8 @@ class _DeveloperPageState extends State<DeveloperPage>
             icon: const Icon(Icons.reply_outlined, size: 18),
             tooltip: '查看 respond',
             onPressed: () {
-              final respJson = cached?.rawResponse ??
+              final respJson =
+                  cached?.rawResponse ??
                   item['last_response']?.toString() ??
                   const JsonEncoder.withIndent('  ').convert({
                     'status': 'pending',
@@ -1251,10 +1287,7 @@ class _DeveloperPageState extends State<DeveloperPage>
                     'retry_count': retry,
                     'last_error': lastError,
                   });
-              _showRawJsonDialog(
-                'YkbSyncQueue Respond',
-                respJson,
-              );
+              _showRawJsonDialog('YkbSyncQueue Respond', respJson);
             },
           ),
           IconButton(
@@ -1262,8 +1295,11 @@ class _DeveloperPageState extends State<DeveloperPage>
             tooltip: '删除该项',
             onPressed: () async {
               final db = await UserDBHelper().database;
-              await db.delete('YkbSyncQueue',
-                  where: 'id = ?', whereArgs: [item['id']]);
+              await db.delete(
+                'YkbSyncQueue',
+                where: 'id = ?',
+                whereArgs: [item['id']],
+              );
               await _loadQueuesAndActivities();
               if (mounted) setState(() {});
             },
@@ -1281,7 +1317,8 @@ class _DeveloperPageState extends State<DeveloperPage>
     final queueId = item['id']?.toString() ?? '';
     final questionId = item['question_id']?.toString();
 
-    final cached = SyncResponseCache.instance.getByQueueId(queueId) ??
+    final cached =
+        SyncResponseCache.instance.getByQueueId(queueId) ??
         SyncResponseCache.instance.getByItemId(questionId);
     final String statusCode = cached?.code ?? (retry > 0 ? '重试' : '待同步');
 
@@ -1377,44 +1414,45 @@ class _DeveloperPageState extends State<DeveloperPage>
           IconButton(
             icon: const Icon(Icons.code, size: 18),
             tooltip: '查看 Payload',
-          onPressed: () => _showRawJsonDialog(
-            'NoteSyncQueue Payload',
-            item['payload']?.toString() ?? '{}',
+            onPressed: () => _showRawJsonDialog(
+              'NoteSyncQueue Payload',
+              item['payload']?.toString() ?? '{}',
+            ),
           ),
-        ),
-        IconButton(
-          icon: const Icon(Icons.reply_outlined, size: 18),
-          tooltip: '查看 respond',
-          onPressed: () {
-            final respJson = cached?.rawResponse ??
-                item['last_response']?.toString() ??
-                const JsonEncoder.withIndent('  ').convert({
-                  'status': 'pending',
-                  'message': '笔记队列项尚未向服务器请求或未生成响应',
-                  'retry_count': retry,
-                  'last_error': lastError,
-                });
-            _showRawJsonDialog(
-              'NoteSyncQueue Respond',
-              respJson,
-            );
-          },
-        ),
-        IconButton(
-          icon: const Icon(Icons.close, size: 18),
-          tooltip: '删除该项',
-          onPressed: () async {
-            final db = await UserDBHelper().database;
-            await db.delete('NoteSyncQueue',
-                where: 'id = ?', whereArgs: [item['id']]);
-            await _loadQueuesAndActivities();
-            if (mounted) setState(() {});
-          },
-        ),
-      ],
-    ),
-  );
-}
+          IconButton(
+            icon: const Icon(Icons.reply_outlined, size: 18),
+            tooltip: '查看 respond',
+            onPressed: () {
+              final respJson =
+                  cached?.rawResponse ??
+                  item['last_response']?.toString() ??
+                  const JsonEncoder.withIndent('  ').convert({
+                    'status': 'pending',
+                    'message': '笔记队列项尚未向服务器请求或未生成响应',
+                    'retry_count': retry,
+                    'last_error': lastError,
+                  });
+              _showRawJsonDialog('NoteSyncQueue Respond', respJson);
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.close, size: 18),
+            tooltip: '删除该项',
+            onPressed: () async {
+              final db = await UserDBHelper().database;
+              await db.delete(
+                'NoteSyncQueue',
+                where: 'id = ?',
+                whereArgs: [item['id']],
+              );
+              await _loadQueuesAndActivities();
+              if (mounted) setState(() {});
+            },
+          ),
+        ],
+      ),
+    );
+  }
 
   Future<void> _confirmClearQueue(String table) async {
     final confirmed = await showDialog<bool>(
@@ -1509,8 +1547,10 @@ class _DeveloperPageState extends State<DeveloperPage>
                   children: [
                     const Icon(Icons.storage, size: 20),
                     const SizedBox(width: 8),
-                    const Text('SQLite 数据库状态',
-                        style: TextStyle(fontWeight: FontWeight.bold)),
+                    const Text(
+                      'SQLite 数据库状态',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
                     const Spacer(),
                     Text(
                       _formatBytes(_databaseSize),
@@ -1539,7 +1579,9 @@ class _DeveloperPageState extends State<DeveloperPage>
                     for (final entry in _tableCounts.entries)
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 4),
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           color: theme.colorScheme.surfaceContainerHighest
                               .withValues(alpha: 0.5),
@@ -1548,7 +1590,9 @@ class _DeveloperPageState extends State<DeveloperPage>
                         child: Text(
                           '${entry.key}: ${entry.value}',
                           style: const TextStyle(
-                              fontSize: 12, fontFamily: 'monospace'),
+                            fontSize: 12,
+                            fontFamily: 'monospace',
+                          ),
                         ),
                       ),
                   ],
@@ -1593,8 +1637,10 @@ class _DeveloperPageState extends State<DeveloperPage>
                   children: [
                     Icon(Icons.network_check, size: 20),
                     SizedBox(width: 8),
-                    Text('网络 API 连通性测试 (Ping)',
-                        style: TextStyle(fontWeight: FontWeight.bold)),
+                    Text(
+                      '网络 API 连通性测试 (Ping)',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 12),
@@ -1602,8 +1648,9 @@ class _DeveloperPageState extends State<DeveloperPage>
                   contentPadding: EdgeInsets.zero,
                   title: const Text('医考帮 API 服务器 (getUserInfo 诊断)'),
                   subtitle: Text(
-                      _ykbPingResult ?? '$rootUrl/User/Main/getUserInfo',
-                      style: const TextStyle(fontSize: 12)),
+                    _ykbPingResult ?? '$rootUrl/User/Main/getUserInfo',
+                    style: const TextStyle(fontSize: 12),
+                  ),
                   trailing: ElevatedButton(
                     onPressed: _isPingingYkb ? null : _pingYkb,
                     child: _isPingingYkb
@@ -1659,17 +1706,24 @@ class _DeveloperPageState extends State<DeveloperPage>
                 color: theme.colorScheme.primaryContainer,
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Icon(Icons.science_outlined,
-                  color: theme.colorScheme.onPrimaryContainer),
+              child: Icon(
+                Icons.science_outlined,
+                color: theme.colorScheme.onPrimaryContainer,
+              ),
             ),
-            title: const Text('API 调试台 (Playground)',
-                style: TextStyle(fontWeight: FontWeight.bold)),
+            title: const Text(
+              'API 调试台 (Playground)',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
             subtitle: const Text('发送任意医考帮请求，自动生成加密签名与完整请求头'),
             trailing: const Icon(Icons.arrow_forward_ios, size: 16),
             onTap: () {
               pushAdaptiveModalPage(
                 context,
-                desktopConstraints: const BoxConstraints(maxWidth: 860, maxHeight: 850),
+                desktopConstraints: const BoxConstraints(
+                  maxWidth: 860,
+                  maxHeight: 850,
+                ),
                 builder: (_) => const ApiPlaygroundPage(),
               );
             },
@@ -1716,11 +1770,15 @@ class _DeveloperPageState extends State<DeveloperPage>
                   children: [
                     const Icon(Icons.tune, size: 20),
                     const SizedBox(width: 8),
-                    const Text('SharedPreferences 键值浏览器',
-                        style: TextStyle(fontWeight: FontWeight.bold)),
+                    const Text(
+                      'SharedPreferences 键值浏览器',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
                     const Spacer(),
-                    Text('${filteredPrefs.length} 个配置项',
-                        style: const TextStyle(fontSize: 12)),
+                    Text(
+                      '${filteredPrefs.length} 个配置项',
+                      style: const TextStyle(fontSize: 12),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 10),
@@ -1761,13 +1819,15 @@ class _DeveloperPageState extends State<DeveloperPage>
                         subtitle: SelectableText(
                           item.value.toString(),
                           style: const TextStyle(
-                              fontFamily: 'monospace', fontSize: 11),
+                            fontFamily: 'monospace',
+                            fontSize: 11,
+                          ),
                         ),
                         trailing: IconButton(
                           icon: const Icon(Icons.copy, size: 16),
                           tooltip: '复制内容',
-                          onPressed: () => _copyToClipboard(
-                              item.key, item.value.toString()),
+                          onPressed: () =>
+                              _copyToClipboard(item.key, item.value.toString()),
                         ),
                       );
                     },

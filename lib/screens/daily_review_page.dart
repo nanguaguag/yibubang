@@ -244,6 +244,7 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
         userAnswer: _selectedOption,
         bankId: item.bankId,
         eventId: _reviewEventId,
+        planId: item.reviewItem?.planId ?? widget.plan?.id,
       );
 
       if (!mounted) return;

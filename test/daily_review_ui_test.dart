@@ -588,6 +588,7 @@ class _FakeDailyReviewService extends DailyReviewService {
     DateTime? now,
     dynamic executor,
     String? eventId,
+    String? planId,
   }) async {
     submissionCount++;
     if (submissionGate != null) await submissionGate!.future;
