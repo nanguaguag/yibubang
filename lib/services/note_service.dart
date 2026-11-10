@@ -22,7 +22,6 @@ class NoteService {
 
   static const String keySyncNotesToYkb = 'sync_notes_to_ykb';
 
-
   /// 全局笔记变动与同步状态更新通知器（触发 UI 实时刷新）
   final ValueNotifier<int> noteSyncEventNotifier = ValueNotifier<int>(0);
 
@@ -55,119 +54,162 @@ class NoteService {
     return rows.map((e) => QuestionNote.fromMap(e)).toList();
   }
 
-  /// 保存或更新笔记（先落本地 SQLite，若开启同步则入队并触发同步）
+  /// 正文、修订号和上传义务在同一用户库事务内保存。
   Future<void> saveNote(QuestionNote note, {Question? question}) async {
-    final queueOwner=await DurableSyncQueue.owner();
+    final owner = await DurableSyncQueue.owner();
     final db = await UserDBHelper().database;
-    final syncEnabled = await isSyncEnabled();
-
-    final noteToSave = note.copyWith(
-      syncStatus: syncEnabled ? 1 : 0,
-      updatedAt: DateTime.now().millisecondsSinceEpoch,
-    );
-
-    // 外键约束已开启：先补 Question 兜底行，防止为「未作答的题」写笔记时
-    // Notes.question_id 引用失败导致插入被拒绝。
-    await db.insert('Question', {
-      'id': note.questionId,
-      'chapter_id': question?.chapterId ?? '',
-      'chapter_parent_id': question?.chapterParentId ?? '',
-    }, conflictAlgorithm: ConflictAlgorithm.ignore);
-    await db.insert(
-      'Notes',
-      noteToSave.toMap(),
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
-    debugPrint(
-      '[NoteService] saveNote locally: ${note.id}, syncEnabled: $syncEnabled',
-    );
-
-    if (syncEnabled) {
-      final queuePayload = {
-        ...noteToSave.toMap(),
-        'subject_id': question?.chapterParentId ?? '',
-        'identity_id': question?.identityId ?? '',
-        'app_id': question?.nativeAppId ?? question?.appId ?? '12',
-      };
-      await _enqueue(
-        NoteSyncQueueItem(
-          id: 'upload_${note.id}_${DateTime.now().millisecondsSinceEpoch}',
-          action: 'upload',
-          noteId: note.id,
-          questionId: note.questionId,
-          payload: jsonEncode(queuePayload),
-          createdAt: DateTime.now().millisecondsSinceEpoch,
-        ),
-        owner: queueOwner,
+    final enabled = await isSyncEnabled();
+    await db.transaction((tx) async {
+      final deleted = await tx.query(
+        'NoteTombstones',
+        where: 'local_id=?',
+        whereArgs: [note.id],
       );
-      // 触发后台处理
-      processQueue(question: question);
-    }
+      if (deleted.isNotEmpty) throw StateError('笔记已删除，请新建笔记');
+      final old = await tx.query('Notes', where: 'id=?', whereArgs: [note.id]);
+      final revision = old.isEmpty ? 1 : (old.single['revision'] as int) + 1;
+      final saved = note.copyWith(
+        syncStatus: enabled ? 1 : 0,
+        updatedAt: DateTime.now().millisecondsSinceEpoch,
+        remoteId: old.isEmpty
+            ? note.remoteId
+            : old.single['remote_id'] as String?,
+      );
+      await tx.insert('Question', {
+        'id': note.questionId,
+        'chapter_id': question?.chapterId ?? '',
+        'chapter_parent_id': question?.chapterParentId ?? '',
+      }, conflictAlgorithm: ConflictAlgorithm.ignore);
+      await tx.insert('Notes', {
+        ...saved.toMap(),
+        'revision': revision,
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+      await tx.delete(
+        'NoteSyncQueue',
+        where: "note_id=? AND action='upload' AND queue_state!='sending'",
+        whereArgs: [note.id],
+      );
+      if (enabled) await _queueNote(tx, saved, owner, question: question);
+    });
+    if (enabled) unawaited(processQueue(question: question));
     notifyNoteChanged();
   }
 
-  /// 删除笔记（先从本地 SQLite 移除，取消未决上传，若开启同步且有 remoteId 则入删除队列）
+  /// 保留在途上传和删除标记，晚到 ACK 可补远端删除，拉取不会复活原笔记。
   Future<void> deleteNote(QuestionNote note, {Question? question}) async {
-    final queueOwner=await DurableSyncQueue.owner();
+    final owner = await DurableSyncQueue.owner();
     final db = await UserDBHelper().database;
-    final syncEnabled = await isSyncEnabled();
-
-    // 1. 查找是否存在已关联的 remoteId（防止内存中对象未带 remoteId 但本地库中已有）
-    String? effectiveRemoteId = note.remoteId;
-    if (effectiveRemoteId == null || effectiveRemoteId.isEmpty) {
-      final existing = await db.query(
-        'Notes',
-        columns: ['remote_id'],
-        where: 'id = ?',
-        whereArgs: [note.id],
-        limit: 1,
+    final enabled = await isSyncEnabled();
+    await db.transaction((tx) async {
+      final rows = await tx.query('Notes', where: 'id=?', whereArgs: [note.id]);
+      final current = rows.isEmpty ? note : QuestionNote.fromMap(rows.single);
+      final remote = current.remoteId?.isNotEmpty == true
+          ? current.remoteId
+          : (!current.id.startsWith('local_') ? current.id : null);
+      final inflight = await tx.query(
+        'NoteSyncQueue',
+        columns: ['owner_user_id'],
+        where: "note_id=? AND action='upload' AND queue_state='sending'",
+        whereArgs: [current.id],
       );
-      if (existing.isNotEmpty) {
-        effectiveRemoteId = existing.first['remote_id'] as String?;
-      }
-    }
-    // 若 id 本身不是 local_ 开头，说明其本身就是服务端笔记 ID
-    if ((effectiveRemoteId == null || effectiveRemoteId.isEmpty) &&
-        !note.id.startsWith('local_')) {
-      effectiveRemoteId = note.id;
-    }
-
-    // 2. 从本地 SQLite 删除该笔记
-    await db.delete('Notes', where: 'id = ?', whereArgs: [note.id]);
-    debugPrint(
-      '[NoteService] deleteNote locally: ${note.id}, remoteId: $effectiveRemoteId',
-    );
-
-    // 3. 取消并清除队列中该笔记所有待上传任务（避免后续冗余发包）
-    await db.delete(
-      'NoteSyncQueue',
-      where: 'note_id = ? AND action = ?',
-      whereArgs: [note.id, 'upload'],
-    );
-
-    // 4. 若开启同步且存在有效远端 ID，入队 delete 任务同步至云端
-    if (syncEnabled &&
-        effectiveRemoteId != null &&
-        effectiveRemoteId.isNotEmpty) {
-      final queuePayload = {
-        'subject_id': question?.chapterParentId ?? '',
-        'identity_id': question?.identityId ?? '',
-        'app_id': question?.nativeAppId ?? question?.appId ?? '12',
+      final owners = {
+        owner,
+        ...inflight.map((r) => r['owner_user_id'] as String),
       };
-      await _enqueue(
-        NoteSyncQueueItem(
-          id: 'del_${effectiveRemoteId}_${DateTime.now().millisecondsSinceEpoch}',
-          action: 'delete',
-          noteId: effectiveRemoteId,
-          questionId: note.questionId,
-          payload: jsonEncode(queuePayload),
-          createdAt: DateTime.now().millisecondsSinceEpoch,
-        ),
-        owner: queueOwner,
+      for (final account in owners) {
+        await tx.insert('NoteTombstones', {
+          'local_id': current.id,
+          'owner_user_id': account,
+          'remote_id': remote,
+          'question_id': current.questionId,
+          'content': current.content,
+          'imgs': jsonEncode(current.images.map((i) => i.toJson()).toList()),
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+      await tx.delete('Notes', where: 'id=?', whereArgs: [note.id]);
+      await tx.delete(
+        'NoteSyncQueue',
+        where: "note_id=? AND action='upload' AND queue_state!='sending'",
+        whereArgs: [note.id],
       );
-      processQueue(question: question);
-    }
+      if (enabled && remote != null) {
+        await _queueDelete(
+          tx,
+          current.questionId,
+          remote,
+          owner,
+          question: question,
+        );
+      }
+    });
+    if (enabled) unawaited(processQueue(question: question));
     notifyNoteChanged();
+  }
+
+  Future<void> _queueNote(
+    DatabaseExecutor tx,
+    QuestionNote note,
+    String owner, {
+    Question? question,
+    Map<String, dynamic>? metadata,
+  }) async {
+    await DurableSyncQueue.enqueue('NoteSyncQueue', {
+      ...NoteSyncQueueItem(
+        id: 'upload_${generateSimpleId()}',
+        action: 'upload',
+        noteId: note.id,
+        questionId: note.questionId,
+        payload: jsonEncode({
+          ...note.toMap(),
+          'subject_id':
+              question?.chapterParentId ?? metadata?['subject_id'] ?? '',
+          'identity_id': question?.identityId ?? metadata?['identity_id'] ?? '',
+          'app_id':
+              question?.nativeAppId ??
+              question?.appId ??
+              metadata?['app_id'] ??
+              '12',
+        }),
+        createdAt: DateTime.now().millisecondsSinceEpoch,
+      ).toMap(),
+      'owner_user_id': owner,
+    }, executor: tx);
+  }
+
+  Future<void> _queueDelete(
+    DatabaseExecutor tx,
+    String questionId,
+    String remote,
+    String owner, {
+    Question? question,
+    Map<String, dynamic>? metadata,
+  }) async {
+    final existing = await tx.query(
+      'NoteSyncQueue',
+      where: "action='delete' AND note_id=? AND owner_user_id=?",
+      whereArgs: [remote, owner],
+    );
+    if (existing.isNotEmpty) return;
+    await DurableSyncQueue.enqueue('NoteSyncQueue', {
+      ...NoteSyncQueueItem(
+        id: 'del_${generateSimpleId()}',
+        action: 'delete',
+        noteId: remote,
+        questionId: questionId,
+        payload: jsonEncode({
+          'subject_id':
+              question?.chapterParentId ?? metadata?['subject_id'] ?? '',
+          'identity_id': question?.identityId ?? metadata?['identity_id'] ?? '',
+          'app_id':
+              question?.nativeAppId ??
+              question?.appId ??
+              metadata?['app_id'] ??
+              '12',
+        }),
+        createdAt: DateTime.now().millisecondsSinceEpoch,
+      ).toMap(),
+      'owner_user_id': owner,
+    }, executor: tx);
   }
 
   /// 上传单张图片到医考帮服务器
@@ -185,7 +227,8 @@ class NoteService {
         debugPrint('[NoteService] uploadImage skipped: user not logged in');
         return null;
       }
-      if(expectedOwner!=null && prefs.getString('user_id')!=expectedOwner) {
+      if (expectedOwner != null &&
+          prefs.getString('user_id') != expectedOwner) {
         throw StateError('笔记同步账号已切换');
       }
       final token = prefs.getString('token') ?? '';
@@ -223,11 +266,15 @@ class NoteService {
       request.files.add(await http.MultipartFile.fromPath('file', file.path));
 
       debugPrint('[NoteService] uploadImage start for ${file.path}');
-      final client=http.Client();
+      final client = http.Client();
       final http.Response response;
       try {
-        response=await (() async => http.Response.fromStream(await client.send(request)))().timeout(const Duration(seconds:30));
-      } finally { client.close(); }
+        response = await (() async => http.Response.fromStream(
+          await client.send(request),
+        ))().timeout(const Duration(seconds: 30));
+      } finally {
+        client.close();
+      }
       final bodyStr = utf8.decode(response.bodyBytes);
       debugPrint(
         '[NoteService] uploadImage response (${response.statusCode}): $bodyStr',
@@ -265,6 +312,7 @@ class NoteService {
       return getLocalNotes(question.id);
     }
 
+    final pullOwner = prefs.getString('user_id') ?? '';
     // 先跑一下当前题目的上传队列
     await processQueue(question: question);
 
@@ -278,19 +326,27 @@ class NoteService {
           ? question.nativeAppId!
           : (question.appId?.isNotEmpty == true ? question.appId! : '12');
 
-      final resp = await basicReq('/allQuestion/Note/getNote', {
-        'question_id': question.id,
-        'subject_id': subjectId,
-        'identity_id': identityId,
-        'app_id': appId,
-        'module_type': '1',
-        'page': '1',
-        'size': '20',
-        'is_vip': '0',
-        'is_svip': '0',
-      }, method: 'GET');
+      final resp = await basicReq(
+        '/allQuestion/Note/getNote',
+        {
+          'question_id': question.id,
+          'subject_id': subjectId,
+          'identity_id': identityId,
+          'app_id': appId,
+          'module_type': '1',
+          'page': '1',
+          'size': '20',
+          'is_vip': '0',
+          'is_svip': '0',
+        },
+        method: 'GET',
+        expectedOwner: pullOwner,
+      );
+      if (await DurableSyncQueue.owner() != pullOwner) {
+        return getLocalNotes(question.id);
+      }
 
-      if (resp['code'] == '200' && resp['data'] is List) {
+      if (resp['code'].toString() == '200' && resp['data'] is List) {
         final remoteList = resp['data'] as List;
         final localNotes = await getLocalNotes(question.id);
         final db = await UserDBHelper().database;
@@ -315,6 +371,25 @@ class NoteService {
             }).toList();
           }
 
+          final account = pullOwner;
+          final tombs = await db.query(
+            'NoteTombstones',
+            where: 'owner_user_id=? AND question_id=?',
+            whereArgs: [account, question.id],
+          );
+          final remoteImage = rImages.isEmpty ? '' : rImages.first.bImg;
+          final deleted = tombs.any((t) {
+            if (t['remote_id'] == rId) return true;
+            if (t['remote_id'] != null || t['content'] != rContent) {
+              return false;
+            }
+            final images = jsonDecode(t['imgs'] as String) as List;
+            final image = images.isEmpty ? '' : (images.first as Map)['b_img'];
+            return image == remoteImage;
+          });
+          if (deleted) {
+            continue;
+          }
           // 匹配本地记录：按 remote_id 或 id
           final matchedLocal = localNotes
               .where((n) => n.remoteId == rId || n.id == rId)
@@ -370,8 +445,16 @@ class NoteService {
               await db.update(
                 'Notes',
                 updated.toMap(),
-                where: 'id = ?',
-                whereArgs: [matchedLocal.id],
+                where:
+                    'id = ? AND updated_at = ? AND content = ? AND imgs = ? AND sync_status = 0',
+                whereArgs: [
+                  matchedLocal.id,
+                  matchedLocal.updatedAt,
+                  matchedLocal.content,
+                  jsonEncode(
+                    matchedLocal.images.map((i) => i.toJson()).toList(),
+                  ),
+                ],
               );
             } else if (needLinkRemoteId) {
               await db.update(
@@ -410,22 +493,40 @@ class NoteService {
   }
 
   /// 队列入队
-  Future<void> _enqueue(NoteSyncQueueItem item, {required String owner}) => DurableSyncQueue.enqueue('NoteSyncQueue', {...item.toMap(), 'owner_user_id': owner});
-  Future<bool> _executeRow(Map<String,dynamic> row, Question? question) async {
-    final item=NoteSyncQueueItem.fromMap(row);
-    final owner=row['owner_user_id'] as String;
-    if(item.action=='upload') return _processUploadItem(item,question,owner);
-    if(item.action=='delete') return _processDeleteItem(item,question,owner);
+  Future<bool> _executeRow(Map<String, dynamic> row, Question? question) async {
+    final item = NoteSyncQueueItem.fromMap(row);
+    final owner = row['owner_user_id'] as String;
+    if (item.action == 'upload') {
+      return _processUploadItem(item, question, owner);
+    }
+    if (item.action == 'delete') {
+      return _processDeleteItem(item, question, owner);
+    }
     throw StateError('不支持的笔记同步任务: ${item.action}');
   }
+
   Future<bool> retryItem(String id, {Question? question}) async {
-    if(!await DurableSyncQueue.reset('NoteSyncQueue',id:id)) return false;
-    return DurableSyncQueue.run('NoteSyncQueue',(row)=>_executeRow(row,question),onlyId:id);
+    if (!await DurableSyncQueue.reset('NoteSyncQueue', id: id)) return false;
+    return DurableSyncQueue.run(
+      'NoteSyncQueue',
+      (row) => _executeRow(row, question),
+      onlyId: id,
+    );
   }
-  Future<void> resetItemRetry(String id) async { await DurableSyncQueue.reset('NoteSyncQueue',id:id); }
-  Future<void> resetAllRetries() async { await DurableSyncQueue.reset('NoteSyncQueue'); }
+
+  Future<void> resetItemRetry(String id) async {
+    await DurableSyncQueue.reset('NoteSyncQueue', id: id);
+  }
+
+  Future<void> resetAllRetries() async {
+    await DurableSyncQueue.reset('NoteSyncQueue');
+  }
+
   Future<void> processQueue({Question? question}) async {
-    await DurableSyncQueue.run('NoteSyncQueue',(row)=>_executeRow(row,question));
+    await DurableSyncQueue.run(
+      'NoteSyncQueue',
+      (row) => _executeRow(row, question),
+    );
   }
 
   Future<bool> _processUploadItem(
@@ -446,6 +547,7 @@ class NoteService {
     }
 
     QuestionNote note = QuestionNote.fromMap(noteRows.first);
+    var revision = noteRows.first['revision'] as int;
     final prefs = await SharedPreferences.getInstance();
 
     // 优先从 payload 中提取已序列化的参数，避免后台队列无 fallbackQuestion 导致 subject_id 为空
@@ -515,20 +617,33 @@ class NoteService {
             appId: appId,
             expectedOwner: owner,
           );
-          if (uploaded != null) {
-            updatedImages[0] = uploaded;
-            note = note.copyWith(images: updatedImages);
-            await db.update(
-              'Notes',
-              note.toMap(),
-              where: 'id = ?',
-              whereArgs: [note.id],
-            );
+          if (uploaded == null) throw StateError('笔记图片尚未上传成功');
+          updatedImages[0] = uploaded;
+          final changed = await db.update(
+            'Notes',
+            {'imgs': jsonEncode(updatedImages.map((i) => i.toJson()).toList())},
+            where: 'id=? AND revision=?',
+            whereArgs: [note.id, revision],
+          );
+          if (changed == 0) {
+            await _queueCurrentNote(db, note.id, owner, itemPayload);
+            return true;
           }
+          note = note.copyWith(images: updatedImages);
+          revision++;
         }
       }
     }
 
+    final current = await db.query(
+      'Notes',
+      where: 'id=? AND revision=?',
+      whereArgs: [note.id, revision],
+    );
+    if (current.isEmpty) {
+      await _queueCurrentNote(db, note.id, owner, itemPayload);
+      return true;
+    }
     // 调用 pushNote
     final params = <String, dynamic>{
       'question_id': note.questionId,
@@ -575,36 +690,65 @@ class NoteService {
     );
 
     if (resp['code'] == '200' || resp['code'] == 200) {
-      String? remoteId = note.remoteId;
+      final data = resp['data'];
+      final remoteId = note.remoteId?.isNotEmpty == true
+          ? note.remoteId
+          : (data is Map ? (data['id'] ?? data['note_id'])?.toString() : null);
       if (remoteId == null || remoteId.isEmpty) {
-        // 新上传的笔记尝试查询 getNote 获取服务端生成的 remoteId
-        try {
-          final listResp = await basicReq('/allQuestion/Note/getNote', {
-            'question_id': note.questionId,
-            'subject_id': subjectId,
-            'identity_id': identityId,
-            'app_id': appId,
-            'module_type': '1',
-            'page': '1',
-            'size': '5',
-            'is_vip': '0',
-            'is_svip': '0',
-          }, method: 'GET', expectedOwner: owner);
-          if (listResp['code'] == '200' && listResp['data'] is List) {
-            final list = listResp['data'] as List;
-            if (list.isNotEmpty) {
-              remoteId = list.first['id']?.toString();
-            }
-          }
-        } catch (_) {}
+        await db.update(
+          'NoteSyncQueue',
+          {
+            'last_error': '上传已确认但缺少可靠笔记ID，请核对远端后关联；自动重试已暂停',
+            'last_response': jsonEncode({
+              'code': 'protocol_error',
+              'response': resp,
+            }),
+          },
+          where: 'id=?',
+          whereArgs: [item.id],
+        );
+        return false;
       }
-
-      await db.update(
-        'Notes',
-        {'remote_id': remoteId, 'sync_status': 0},
-        where: 'id = ?',
-        whereArgs: [note.id],
-      );
+      var needsQueue = false;
+      await db.transaction((tx) async {
+        final tomb = await tx.query(
+          'NoteTombstones',
+          where: 'local_id=? AND owner_user_id=?',
+          whereArgs: [note.id, owner],
+        );
+        if (tomb.isNotEmpty) {
+          await tx.update(
+            'NoteTombstones',
+            {'remote_id': remoteId},
+            where: 'local_id=? AND owner_user_id=?',
+            whereArgs: [note.id, owner],
+          );
+          await _queueDelete(
+            tx,
+            note.questionId,
+            remoteId,
+            owner,
+            metadata: itemPayload,
+          );
+        } else {
+          // 关联远端身份独立于正文版本；仅实际发送的版本可标记为已同步。
+          await tx.update(
+            'Notes',
+            {'remote_id': remoteId},
+            where: 'id=?',
+            whereArgs: [note.id],
+          );
+          needsQueue =
+              await tx.update(
+                'Notes',
+                {'sync_status': 0},
+                where: 'id=? AND revision=?',
+                whereArgs: [note.id, revision],
+              ) ==
+              0;
+        }
+      });
+      if (needsQueue) await _queueCurrentNote(db, note.id, owner, itemPayload);
 
       // 记录笔记上传流水到 Activities
       try {
@@ -635,6 +779,31 @@ class NoteService {
     );
 
     return false;
+  }
+
+  Future<void> _queueCurrentNote(
+    Database db,
+    String id,
+    String owner,
+    Map<String, dynamic> metadata,
+  ) async {
+    await db.transaction((tx) async {
+      final rows = await tx.query('Notes', where: 'id=?', whereArgs: [id]);
+      if (rows.isEmpty) return;
+      final pending = await tx.query(
+        'NoteSyncQueue',
+        where: "note_id=? AND action='upload' AND queue_state='pending'",
+        whereArgs: [id],
+      );
+      if (pending.isEmpty) {
+        await _queueNote(
+          tx,
+          QuestionNote.fromMap(rows.single),
+          owner,
+          metadata: metadata,
+        );
+      }
+    });
   }
 
   Future<bool> _processDeleteItem(
@@ -693,16 +862,21 @@ class NoteService {
       appId = '12';
     }
 
-    final resp = await basicReq('/allQuestion/Note/cleanNote', {
-      'id': item.noteId,
-      'question_id': item.questionId,
-      'module_type': '1',
-      'subject_id': subjectId,
-      'identity_id': identityId,
-      'app_id': appId,
-      'is_vip': '0',
-      'is_svip': '0',
-    }, method: 'POST', expectedOwner: owner);
+    final resp = await basicReq(
+      '/allQuestion/Note/cleanNote',
+      {
+        'id': item.noteId,
+        'question_id': item.questionId,
+        'module_type': '1',
+        'subject_id': subjectId,
+        'identity_id': identityId,
+        'app_id': appId,
+        'is_vip': '0',
+        'is_svip': '0',
+      },
+      method: 'POST',
+      expectedOwner: owner,
+    );
 
     final code = resp['code']?.toString() ?? 'protocol_error';
     final rawResp = const JsonEncoder.withIndent('  ').convert(resp);

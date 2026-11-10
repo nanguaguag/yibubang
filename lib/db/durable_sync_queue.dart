@@ -43,9 +43,13 @@ class DurableSyncQueue {
         : '';
   }
 
-  static Future<void> enqueue(String table, Map<String, dynamic> row) async {
+  static Future<void> enqueue(
+    String table,
+    Map<String, dynamic> row, {
+    DatabaseExecutor? executor,
+  }) async {
     final account = row['owner_user_id'] as String? ?? await owner();
-    await (await UserDBHelper().database).insert(table, {
+    await (executor ?? await UserDBHelper().database).insert(table, {
       ...row,
       'owner_user_id': account,
       'queue_state': account.isEmpty ? 'paused' : 'pending',
@@ -91,6 +95,7 @@ class DurableSyncQueue {
         final account = await owner();
         if (account.isEmpty) break;
         final db = await UserDBHelper().database;
+        _requested.remove(table);
         final rows = await db.query(
           table,
           where:
@@ -170,32 +175,35 @@ class DurableSyncQueue {
         if (onlyId != null) break;
       }
     } finally {
-      _busy.remove(table);
-      final account = await owner();
-      if (account.isNotEmpty) {
-        final db = await UserDBHelper().database;
-        final rows = await db.rawQuery(
-          "SELECT MIN(next_attempt_at) AS due FROM $table WHERE owner_user_id=? AND queue_state='pending'",
-          [account],
-        );
-        final due = rows.single['due'] as int?;
-        if (due != null) {
-          final wait = (due - DateTime.now().millisecondsSinceEpoch).clamp(
-            0,
-            3600000,
+      try {
+        final account = await owner();
+        if (account.isNotEmpty) {
+          final db = await UserDBHelper().database;
+          final rows = await db.rawQuery(
+            "SELECT MIN(next_attempt_at) AS due FROM $table WHERE owner_user_id=? AND queue_state='pending'",
+            [account],
           );
+          final due = rows.single['due'] as int?;
+          if (due != null) {
+            final wait = (due - DateTime.now().millisecondsSinceEpoch).clamp(
+              0,
+              3600000,
+            );
+            _wake[table] = Timer(
+              Duration(milliseconds: wait),
+              () => unawaited(run(table, execute)),
+            );
+          }
+        }
+        if (_requested.remove(table)) {
+          _wake.remove(table)?.cancel();
           _wake[table] = Timer(
-            Duration(milliseconds: wait),
+            Duration.zero,
             () => unawaited(run(table, execute)),
           );
         }
-      }
-      if (_requested.remove(table)) {
-        _wake.remove(table)?.cancel();
-        _wake[table] = Timer(
-          Duration.zero,
-          () => unawaited(run(table, execute)),
-        );
+      } finally {
+        _busy.remove(table);
       }
     }
     return completed;
