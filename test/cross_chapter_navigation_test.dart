@@ -72,7 +72,7 @@ void main() {
                 ChapterCrossIndicator(
                   isNext: true,
                   overscrollDistance: 35.0,
-                  threshold: 60.0,
+                  threshold: 85.0,
                   targetChapter: chapter2,
                 ),
               ],
@@ -93,8 +93,8 @@ void main() {
               children: [
                 ChapterCrossIndicator(
                   isNext: true,
-                  overscrollDistance: 75.0,
-                  threshold: 60.0,
+                  overscrollDistance: 95.0,
+                  threshold: 85.0,
                   targetChapter: chapter2,
                 ),
               ],
@@ -157,7 +157,7 @@ void main() {
                   axis: Axis.vertical,
                   isNext: false,
                   overscrollDistance: 35.0,
-                  threshold: 60.0,
+                  threshold: 85.0,
                   targetChapter: chapter2,
                 ),
               ],
@@ -179,8 +179,8 @@ void main() {
                 ChapterCrossIndicator(
                   axis: Axis.vertical,
                   isNext: false,
-                  overscrollDistance: 75.0,
-                  threshold: 60.0,
+                  overscrollDistance: 95.0,
+                  threshold: 85.0,
                   targetChapter: chapter2,
                 ),
               ],
@@ -203,7 +203,7 @@ void main() {
                   axis: Axis.vertical,
                   isNext: true,
                   overscrollDistance: 35.0,
-                  threshold: 60.0,
+                  threshold: 85.0,
                   targetChapter: chapter2,
                 ),
               ],
@@ -225,8 +225,8 @@ void main() {
                 ChapterCrossIndicator(
                   axis: Axis.vertical,
                   isNext: true,
-                  overscrollDistance: 75.0,
-                  threshold: 60.0,
+                  overscrollDistance: 95.0,
+                  threshold: 85.0,
                   targetChapter: chapter2,
                 ),
               ],
@@ -409,6 +409,29 @@ void main() {
       await gesture.panZoomEnd();
       await tester.pump();
       expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('cancels cross-chapter dwell timer when releasing before 500ms threshold', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: QuestionGridPage(
+            chapter: chapterA,
+          ),
+        ),
+      );
+
+      await tester.pump();
+      final TestGesture gesture = await tester.startGesture(const Offset(200, 200));
+      await gesture.moveBy(const Offset(0, 100));
+      await tester.pump(const Duration(milliseconds: 200));
+
+      // 提前松手（在 500ms 达到前）
+      await gesture.up();
+      await tester.pump();
+
+      // 等待 700ms，确认不会发生延迟误切
+      await tester.pump(const Duration(milliseconds: 700));
+      expect(find.text('第一章 绪论'), findsOneWidget);
     });
   });
 }

@@ -89,7 +89,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
   Timer? _switchBannerTimer;
 
   bool _hasTriggeredHaptic = false;
-  static const double _overscrollThreshold = 55.0;
+  static const double _overscrollThreshold = 85.0;
 
   /// 松手时准备触发切章的目标状态
   Chapter? _targetChapterToTrigger;
@@ -225,10 +225,10 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
           distance: dist,
           targetChapter: _prevChapter,
         );
+        _targetChapterToTrigger = _prevChapter;
+        _isTriggeringNext = false;
         if (dist >= _overscrollThreshold && _prevChapter != null) {
           _canTriggerChapter = true;
-          _targetChapterToTrigger = _prevChapter;
-          _isTriggeringNext = false;
           if (!_hasTriggeredHaptic) {
             _hasTriggeredHaptic = true;
             HapticFeedback.mediumImpact();
@@ -243,10 +243,10 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
           distance: dist,
           targetChapter: _nextChapter,
         );
+        _targetChapterToTrigger = _nextChapter;
+        _isTriggeringNext = true;
         if (dist >= _overscrollThreshold && _nextChapter != null) {
           _canTriggerChapter = true;
-          _targetChapterToTrigger = _nextChapter;
-          _isTriggeringNext = true;
           if (!_hasTriggeredHaptic) {
             _hasTriggeredHaptic = true;
             HapticFeedback.mediumImpact();

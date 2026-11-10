@@ -393,11 +393,13 @@ class CloudSyncService extends ChangeNotifier {
         whereArgs: effectiveSyncTime > 0 ? [effectiveSyncTime] : null,
       );
 
-      // 2. 发起云端同步请求
+      // 2. 发起云端同步请求（同步包体较大，给予更充裕的弱网超时时间）
+      debugPrint('[cloud-sync] 开始同步: 待推送题目 ${pushQuestions.length} 道, 流水 ${pushActivities.length} 条');
       final res = await _request(
         '/api/sync',
         method: 'POST',
         auth: true,
+        timeout: const Duration(seconds: 45),
         body: {
           'last_sync_time': effectiveSyncTime,
           'force': force,
@@ -587,13 +589,16 @@ class CloudSyncService extends ChangeNotifier {
     String method = 'GET',
     Map<String, dynamic>? body,
     bool auth = false,
+    Duration timeout = const Duration(seconds: 15),
   }) async {
     final endpoints = [primaryEndpoint, fallbackEndpoint];
     Exception? lastEx;
 
     for (final base in endpoints) {
+      final sw = Stopwatch()..start();
+      final uri = Uri.parse('$base$path');
       try {
-        final uri = Uri.parse('$base$path');
+        debugPrint('[cloud-sync] 发起请求: $method $uri (超时设置: ${timeout.inSeconds}s)');
         final headers = <String, String>{
           'Content-Type': 'application/json; charset=utf-8',
         };
@@ -611,15 +616,18 @@ class CloudSyncService extends ChangeNotifier {
                   headers: headers,
                   body: body != null ? jsonEncode(body) : null,
                 )
-                .timeout(const Duration(seconds: 10));
+                .timeout(timeout);
           } else {
             res = await client
                 .get(uri, headers: headers)
-                .timeout(const Duration(seconds: 10));
+                .timeout(timeout);
           }
         } finally {
           client.close();
         }
+
+        sw.stop();
+        debugPrint('[cloud-sync] 请求完成: $method $uri [${res.statusCode}] 耗时 ${sw.elapsedMilliseconds}ms');
 
         if (res.statusCode >= 200 && res.statusCode < 300) {
           final decoded = jsonDecode(utf8.decode(res.bodyBytes));
@@ -637,10 +645,19 @@ class CloudSyncService extends ChangeNotifier {
           }
         }
       } on SocketException catch (e) {
+        sw.stop();
         lastEx = e;
+        debugPrint('[cloud-sync] 网络连接异常 ($uri, 耗时 ${sw.elapsedMilliseconds}ms): $e');
         continue;
       } on TimeoutException catch (e) {
+        sw.stop();
         lastEx = e;
+        debugPrint('[cloud-sync] 请求超时 ($uri, 耗时 ${sw.elapsedMilliseconds}ms): $e');
+        continue;
+      } catch (e) {
+        sw.stop();
+        lastEx = e is Exception ? e : Exception(e.toString());
+        debugPrint('[cloud-sync] 请求异常 ($uri, 耗时 ${sw.elapsedMilliseconds}ms): $e');
         continue;
       }
     }

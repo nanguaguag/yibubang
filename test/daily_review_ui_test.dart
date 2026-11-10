@@ -63,8 +63,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // 点击保存
-      await tester.ensureVisible(find.text('保存计划'));
-      await tester.tap(find.text('保存计划'));
+      await tester.tap(find.text('保存'));
       await tester.pumpAndSettle();
 
       expect(savedResult, isNotNull);
@@ -288,7 +287,7 @@ void main() {
       expect(find.text('Anki浓缩错题计划'), findsOneWidget);
       expect(find.text('已连续打卡 4 天'), findsOneWidget);
       expect(find.text('抽题范围: 错题 · 收藏 · 笔记 | 覆盖 2 门课程'), findsOneWidget);
-      expect(find.text('记忆精粹卡片池'), findsOneWidget);
+      expect(find.text('卡片池'), findsOneWidget);
       expect(find.text('闪卡卡包'), findsOneWidget);
       expect(find.text('自制闪卡'), findsOneWidget);
       expect(find.text('42'), findsOneWidget); // 错题攻克

@@ -48,11 +48,10 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
   Chapter? _prevChapter;
   Chapter? _nextChapter;
   bool _isSwitchingChapter = false;
-  bool _canTriggerChapter = false;
-  bool _isTriggeringNext = false;
   bool _hasTriggeredHaptic = false;
-  Chapter? _targetChapterToTrigger;
-  static const double _overscrollThreshold = 55.0;
+  static const double _overscrollThreshold = 85.0;
+  Timer? _dwellTimer;
+  static const Duration _dwellDuration = Duration(milliseconds: 500);
 
   final ValueNotifier<ChapterCrossOverscrollState> _overscrollNotifier =
       ValueNotifier<ChapterCrossOverscrollState>(const ChapterCrossOverscrollState());
@@ -108,21 +107,40 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
     }
   }
 
-  void _handleTriggerRelease() {
-    if (_canTriggerChapter && _targetChapterToTrigger != null && !_isSwitchingChapter) {
-      final target = _targetChapterToTrigger!;
-      final toNext = _isTriggeringNext;
-      _canTriggerChapter = false;
-      _targetChapterToTrigger = null;
+  void _startDwellTimerIfNeeded(Chapter target, {required bool isNext}) {
+    if (_isSwitchingChapter) return;
+    if (_dwellTimer != null) return;
+
+    if (!_hasTriggeredHaptic) {
+      _hasTriggeredHaptic = true;
+      HapticFeedback.selectionClick();
+    }
+
+    _dwellTimer = Timer(_dwellDuration, () {
+      _dwellTimer = null;
+      if (!mounted || _isSwitchingChapter) return;
+      HapticFeedback.mediumImpact();
       _overscrollNotifier.value = const ChapterCrossOverscrollState();
       _hasTriggeredHaptic = false;
-      _switchToChapter(target, isNext: toNext);
+      _switchToChapter(target, isNext: isNext);
+    });
+  }
+
+  void _cancelDwellTimer() {
+    if (_dwellTimer != null) {
+      _dwellTimer?.cancel();
+      _dwellTimer = null;
     }
   }
 
+  void _handleTriggerRelease() {
+    _cancelDwellTimer();
+    _overscrollNotifier.value = const ChapterCrossOverscrollState();
+    _hasTriggeredHaptic = false;
+  }
+
   void _handlePointerCancel(PointerCancelEvent event) {
-    _canTriggerChapter = false;
-    _targetChapterToTrigger = null;
+    _cancelDwellTimer();
     _overscrollNotifier.value = const ChapterCrossOverscrollState();
     _hasTriggeredHaptic = false;
   }
@@ -147,14 +165,10 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
             isNext: false,
             targetChapter: _prevChapter,
           );
-          _targetChapterToTrigger = _prevChapter;
-          _isTriggeringNext = false;
           if (ready && _prevChapter != null) {
-            _canTriggerChapter = true;
-            if (!_hasTriggeredHaptic) {
-              _hasTriggeredHaptic = true;
-              HapticFeedback.mediumImpact();
-            }
+            _startDwellTimerIfNeeded(_prevChapter!, isNext: false);
+          } else if (dist < _overscrollThreshold - 20.0) {
+            _cancelDwellTimer();
           }
         } else if (metrics.pixels > metrics.maxScrollExtent) {
           // 上拉（底部边界）：进入下一章
@@ -165,23 +179,18 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
             isNext: true,
             targetChapter: _nextChapter,
           );
-          _targetChapterToTrigger = _nextChapter;
-          _isTriggeringNext = true;
           if (ready && _nextChapter != null) {
-            _canTriggerChapter = true;
-            if (!_hasTriggeredHaptic) {
-              _hasTriggeredHaptic = true;
-              HapticFeedback.mediumImpact();
-            }
+            _startDwellTimerIfNeeded(_nextChapter!, isNext: true);
+          } else if (dist < _overscrollThreshold - 20.0) {
+            _cancelDwellTimer();
           }
         } else {
+          _cancelDwellTimer();
           if (_overscrollNotifier.value.distance > 0) {
             _overscrollNotifier.value = const ChapterCrossOverscrollState();
           }
           // 用户主动滑回深层内容区域时取消触发态
           if (metrics.pixels > 30.0 && metrics.pixels < metrics.maxScrollExtent - 30.0) {
-            _canTriggerChapter = false;
-            _targetChapterToTrigger = null;
             _hasTriggeredHaptic = false;
           }
         }
@@ -271,6 +280,7 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
 
   @override
   void dispose() {
+    _cancelDwellTimer();
     CloudSyncService.instance.removeListener(_onCloudSyncUpdate);
     _switchBannerTimer?.cancel();
     _overscrollNotifier.dispose();
@@ -1064,6 +1074,7 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
                   overscrollDistance: state.distance,
                   threshold: _overscrollThreshold,
                   targetChapter: state.targetChapter,
+                  dwellDuration: _dwellDuration,
                 );
               },
             ),
