@@ -113,6 +113,26 @@ class CloudOutbox {
     orderBy: 'seq',
   );
 
+  static Future<int> upperBound(Database db, String owner) async =>
+      (await db.rawQuery(
+            'SELECT COALESCE(MAX(seq),0) AS seq FROM CloudOutbox WHERE owner=?',
+            [owner],
+          )).single['seq']
+          as int;
+
+  static Future<List<Map<String, Object?>>> page(
+    Database db,
+    String owner,
+    int after,
+    int through,
+  ) => db.query(
+    'CloudOutbox',
+    where: 'owner=? AND seq>? AND seq<=?',
+    whereArgs: [owner, after, through],
+    orderBy: 'seq',
+    limit: 500,
+  );
+
   static Future<Map<String, Object?>> mutation(
     DatabaseExecutor db,
     Map<String, Object?> row,

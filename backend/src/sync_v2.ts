@@ -13,14 +13,30 @@ export async function pushMutations(db: D1Database, user: string, device: string
         !mutation.payload || typeof mutation.payload !== 'object') throw new Error('Invalid mutation');
     const q = mutation.payload;
     const key = [device, mutation.stream, mutation.seq];
+    if (mutation.kind === 'question') {
+      for (const f of ['chapter_id','chapter_parent_id']) {
+        if (Object.prototype.hasOwnProperty.call(q,f) && q[f] !== null && typeof q[f] !== 'string') throw new Error('Invalid question relation');
+      }
+      if (('collection' in q && ![0,1].includes(q.collection)) ||
+          ('status' in q && ![0,1,2,4].includes(q.status)) ||
+          ('cut_question' in q && !['0','1'].includes(q.cut_question)) ||
+          ('user_answer' in q && typeof q.user_answer !== 'string')) throw new Error('Invalid question fields');
+    }
+    const encoded = JSON.stringify(q);
+    const seen = await db.prepare('SELECT kind,entity_id,payload FROM sync_mutations WHERE device_id=? AND stream=? AND client_seq=?').bind(...key).first<{kind:string,entity_id:string,payload:string}>();
+    if (seen) {
+      if (seen.kind !== mutation.kind || seen.entity_id !== mutation.id || seen.payload !== encoded) throw new Error('Mutation identity reused with different content');
+      accepted.push(mutation.seq);
+      continue;
+    }
     const active = 'EXISTS (SELECT 1 FROM sync_mutations WHERE device_id=? AND stream=? AND client_seq=? AND applied=0)';
     const statements = [db.prepare(`INSERT OR IGNORE INTO sync_mutations(user_id,device_id,stream,client_seq,kind,entity_id,payload) VALUES(?,?,?,?,?,?,?)`)
-      .bind(user, ...key, mutation.kind, mutation.id, JSON.stringify(q))];
+      .bind(user, ...key, mutation.kind, mutation.id, encoded)];
     if (mutation.kind === 'question') {
       const fields = questionFields.filter(f => Object.prototype.hasOwnProperty.call(q, f));
-      statements.push(db.prepare(`INSERT OR IGNORE INTO sync_questions(user_id,question_id) VALUES(?,?)`).bind(user, mutation.id));
-      if (fields.length) statements.push(db.prepare(`UPDATE sync_questions SET ${fields.map(f => `${f}=?`).join(',')}, updated_at=? WHERE user_id=? AND question_id=? AND ${active}`)
-        .bind(...fields.map(f => q[f]), now, user, mutation.id, ...key));
+      statements.push(db.prepare(`INSERT OR IGNORE INTO sync_questions(user_id,question_id${fields.length ? ','+fields.join(',') : ''},updated_at) VALUES(?,?${fields.map(()=>',?').join('')},?)`).bind(user, mutation.id, ...fields.map(f=>q[f]), now));
+      if (fields.length) statements.push(db.prepare(`UPDATE sync_questions SET ${fields.map(f => `${f}=?`).join(',')}, updated_at=? WHERE user_id=? AND question_id=? AND ${active} AND (${fields.map(f=>`${f} IS NOT ?`).join(' OR ')})`)
+        .bind(...fields.map(f => q[f]), now, user, mutation.id, ...key, ...fields.map(f=>q[f])));
     } else {
       statements.push(db.prepare(`INSERT OR IGNORE INTO sync_activities(user_id,id,timestamp,bank_id,question_id,identity_id,subject_id,chapter_id,is_right,duration,title,description,created_at)
         SELECT ?,?,?,?,?,?,?,?,?,?,?,?,? WHERE ${active}`).bind(user, mutation.id, Number(q.timestamp) || 0,

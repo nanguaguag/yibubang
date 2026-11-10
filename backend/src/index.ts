@@ -309,98 +309,14 @@ app.post('/api/sync', async (c) => {
   if (body.protocol !== 2) {
     return c.json({ code: 426, message: 'Please upgrade the client to sync protocol v2' }, 426);
   }
-  const pushActivities = Array.isArray(body.push_activities) ? body.push_activities : [];
-  const pushQuestions = Array.isArray(body.push_questions) ? body.push_questions : [];
-
   const now = Date.now();
-  const accepted = body.protocol === 2
-    ? await pushMutations(db, auth.userId, auth.deviceId, body.mutations, now)
-    : null;
-  const statements: D1PreparedStatement[] = [];
-
-  // 1. 处理 push_activities (Append-Only，以 INSERT OR IGNORE 去重)
-  for (const act of pushActivities) {
-    if (!act.id) continue;
-    statements.push(
-      db
-        .prepare(`
-          INSERT OR IGNORE INTO sync_activities (
-            user_id, id, timestamp, bank_id, question_id, identity_id,
-            subject_id, chapter_id, is_right, duration, title, description, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `)
-        .bind(
-          auth.userId,
-          act.id,
-          Number(act.timestamp) || now,
-          act.bank_id || null,
-          act.question_id || null,
-          act.identity_id || null,
-          act.subject_id || null,
-          act.chapter_id || null,
-          act.is_right ?? null,
-          Number(act.duration) || 0,
-          act.title || 'NewAnswer',
-          act.description || '',
-          now
-        )
-    );
-  }
-
-  // 2. 处理 push_questions (LWW Upsert: updated_at 较大者胜出)
-  for (const q of pushQuestions) {
-    if (!q.id) continue;
-    const qUpdatedAt = Number(q.updated_at) || now;
-    statements.push(
-      db
-        .prepare(`
-          INSERT INTO sync_questions (
-            user_id, question_id, chapter_id, chapter_parent_id,
-            cut_question, user_answer, status, collection, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-          ON CONFLICT(user_id, question_id) DO UPDATE SET
-            chapter_id = CASE WHEN excluded.updated_at >= sync_questions.updated_at THEN excluded.chapter_id ELSE sync_questions.chapter_id END,
-            chapter_parent_id = CASE WHEN excluded.updated_at >= sync_questions.updated_at THEN excluded.chapter_parent_id ELSE sync_questions.chapter_parent_id END,
-            cut_question = CASE WHEN excluded.updated_at >= sync_questions.updated_at THEN excluded.cut_question ELSE sync_questions.cut_question END,
-            user_answer = CASE WHEN excluded.updated_at >= sync_questions.updated_at THEN excluded.user_answer ELSE sync_questions.user_answer END,
-            status = CASE WHEN excluded.updated_at >= sync_questions.updated_at THEN excluded.status ELSE sync_questions.status END,
-            collection = CASE WHEN excluded.updated_at >= sync_questions.updated_at THEN excluded.collection ELSE sync_questions.collection END,
-            updated_at = MAX(sync_questions.updated_at, excluded.updated_at)
-        `)
-        .bind(
-          auth.userId,
-          q.id,
-          q.chapter_id ?? null,
-          q.chapter_parent_id ?? null,
-          q.cut_question ?? '0',
-          q.user_answer ?? '',
-          Number(q.status) || 0,
-          Number(q.collection) || 0,
-          qUpdatedAt
-        )
-    );
-  }
-
-
-  // 更新设备和用户的活跃时间
-  statements.push(
-    db
-      .prepare('UPDATE devices SET last_sync_at = ? WHERE device_id = ?')
-      .bind(now, auth.deviceId)
-  );
-  statements.push(
-    db
-      .prepare('UPDATE users SET last_sync_at = ? WHERE user_id = ?')
-      .bind(now, auth.userId)
-  );
-
-  // 批量原子执行写入 (D1 事务)
-  if (statements.length > 0) {
-    // D1 batch 单次支持最多 128 条，若超过分批
-    const chunkSize = 100;
-    for (let i = 0; i < statements.length; i += chunkSize) {
-      await db.batch(statements.slice(i, i + chunkSize));
-    }
+  const accepted = await pushMutations(db, auth.userId, auth.deviceId, body.mutations, now);
+  // 只在有新上报时更新活跃时间，分页与空增量不产生用户表写放大。
+  if (accepted.length > 0) {
+    await db.batch([
+      db.prepare('UPDATE devices SET last_sync_at=? WHERE device_id=? AND last_sync_at<?').bind(now,auth.deviceId,now-60000),
+      db.prepare('UPDATE users SET last_sync_at=? WHERE user_id=? AND last_sync_at<?').bind(now,auth.userId,now-60000),
+    ]);
   }
 
   const page = await pullChanges(db, auth.userId, Number(body.pull_cursor) || 0,
@@ -410,11 +326,10 @@ app.post('/api/sync', async (c) => {
     code: 0,
     message: 'Synced successfully',
     data: {
-      ...(accepted !== null ? { protocol: 2, accepted_seqs: accepted } : {}),
+      protocol: 2, accepted_seqs: accepted,
       server_time: now,
       ...page,
-      pushed_activities_count: pushActivities.length,
-      pushed_questions_count: pushQuestions.length,
+      accepted_count: accepted.length,
     },
   });
 });

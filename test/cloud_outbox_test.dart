@@ -237,6 +237,32 @@ void main() {
     expect(await db.query('Question', where: "id='bad'"), isEmpty);
     expect((await db.query('CloudSyncContext')).single['applying'], 0);
   });
+  test('501项第二片失败后重启只重传未确认1项，空增量不重传历史', () async {
+    final batch = db.batch();
+    for (var i = 0; i < 501; i++) {
+      batch.insert('Question', {'id': 'q$i', 'status': 1});
+    }
+    await batch.commit(noResult: true);
+    final lengths = <int>[];
+    var calls = 0;
+    await http.runWithClient(
+      () async {
+        expect((await CloudSyncService.instance.sync()).success, false);
+        expect((await db.query('CloudOutbox')).length, 1);
+        await UserDBHelper().close();
+        db = await UserDBHelper().database;
+        expect((await CloudSyncService.instance.sync()).success, true);
+        expect((await CloudSyncService.instance.sync()).success, true);
+      },
+      () => MockClient((req) async {
+        final body = jsonDecode(req.body) as Map<String, dynamic>;
+        lengths.add((body['mutations'] as List).length);
+        if (++calls == 2) return http.Response('failed', 500);
+        return response(body);
+      }),
+    );
+    expect(lengths, [500, 1, 1, 0]);
+  });
   test('旧服务端或缺少明确确认时保留队列', () async {
     await db.insert('Question', {'id': 'q', 'status': 1});
     await http.runWithClient(

@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -362,24 +361,25 @@ class CloudSyncService extends ChangeNotifier {
       final owner = _userId!;
       await CloudOutbox.bind(userDb, owner);
       var cursor = await CloudOutbox.pullCursor(userDb, owner, reset: force);
-      final entries = await CloudOutbox.snapshot(userDb, owner);
-      final totalQuestions = entries
-          .where((e) => e['kind'] == 'question')
-          .length;
-      final totalActivities = entries.length - totalQuestions;
-      const batchChunkSize = 500;
-      final totalBatches = max(
-        1,
-        (entries.length + batchChunkSize - 1) ~/ batchChunkSize,
-      );
+      final through = await CloudOutbox.upperBound(userDb, owner);
+      var after = 0;
+      var totalQuestions = 0;
+      var totalActivities = 0;
+      var pulledActivities = 0;
+      var pulledQuestions = 0;
+      final affectedBankIds = <String>{};
+      void trackPage(Map<String, dynamic> page) {
+        final activities = page['pull_activities'] as List;
+        pulledActivities += activities.length;
+        pulledQuestions += (page['pull_questions'] as List).length;
+        affectedBankIds.addAll(
+          activities.map((a) => a['bank_id']?.toString()).whereType<String>(),
+        );
+      }
+
       int serverTime = 0;
-      final allPullActivities = <Map<String, dynamic>>[];
-      final allPullQuestions = <Map<String, dynamic>>[];
-      for (var i = 0; i < totalBatches; i++) {
-        final chunk = entries
-            .skip(i * batchChunkSize)
-            .take(batchChunkSize)
-            .toList();
+      do {
+        final chunk = await CloudOutbox.page(userDb, owner, after, through);
         final mutations = <Map<String, Object?>>[];
         for (final entry in chunk) {
           mutations.add(await CloudOutbox.mutation(userDb, entry));
@@ -422,28 +422,17 @@ class CloudSyncService extends ChangeNotifier {
           final page = response['data'] as Map<String, dynamic>;
           await CloudOutbox.mergePage(userDb, owner, page, cursor);
           cursor = page['next_cursor'] as int;
-          allPullActivities.addAll(
-            (page['pull_activities'] as List).cast<Map<String, dynamic>>(),
-          );
-          allPullQuestions.addAll(
-            (page['pull_questions'] as List).cast<Map<String, dynamic>>(),
-          );
+          trackPage(page);
           data['has_more'] = page['has_more'];
         }
-        allPullActivities.addAll(
-          (data['pull_activities'] as List? ?? []).cast<Map<String, dynamic>>(),
-        );
-        allPullQuestions.addAll(
-          (data['pull_questions'] as List? ?? []).cast<Map<String, dynamic>>(),
-        );
-      }
+        trackPage(data);
+        totalQuestions += chunk.where((e) => e['kind'] == 'question').length;
+        totalActivities += chunk.where((e) => e['kind'] == 'activity').length;
+        after = chunk.isEmpty ? through : chunk.last['seq'] as int;
+      } while (after < through);
 
       // 数据已逐页原子合并；章节投影仍通过 ATTACH 聚合重算。
-      if (allPullActivities.isNotEmpty || allPullQuestions.isNotEmpty) {
-        final affectedBankIds = allPullActivities
-            .map((a) => a['bank_id']?.toString())
-            .whereType<String>()
-            .toSet();
+      if (pulledActivities > 0 || pulledQuestions > 0) {
         final banks = await userDb.query('QuestionBank', columns: ['bank_id']);
         affectedBankIds.addAll(banks.map((b) => b['bank_id'] as String));
         final active = prefs.getString('activeBankId');
@@ -465,8 +454,8 @@ class CloudSyncService extends ChangeNotifier {
         success: true,
         pushedActivities: totalActivities,
         pushedQuestions: totalQuestions,
-        pulledActivities: allPullActivities.length,
-        pulledQuestions: allPullQuestions.length,
+        pulledActivities: pulledActivities,
+        pulledQuestions: pulledQuestions,
         syncTime: DateTime.fromMillisecondsSinceEpoch(
           serverTime > 0 ? serverTime : DateTime.now().millisecondsSinceEpoch,
         ),

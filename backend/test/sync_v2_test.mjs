@@ -48,7 +48,8 @@ test('ACK丢失后的重试不覆盖后续变更', async () => {
 });
 test('事件写入与投影更新同事务回滚', async () => {
   const { db, sqlite } = fixture();
-  await assert.rejects(pushMutations(db,'u','a',[mutation(1,{collection:null})],100));
+  sqlite.exec("CREATE TRIGGER reject_question BEFORE INSERT ON sync_questions BEGIN SELECT RAISE(ABORT, 'fixture failure'); END");
+  await assert.rejects(pushMutations(db,'u','a',[mutation(1,{collection:1})],100));
   assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM sync_mutations').get().n,0);
   assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM sync_questions').get().n,0);
   sqlite.close();
@@ -84,5 +85,19 @@ test('固定快照期间新增提交留到下一轮，无关账户不进入本�
   assert.equal(fixed.pull_questions.length,0);
   const next=await pullChanges(db,'u',fixed.next_cursor);
   assert.equal(next.pull_questions.length,1); assert.equal(next.pull_questions[0].id,'later');
+  sqlite.close();
+});
+
+test('重复ACK零写入，相同字段新事件不改投影与拉取序号', async () => {
+  const {db,sqlite}=fixture(); const m=mutation(1,{collection:1});
+  await pushMutations(db,'u','d',[m],1);
+  const before=sqlite.prepare('SELECT total_changes() AS n').get().n;
+  await pushMutations(db,'u','d',[m],2);
+  assert.equal(sqlite.prepare('SELECT total_changes() AS n').get().n,before);
+  const seq=sqlite.prepare('SELECT MAX(seq) AS n FROM sync_changes').get().n;
+  await pushMutations(db,'u','d',[mutation(2,{collection:1})],3);
+  assert.equal(sqlite.prepare('SELECT MAX(seq) AS n FROM sync_changes').get().n,seq);
+  assert.equal(sqlite.prepare('SELECT updated_at FROM sync_questions').get().updated_at,1);
+  await assert.rejects(pushMutations(db,'u','d',[mutation(1,{collection:0})],4),/identity reused/);
   sqlite.close();
 });
