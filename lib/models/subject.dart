@@ -1,3 +1,4 @@
+import '../db/data_transfer.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../db/database_helper.dart';
@@ -90,6 +91,7 @@ Future<List<SubjectTreeNode>> getSubjectTreeByIdentity() async {
   final identityId = prefs.getString('identityId');
   final bankId = prefs.getString('activeBankId');
   if (bankId == null || bankId.isEmpty) return [];
+  await ensureQuestionCountProjection(bankId, bankPath: db.path);
   debugPrint('[startup] 打开题库/用户库(${sw.elapsedMilliseconds}ms)');
 
   final identityRows = await db.query(
@@ -117,16 +119,17 @@ Future<List<SubjectTreeNode>> getSubjectTreeByIdentity() async {
   // 根节点直接从 Identity.parent_id = -1 推导，不依赖具体 identity ID。
   // 旧版合并题库可能有多个顶层专业，因此保留全部顶层身份树；正式
   // 独立题库必须只有一个根，若遇到其他数据则优先使用当前选择的身份。
-  final topLevelIdentities =
-      identities.where((identity) => identity.parentId == '-1').toList();
+  final topLevelIdentities = identities
+      .where((identity) => identity.parentId == '-1')
+      .toList();
   final selectedRoot = identityById[identityId];
   final rootIdentities = bankId == 'legacy_combined'
       ? topLevelIdentities
       : topLevelIdentities.length == 1
-          ? topLevelIdentities
-          : selectedRoot == null
-              ? topLevelIdentities
-              : [selectedRoot];
+      ? topLevelIdentities
+      : selectedRoot == null
+      ? topLevelIdentities
+      : [selectedRoot];
   if (rootIdentities.isEmpty) return [];
 
   final subtreeIds = <String>[];
@@ -159,25 +162,32 @@ Future<List<SubjectTreeNode>> getSubjectTreeByIdentity() async {
 
   if (mainRows.isEmpty) return [];
 
-  final subjectIds =
-      mainRows.map((row) => row['subject_id'] as String).toSet().toList();
+  final subjectIds = mainRows
+      .map((row) => row['subject_id'] as String)
+      .toSet()
+      .toList();
   final subjectPlaceholders = List.filled(subjectIds.length, '?').join(', ');
-  List<Map<String, dynamic>> userRows = await udb.rawQuery('''
+  List<Map<String, dynamic>> userRows = await udb.rawQuery(
+    '''
     SELECT identity_id, subject_id, correct, incorrect, selected
     FROM IdentitySubject
     WHERE bank_id = ?
       AND identity_id IN ($placeholders)
       AND subject_id IN ($subjectPlaceholders)
-  ''', [bankId, ...subtreeIds, ...subjectIds]);
+  ''',
+    [bankId, ...subtreeIds, ...subjectIds],
+  );
 
   String recordKey(String currentIdentityId, String subjectId) =>
       '$currentIdentityId\u0000$subjectId';
 
   final existingKeys = userRows
-      .map((row) => recordKey(
-            row['identity_id'] as String,
-            row['subject_id'] as String,
-          ))
+      .map(
+        (row) => recordKey(
+          row['identity_id'] as String,
+          row['subject_id'] as String,
+        ),
+      )
       .toSet();
   final missingRecords = <Map<String, String>>[];
   for (final row in mainRows) {
@@ -229,7 +239,9 @@ Future<List<SubjectTreeNode>> getSubjectTreeByIdentity() async {
     final currentIdentityId = row['identity_id'] as String;
     final subjectId = row['subject_id'] as String;
     final userRow = userMap[recordKey(currentIdentityId, subjectId)]!;
-    subjectsByIdentity.putIfAbsent(currentIdentityId, () => <Subject>[]).add(
+    subjectsByIdentity
+        .putIfAbsent(currentIdentityId, () => <Subject>[])
+        .add(
           Subject(
             id: subjectId,
             name: row['subject_name'] as String,
@@ -264,7 +276,8 @@ Future<List<SubjectTreeNode>> getSubjectTreeByIdentity() async {
   // identity 上，即使其子 identity 没有对应的 IdentitySubject 行，也不能
   // 因为“隐藏根节点”而丢失课程；所有后代仍按 Identity 树递归展示。
   debugPrint(
-      '[startup] getSubjectTreeByIdentity 总耗时 ${sw.elapsedMilliseconds}ms');
+    '[startup] getSubjectTreeByIdentity 总耗时 ${sw.elapsedMilliseconds}ms',
+  );
   return rootNodes;
 }
 

@@ -179,7 +179,7 @@ void main() {
     });
     await UserDBHelper().close();
     db = await UserDBHelper().database;
-    expect(await db.getVersion(), 19);
+    expect(await db.getVersion(), UserDBHelper.schemaVersion);
     await CloudOutbox.bind(db, 'u');
     expect((await db.query('Question')).single['user_answer'], 'B');
     expect((await db.query('CloudOutbox')).single['entity_id'], 'legacy');

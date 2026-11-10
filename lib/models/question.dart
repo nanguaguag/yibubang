@@ -1,3 +1,7 @@
+import 'package:sqflite/sqflite.dart';
+import '../db/data_transfer.dart';
+import '../db/user_database_coordinator.dart';
+import '../db/durable_sync_queue.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -443,58 +447,34 @@ Future<List<Question>> getQuestionsFromChapter(Chapter chapter) async {
 Future<List<UserQuestion>> getUserQuestions(
   Future<List<Question>> questionsFuture,
 ) async {
-  final udb = await UserDBHelper().database;
-
-  // 1. 取出所有题目 ID
   final questions = await questionsFuture;
-  final ids = questions.map((q) => q.id).toList();
-
-  // 2. 一次性查询已存在的 UserQuestion
-  final existingRows = await udb.query(
-    'Question',
-    where: 'id IN (${List.filled(ids.length, '?').join(',')})',
-    whereArgs: ids,
-  );
-  // 把已存在的 id 收集到一个 Set 里
-  final existingIds = existingRows.map((r) => r['id'] as String).toSet();
-
-  // 3. 准备缺失的记录和最终返回列表
-  List<UserQuestion> resultList = [];
-  List<UserQuestion> toInsert = [];
-
-  for (final q in questions) {
-    if (existingIds.contains(q.id)) {
-      // 已有，直接构造
-      final row = existingRows.firstWhere((r) => r['id'] == q.id);
-      resultList.add(UserQuestion.fromMap(row));
-    } else {
-      // 缺失，先放到待插入列表
-      final uq = UserQuestion(
-        id: q.id,
-        chapterId: q.chapterId ?? 'default_chapter_id',
-        chapterParentId: q.chapterParentId ?? 'default_subject_id',
-        cutQuestion: '0',
-        userAnswer: '',
-        status: 0,
-        collection: 0,
-      );
-      toInsert.add(uq);
-      resultList.add(uq);
+  if (questions.isEmpty) return [];
+  final db = await UserDBHelper().database;
+  return db.transaction((tx) async {
+    final batch = tx.batch();
+    for (final q in questions) {
+      batch.insert('Question', {
+        'id': q.id,
+        'chapter_id': q.chapterId ?? '',
+        'chapter_parent_id': q.chapterParentId ?? '',
+      }, conflictAlgorithm: ConflictAlgorithm.ignore);
     }
-  }
-
-  // 4. 如果有缺失，就在一个事务里批量插入
-  if (toInsert.isNotEmpty) {
-    await udb.transaction((txn) async {
-      final batch = txn.batch();
-      for (final uq in toInsert) {
-        batch.insert('Question', uq.toMap());
+    await batch.commit(noResult: true);
+    final rows = <String, Map<String, Object?>>{};
+    final ids = questions.map((q) => q.id).toSet().toList();
+    for (var i = 0; i < ids.length; i += 500) {
+      final chunk = ids.sublist(i, i + 500 < ids.length ? i + 500 : ids.length);
+      final found = await tx.query(
+        'Question',
+        where: 'id IN (${List.filled(chunk.length, '?').join(',')})',
+        whereArgs: chunk,
+      );
+      for (final row in found) {
+        rows[row['id'] as String] = row;
       }
-      await batch.commit(noResult: true);
-    });
-  }
-
-  return resultList;
+    }
+    return questions.map((q) => UserQuestion.fromMap(rows[q.id]!)).toList();
+  });
 }
 
 Future<void> updateQuestionSimple(
@@ -555,173 +535,63 @@ Future<void> updateQuestion(
   // 避免跨库搜索后作答时查错 IdentityQuestion 造成统计丢失。
   final db = await QuestionBankDatabaseManager().openBank(resolvedBankId);
   final userDb = await UserDBHelper().database;
-  final previousRows = await userDb.query(
-    'Question',
-    columns: ['status'],
-    where: 'id = ?',
-    whereArgs: [uq.id],
-    limit: 1,
-  );
-  final previousStatus = previousRows.isEmpty
-      ? (uq.status == 0 ? (prevCorrect ? 1 : 2) : 0)
-      : (previousRows.first['status'] as int? ?? 0);
-
-  // 1. 查出所有相关 identity/subject/chapter
+  await ensureQuestionCountProjection(resolvedBankId, bankPath: db.path);
+  // 题库关系只读获取；状态、投影差值和流水写入同一用户库事务。
   final iqRows = await db.query(
     'IdentityQuestion',
     columns: ['identity_id', 'subject_id', 'chapter_id'],
-    where: 'question_id = ?',
+    where: 'question_id=?',
     whereArgs: [uq.id],
   );
-
-  // 2. 对每一行做 UPSERT
-  final batch = userDb.batch();
-  final updatedSubjects = <String>{};
-  for (final row in iqRows) {
-    final String identityId = row['identity_id'] as String;
-    final String subjectId = row['subject_id'] as String;
-    final String chapterId = row['chapter_id'] as String;
-    final deltaCorrect =
-        (uq.status == 1 ? 1 : 0) - (previousStatus == 1 ? 1 : 0);
-    final deltaIncorrect =
-        (uq.status == 2 ? 1 : 0) - (previousStatus == 2 ? 1 : 0);
-
-    final shouldUpdateSubject = updatedSubjects.add('$identityId|$subjectId');
-    if (shouldUpdateSubject && (deltaCorrect != 0 || deltaIncorrect != 0)) {
-      // 2.1 新增作答：确保行存在后原子累加（兼容 SQLite < 3.24）
-      batch.rawInsert(
-        '''
-        INSERT OR IGNORE INTO IdentitySubject(bank_id, identity_id, subject_id, correct, incorrect, selected)
-        VALUES(?, ?, ?, 0, 0, 0);
-      ''',
-        [resolvedBankId, identityId, subjectId],
-      );
-      batch.rawUpdate(
-        '''
-        UPDATE IdentitySubject
-        SET
-          correct   = correct + ?,
-          incorrect = incorrect + ?
-        WHERE bank_id = ? AND identity_id = ? AND subject_id = ?;
-      ''',
-        [deltaCorrect, deltaIncorrect, resolvedBankId, identityId, subjectId],
-      );
-    } else if (shouldUpdateSubject && uq.status == 0) {
-      // 2.2 撤回作答：只 UPDATE（避免“撤回但记录不存在”导致插入奇怪数据）
-      // 并且把结果截断到 >=0，防止撤回过头出现负数
-      batch.rawUpdate(
-        '''
-        UPDATE IdentitySubject
-        SET
-          correct   = CASE WHEN correct + ? < 0 THEN 0 ELSE correct + ? END,
-          incorrect = CASE WHEN incorrect + ? < 0 THEN 0 ELSE incorrect + ? END
-        WHERE bank_id = ? AND identity_id = ? AND subject_id = ?;
-      ''',
-        [
-          deltaCorrect,
-          deltaCorrect,
-          deltaIncorrect,
-          deltaIncorrect,
-          resolvedBankId,
-          identityId,
-          subjectId,
-        ],
-      );
-    }
-
-    // 2.2 IdentityChapter 的原子累加（兼容 SQLite < 3.24）
-    if (deltaCorrect != 0 || deltaIncorrect != 0) {
-      batch.rawInsert(
-        '''
-        INSERT OR IGNORE INTO IdentityChapter(bank_id, identity_id, subject_id, chapter_id, correct, incorrect)
-        VALUES(?, ?, ?, ?, 0, 0);
-      ''',
-        [resolvedBankId, identityId, subjectId, chapterId],
-      );
-      batch.rawUpdate(
-        '''
-        UPDATE IdentityChapter
-        SET
-          correct   = correct + ?,
-          incorrect = incorrect + ?
-        WHERE bank_id = ? AND identity_id = ? AND subject_id = ? AND chapter_id = ?;
-      ''',
-        [
-          deltaCorrect,
-          deltaIncorrect,
-          resolvedBankId,
-          identityId,
-          subjectId,
-          chapterId,
-        ],
-      );
-    } else if (uq.status == 0) {
-      // 撤回作答：只 UPDATE，且截断到 >=0，避免负数
-      batch.rawUpdate(
-        '''
-        UPDATE IdentityChapter
-        SET
-          correct   = CASE WHEN correct + ? < 0 THEN 0 ELSE correct + ? END,
-          incorrect = CASE WHEN incorrect + ? < 0 THEN 0 ELSE incorrect + ? END
-        WHERE bank_id = ? AND identity_id = ? AND subject_id = ? AND chapter_id = ?;
-      ''',
-        [
-          deltaCorrect,
-          deltaCorrect,
-          deltaIncorrect,
-          deltaIncorrect,
-          resolvedBankId,
-          identityId,
-          subjectId,
-          chapterId,
-        ],
-      );
-    }
-  }
-
-  // 3. 更新 UserDB 中的 Question 表
-  final nowMs = DateTime.now().millisecondsSinceEpoch;
-  uq.updatedAt = nowMs;
-  batch.update(
-    'Question',
-    {'status': uq.status, 'user_answer': uq.userAnswer, 'updated_at': nowMs},
-    where: 'id = ?',
-    whereArgs: [uq.id],
-  );
-
-  // 提取真正的 subjectId, chapterId, identityId
   String? resolvedSubjectId;
   String? resolvedChapterId;
   String? resolvedIdentityId;
-  if (iqRows.isNotEmpty) {
-    resolvedSubjectId = iqRows.first['subject_id'] as String?;
-    resolvedChapterId = iqRows.first['chapter_id'] as String?;
-    resolvedIdentityId = iqRows.first['identity_id'] as String?;
-  }
-  resolvedSubjectId ??= chapter?.subjectId;
-  resolvedChapterId ??= chapter?.id;
-  resolvedIdentityId ??= chapter?.identityId;
+  await userDb.transaction((tx) async {
+    final batch = tx.batch();
+    batch.rawInsert(
+      'INSERT OR IGNORE INTO Question(id,chapter_id,chapter_parent_id) VALUES (?,?,?)',
+      [uq.id, q.chapterId, q.chapterParentId],
+    );
+    // 3. 更新 UserDB 中的 Question 表
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    uq.updatedAt = nowMs;
+    batch.update(
+      'Question',
+      {'status': uq.status, 'user_answer': uq.userAnswer, 'updated_at': nowMs},
+      where: 'id = ?',
+      whereArgs: [uq.id],
+    );
 
-  resolvedSubjectId ??= q.chapterParentId;
-  resolvedChapterId ??= q.chapterId;
-  resolvedIdentityId ??= q.identityId;
+    // 提取真正的 subjectId, chapterId, identityId
+    if (iqRows.isNotEmpty) {
+      resolvedSubjectId = iqRows.first['subject_id'] as String?;
+      resolvedChapterId = iqRows.first['chapter_id'] as String?;
+      resolvedIdentityId = iqRows.first['identity_id'] as String?;
+    }
+    resolvedSubjectId ??= chapter?.subjectId;
+    resolvedChapterId ??= chapter?.id;
+    resolvedIdentityId ??= chapter?.identityId;
 
-  // 3. UserDB Activity 表中插入记录
-  final int isCorrect = 2 - uq.status; // 1 -> 1, 2 -> 0
-  // 只有在真正作答（status 1/2）时才把时长计入统计；撤题/测试模式记为 0。
-  final int recordedDuration = (uq.status == 1 || uq.status == 2)
-      ? durationMs
-      : 0;
-  final int recordedDurationSec = (recordedDuration / 1000).round();
-  final resolvedAppId = (q.nativeAppId?.isNotEmpty == true)
-      ? q.nativeAppId!
-      : (q.appId?.isNotEmpty == true ? q.appId! : '12');
+    resolvedSubjectId ??= q.chapterParentId;
+    resolvedChapterId ??= q.chapterId;
+    resolvedIdentityId ??= q.identityId;
 
-  batch.insert('Activities', {
-    'id': generateSimpleId(),
-    'title': 'NewAnswer',
-    'description':
-        '''{
+    // 3. UserDB Activity 表中插入记录
+    final int isCorrect = 2 - uq.status; // 1 -> 1, 2 -> 0
+    // 只有在真正作答（status 1/2）时才把时长计入统计；撤题/测试模式记为 0。
+    final int recordedDuration = (uq.status == 1 || uq.status == 2)
+        ? durationMs
+        : 0;
+    final int recordedDurationSec = (recordedDuration / 1000).round();
+    final resolvedAppId = (q.nativeAppId?.isNotEmpty == true)
+        ? q.nativeAppId!
+        : (q.appId?.isNotEmpty == true ? q.appId! : '12');
+
+    batch.insert('Activities', {
+      'id': generateSimpleId(),
+      'title': 'NewAnswer',
+      'description':
+          '''{
         "paper_id": "0",
         "identity_id": "${resolvedIdentityId ?? q.identityId ?? ''}",
         "chapter_id": "${resolvedChapterId ?? q.chapterId ?? ''}",
@@ -735,17 +605,18 @@ Future<void> updateQuestion(
         "duration": "$recordedDurationSec",
         "subject_id": "${resolvedSubjectId ?? q.chapterParentId ?? ''}"
       }''',
-    'bank_id': resolvedBankId,
-    'question_id': q.id,
-    'identity_id': resolvedIdentityId ?? q.identityId,
-    'subject_id': resolvedSubjectId ?? q.chapterParentId,
-    'chapter_id': resolvedChapterId ?? q.chapterId,
-    'is_right': '$isCorrect',
-    'duration': recordedDuration,
-    'timestamp': DateTime.now().millisecondsSinceEpoch,
+      'bank_id': resolvedBankId,
+      'question_id': q.id,
+      'identity_id': resolvedIdentityId ?? q.identityId,
+      'subject_id': resolvedSubjectId ?? q.chapterParentId,
+      'chapter_id': resolvedChapterId ?? q.chapterId,
+      'is_right': '$isCorrect',
+      'duration': recordedDuration,
+      'timestamp': DateTime.now().millisecondsSinceEpoch,
+    });
+    // 一次性提交
+    await batch.commit(noResult: true);
   });
-  // 一次性提交
-  await batch.commit(noResult: true);
   notifyAnswersChanged();
 
   if (uq.status == 1 || uq.status == 2) {
@@ -761,4 +632,69 @@ Future<void> updateQuestion(
       ),
     );
   }
+}
+
+/// 固定题目范围在一个事务集合重置；SQLite 触发器更新所有已建立关系投影的题库。
+Future<int> resetQuestionAnswers({
+  required List<String> questionIds,
+  required String bankId,
+  required Chapter chapter,
+  bool wrongOnly = false,
+  String? appId,
+}) async {
+  final ids = questionIds.toSet().toList();
+  if (ids.isEmpty) return 0;
+  final bank = await QuestionBankDatabaseManager().openBank(bankId);
+  final redoTask = wrongOnly
+      ? null
+      : await YkbSyncService.instance.prepareRedoChapter(
+          chapter: chapter,
+          appId: appId,
+        );
+  final result = await UserDatabaseCoordinator.instance.run(() async {
+    await ensureQuestionCountProjection(bankId, bankPath: bank.path);
+    final db = await UserDBHelper().database;
+    return db.transaction((tx) async {
+      var changed = 0;
+      final now = DateTime.now().millisecondsSinceEpoch;
+      for (var i = 0; i < ids.length; i += 500) {
+        final chunk = ids.sublist(
+          i,
+          i + 500 < ids.length ? i + 500 : ids.length,
+        );
+        changed += await tx.rawUpdate(
+          "UPDATE Question SET user_answer=COALESCE(user_answer,'')||';',status=0,updated_at=? WHERE status ${wrongOnly ? '=2' : 'IN (1,2)'} AND id IN (${List.filled(chunk.length, '?').join(',')})",
+          [now, ...chunk],
+        );
+      }
+      if (changed > 0) {
+        if (redoTask != null) {
+          await DurableSyncQueue.enqueue(
+            'YkbSyncQueue',
+            redoTask,
+            executor: tx,
+          );
+        }
+        await tx.insert('Activities', {
+          'id': generateSimpleId(),
+          'title': 'RedoChapter',
+          'description': jsonEncode({
+            'wrong_only': wrongOnly,
+            'count': changed,
+          }),
+          'bank_id': bankId,
+          'subject_id': chapter.subjectId,
+          'chapter_id': chapter.id,
+          'identity_id': chapter.identityId,
+          'timestamp': now,
+          'duration': 0,
+          'is_right': 'redo',
+        });
+      }
+      return changed;
+    });
+  });
+  notifyAnswersChanged();
+  if (redoTask != null) unawaited(YkbSyncService.instance.processQueue());
+  return result;
 }

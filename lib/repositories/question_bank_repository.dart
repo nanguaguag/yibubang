@@ -383,6 +383,8 @@ class QuestionBankRepository {
         }
         for (final table in [
           'BankContentState',
+          'QuestionRelations',
+          'QuestionProjectionState',
           'YkbBankSyncState',
           'YkbBankChapterState',
         ]) {

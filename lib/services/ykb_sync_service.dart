@@ -32,15 +32,15 @@ class YkbSyncQueueItem {
   });
 
   Map<String, dynamic> toMap() => {
-        'id': id,
-        'type': type,
-        'item_id': itemId,
-        'payload': jsonEncode(payload),
-        'retry_count': retryCount,
-        'created_at': createdAt,
-        'last_error': lastError,
-        'last_response': lastResponse,
-      };
+    'id': id,
+    'type': type,
+    'item_id': itemId,
+    'payload': jsonEncode(payload),
+    'retry_count': retryCount,
+    'created_at': createdAt,
+    'last_error': lastError,
+    'last_response': lastResponse,
+  };
 
   factory YkbSyncQueueItem.fromMap(Map<String, dynamic> map) =>
       YkbSyncQueueItem(
@@ -63,17 +63,16 @@ class YkbSyncQueueItem {
     int? createdAt,
     String? lastError,
     String? lastResponse,
-  }) =>
-      YkbSyncQueueItem(
-        id: id ?? this.id,
-        type: type ?? this.type,
-        itemId: itemId ?? this.itemId,
-        payload: payload ?? this.payload,
-        retryCount: retryCount ?? this.retryCount,
-        createdAt: createdAt ?? this.createdAt,
-        lastError: lastError ?? this.lastError,
-        lastResponse: lastResponse ?? this.lastResponse,
-      );
+  }) => YkbSyncQueueItem(
+    id: id ?? this.id,
+    type: type ?? this.type,
+    itemId: itemId ?? this.itemId,
+    payload: payload ?? this.payload,
+    retryCount: retryCount ?? this.retryCount,
+    createdAt: createdAt ?? this.createdAt,
+    lastError: lastError ?? this.lastError,
+    lastResponse: lastResponse ?? this.lastResponse,
+  );
 }
 
 /// 内存中的同步响应记录（不写入数据库，可随时清理）
@@ -173,7 +172,6 @@ class YkbSyncService {
   static const String keySyncAnswersToYkb = 'sync_answers_to_ykb';
   static const String keySyncRedoToYkb = 'sync_redo_to_ykb';
 
-
   /// 是否开启斩题同步到医考帮
   Future<bool> isSyncCutEnabled() async {
     final prefs = await SharedPreferences.getInstance();
@@ -217,16 +215,16 @@ class YkbSyncService {
     final subjectId = (chapter?.subjectId.isNotEmpty == true)
         ? chapter!.subjectId
         : (question.chapterParentId?.isNotEmpty == true
-            ? question.chapterParentId!
-            : '');
+              ? question.chapterParentId!
+              : '');
     final chapterId = (chapter?.id.isNotEmpty == true)
         ? chapter!.id
         : (question.chapterId?.isNotEmpty == true ? question.chapterId! : '');
     final identityId = (chapter?.identityId?.isNotEmpty == true)
         ? chapter!.identityId!
         : (question.identityId?.isNotEmpty == true
-            ? question.identityId!
-            : (prefs.getString('identityId') ?? ''));
+              ? question.identityId!
+              : (prefs.getString('identityId') ?? ''));
     final appId = question.nativeAppId?.isNotEmpty == true
         ? question.nativeAppId!
         : (question.appId?.isNotEmpty == true ? question.appId! : '12');
@@ -246,13 +244,16 @@ class YkbSyncService {
 
     final queueId =
         'cut_${question.id}_${isCut ? "add" : "del"}_${DateTime.now().millisecondsSinceEpoch}';
-    await _enqueue(YkbSyncQueueItem(
-      id: queueId,
-      type: 'cut',
-      itemId: question.id,
-      payload: payload,
-      createdAt: DateTime.now().millisecondsSinceEpoch,
-    ), owner: queueOwner);
+    await _enqueue(
+      YkbSyncQueueItem(
+        id: queueId,
+        type: 'cut',
+        itemId: question.id,
+        payload: payload,
+        createdAt: DateTime.now().millisecondsSinceEpoch,
+      ),
+      owner: queueOwner,
+    );
 
     // 记录斩题同步流水到 Activities
     try {
@@ -271,7 +272,8 @@ class YkbSyncService {
     } catch (_) {}
 
     debugPrint(
-        '[YkbSyncService] 已入队斩题同步: questionId=${question.id}, operate=${payload['operate']}, subjectId=$subjectId, chapterId=$chapterId');
+      '[YkbSyncService] 已入队斩题同步: questionId=${question.id}, operate=${payload['operate']}, subjectId=$subjectId, chapterId=$chapterId',
+    );
     unawaited(processQueue());
   }
 
@@ -288,7 +290,9 @@ class YkbSyncService {
     final queueOwner = await DurableSyncQueue.owner();
     final enabled = await isSyncAnswersEnabled();
     if (!enabled) {
-      debugPrint('[YkbSyncService] syncAnswersToYkb is disabled, skip answer sync');
+      debugPrint(
+        '[YkbSyncService] syncAnswersToYkb is disabled, skip answer sync',
+      );
       return;
     }
 
@@ -299,16 +303,16 @@ class YkbSyncService {
     final resolvedSubjectId = (subjectId != null && subjectId.isNotEmpty)
         ? subjectId
         : (question.chapterParentId?.isNotEmpty == true
-            ? question.chapterParentId!
-            : '');
+              ? question.chapterParentId!
+              : '');
     final resolvedChapterId = (chapterId != null && chapterId.isNotEmpty)
         ? chapterId
         : (question.chapterId?.isNotEmpty == true ? question.chapterId! : '');
     final resolvedIdentityId = (identityId != null && identityId.isNotEmpty)
         ? identityId
         : (question.identityId?.isNotEmpty == true
-            ? question.identityId!
-            : (prefs.getString('identityId') ?? ''));
+              ? question.identityId!
+              : (prefs.getString('identityId') ?? ''));
     final appId = question.nativeAppId?.isNotEmpty == true
         ? question.nativeAppId!
         : (question.appId?.isNotEmpty == true ? question.appId! : '12');
@@ -350,20 +354,59 @@ class YkbSyncService {
 
     final queueId =
         'ans_${question.id}_${DateTime.now().millisecondsSinceEpoch}';
-    await _enqueue(YkbSyncQueueItem(
-      id: queueId,
-      type: 'answer',
-      itemId: question.id,
-      payload: payload,
-      createdAt: DateTime.now().millisecondsSinceEpoch,
-    ), owner: queueOwner);
+    await _enqueue(
+      YkbSyncQueueItem(
+        id: queueId,
+        type: 'answer',
+        itemId: question.id,
+        payload: payload,
+        createdAt: DateTime.now().millisecondsSinceEpoch,
+      ),
+      owner: queueOwner,
+    );
 
     debugPrint(
-        '[YkbSyncService] 已入队作答同步: questionId=${question.id}, answer=$answerStr, isRight=$isRight, subjectId=$resolvedSubjectId, chapterId=$resolvedChapterId');
+      '[YkbSyncService] 已入队作答同步: questionId=${question.id}, answer=$answerStr, isRight=$isRight, subjectId=$resolvedSubjectId, chapterId=$resolvedChapterId',
+    );
     unawaited(processQueue());
   }
 
   /// 同步重做章节到医考帮
+  /// 构建本地重做义务；调用方可在重置答案事务内持久化，事务外再发包。
+  Future<Map<String, dynamic>?> prepareRedoChapter({
+    required Chapter chapter,
+    String? appId,
+  }) async {
+    final owner = await DurableSyncQueue.owner();
+    if (!await isSyncRedoEnabled()) return null;
+    final prefs = await SharedPreferences.getInstance();
+    final identityId = chapter.identityId?.isNotEmpty == true
+        ? chapter.identityId!
+        : (prefs.getString('identityId') ?? '');
+    final payload = <String, dynamic>{
+      'subject_id': chapter.subjectId,
+      'obj_id': chapter.id,
+      'is_svip': '0',
+      'identity_id': identityId,
+      'module_type': '1',
+      'is_vip': '0',
+      'type': 'chapter',
+      'category': 'chapter',
+      'app_id': appId ?? '12',
+      'is_wrong': '0',
+    };
+    return {
+      ...YkbSyncQueueItem(
+        id: generateSimpleId(),
+        type: 'redo_chapter',
+        itemId: chapter.id,
+        payload: payload,
+        createdAt: DateTime.now().millisecondsSinceEpoch,
+      ).toMap(),
+      'owner_user_id': owner,
+    };
+  }
+
   Future<void> syncRedoChapter({
     required Chapter chapter,
     String? appId,
@@ -396,13 +439,16 @@ class YkbSyncService {
 
     final queueId =
         'redo_${chapter.id}_${DateTime.now().millisecondsSinceEpoch}';
-    await _enqueue(YkbSyncQueueItem(
-      id: queueId,
-      type: 'redo_chapter',
-      itemId: chapter.id,
-      payload: payload,
-      createdAt: DateTime.now().millisecondsSinceEpoch,
-    ), owner: queueOwner);
+    await _enqueue(
+      YkbSyncQueueItem(
+        id: queueId,
+        type: 'redo_chapter',
+        itemId: chapter.id,
+        payload: payload,
+        createdAt: DateTime.now().millisecondsSinceEpoch,
+      ),
+      owner: queueOwner,
+    );
 
     // 记录章节重做同步流水到 Activities
     try {
@@ -420,7 +466,8 @@ class YkbSyncService {
     } catch (_) {}
 
     debugPrint(
-        '[YkbSyncService] 已入队章节重做同步: chapterId=${chapter.id}, subjectId=${chapter.subjectId}');
+      '[YkbSyncService] 已入队章节重做同步: chapterId=${chapter.id}, subjectId=${chapter.subjectId}',
+    );
     unawaited(processQueue());
   }
 
@@ -485,15 +532,34 @@ class YkbSyncService {
     if (!await DurableSyncQueue.reset('YkbSyncQueue', id: id)) return false;
     return DurableSyncQueue.run('YkbSyncQueue', _executeRow, onlyId: id);
   }
-  Future<void> resetItemRetry(String id) async { await DurableSyncQueue.reset('YkbSyncQueue', id: id); }
-  Future<void> resetAllRetries() async { await DurableSyncQueue.reset('YkbSyncQueue'); }
-  Future<bool> _executeRow(Map<String,dynamic> row) =>
-      _executeItemRequest(YkbSyncQueueItem.fromMap(row), row['owner_user_id'] as String);
-  Future<void> processQueue() async { await DurableSyncQueue.run('YkbSyncQueue', _executeRow); }
-  Future<void> _enqueue(YkbSyncQueueItem item, {required String owner}) => DurableSyncQueue.enqueue('YkbSyncQueue', {...item.toMap(), 'owner_user_id': owner});
 
-  Future<void> _markError(YkbSyncQueueItem item, String error,
-      {String? lastResponse}) async {
+  Future<void> resetItemRetry(String id) async {
+    await DurableSyncQueue.reset('YkbSyncQueue', id: id);
+  }
+
+  Future<void> resetAllRetries() async {
+    await DurableSyncQueue.reset('YkbSyncQueue');
+  }
+
+  Future<bool> _executeRow(Map<String, dynamic> row) => _executeItemRequest(
+    YkbSyncQueueItem.fromMap(row),
+    row['owner_user_id'] as String,
+  );
+  Future<void> processQueue() async {
+    await DurableSyncQueue.run('YkbSyncQueue', _executeRow);
+  }
+
+  Future<void> _enqueue(YkbSyncQueueItem item, {required String owner}) =>
+      DurableSyncQueue.enqueue('YkbSyncQueue', {
+        ...item.toMap(),
+        'owner_user_id': owner,
+      });
+
+  Future<void> _markError(
+    YkbSyncQueueItem item,
+    String error, {
+    String? lastResponse,
+  }) async {
     final db = await UserDBHelper().database;
     final values = <String, dynamic>{
       'retry_count': item.retryCount + 1,

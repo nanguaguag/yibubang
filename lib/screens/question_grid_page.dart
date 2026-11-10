@@ -13,7 +13,6 @@ import '../models/chapter.dart';
 import '../models/question.dart';
 import '../models/answer_statistics.dart';
 import '../services/cloud_sync_service.dart';
-import '../services/ykb_sync_service.dart';
 
 // Question Status: 题目状态
 // - 0: 未做
@@ -48,6 +47,7 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
   Chapter? _prevChapter;
   Chapter? _nextChapter;
   bool _isSwitchingChapter = false;
+  bool _isResettingAnswers = false;
   bool _hasTriggeredHaptic = false;
   static const double _overscrollThreshold = 85.0;
   Timer? _dwellTimer;
@@ -114,7 +114,7 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
   }
 
   void _startDwellTimerIfNeeded(Chapter target, {required bool isNext}) {
-    if (_isSwitchingChapter) return;
+    if (_isSwitchingChapter || _isResettingAnswers) return;
     if (_dwellTimer != null) return;
 
     if (!_hasTriggeredHaptic) {
@@ -212,7 +212,7 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
     Chapter targetChapter, {
     required bool isNext,
   }) async {
-    if (_isSwitchingChapter) return;
+    if (_isSwitchingChapter || _isResettingAnswers) return;
     _isSwitchingChapter = true;
 
     if (mode == 2) {
@@ -481,8 +481,12 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
   }
 
   void clearUserAnswers() async {
+    if (_isResettingAnswers) return;
+    final chapter = _currentChapter;
+    final prefs = await SharedPreferences.getInstance();
+    final bankId = prefs.getString('activeBankId')!;
     final List<Question> questions = await allQuestions;
-    final List<UserQuestion> userQuestions = await allUserQuestions;
+
     if (!mounted) return;
     showDialog(
       context: context,
@@ -500,20 +504,26 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
             TextButton(
               onPressed: () async {
                 Navigator.of(context).pop(); // 关闭对话框
-                for (int i = 0; i < questions.length; i++) {
-                  final uq = userQuestions[i];
-                  final q = questions[i];
-                  if (uq.status == 1 || uq.status == 2) {
-                    bool prevCorrect = uq.status == 1; // 储存之前的状态
-                    uq.userAnswer += ';'; // 末尾加上 ; 表示清除前面的做题记录
-                    uq.status = 0;
-                    await updateQuestion(
-                      uq,
-                      q,
-                      prevCorrect: prevCorrect,
-                      chapter: _currentChapter,
-                    );
+                if (_isResettingAnswers) return;
+                _isResettingAnswers = true;
+                try {
+                  await resetQuestionAnswers(
+                    questionIds: questions.map((q) => q.id).toList(),
+                    bankId: bankId,
+                    chapter: chapter,
+                    appId: questions.isEmpty
+                        ? null
+                        : questions.first.nativeAppId ?? questions.first.appId,
+                  );
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(
+                      this.context,
+                    ).showSnackBar(SnackBar(content: Text('重做失败：$e')));
                   }
+                  return;
+                } finally {
+                  _isResettingAnswers = false;
                 }
                 if (!mounted) return;
                 ScaffoldMessenger.of(this.context).showSnackBar(
@@ -523,16 +533,6 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
                   ),
                 );
                 _refreshPage();
-                // 同步重做章节到医考帮
-                final String? appId = questions.isNotEmpty
-                    ? (questions.first.nativeAppId ?? questions.first.appId)
-                    : null;
-                unawaited(
-                  YkbSyncService.instance.syncRedoChapter(
-                    chapter: _currentChapter,
-                    appId: appId,
-                  ),
-                );
                 if (CloudSyncService.instance.isConfigured &&
                     CloudSyncService.instance.autoSync) {
                   unawaited(CloudSyncService.instance.sync());
@@ -547,6 +547,10 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
   }
 
   void clearWrongAnswers() async {
+    if (_isResettingAnswers) return;
+    final chapter = _currentChapter;
+    final prefs = await SharedPreferences.getInstance();
+    final bankId = prefs.getString('activeBankId')!;
     bool doneAll = true;
     final MapEntry<List<Question>, List<UserQuestion>> filteredQuestions =
         await _filter(allQuestions, allUserQuestions);
@@ -586,19 +590,24 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
             TextButton(
               onPressed: () async {
                 Navigator.of(context).pop(); // 关闭对话框
-                for (int i = 0; i < questions.length; i++) {
-                  final uq = userQuestions[i];
-                  final q = questions[i];
-                  if (uq.status == 2) {
-                    uq.userAnswer += ';'; // 末尾加上 ; 表示清除前面的做题记录
-                    uq.status = 0;
-                    await updateQuestion(
-                      uq,
-                      q,
-                      prevCorrect: false,
-                      chapter: _currentChapter,
-                    );
+                if (_isResettingAnswers) return;
+                _isResettingAnswers = true;
+                try {
+                  await resetQuestionAnswers(
+                    questionIds: questions.map((q) => q.id).toList(),
+                    bankId: bankId,
+                    chapter: chapter,
+                    wrongOnly: true,
+                  );
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(
+                      this.context,
+                    ).showSnackBar(SnackBar(content: Text('重做失败：$e')));
                   }
+                  return;
+                } finally {
+                  _isResettingAnswers = false;
                 }
                 if (!mounted) return;
                 ScaffoldMessenger.of(this.context).showSnackBar(
@@ -826,6 +835,7 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
 
         return ElevatedButton(
           onPressed: () async {
+            if (_isResettingAnswers) return;
             _savedScrollOffset = _scrollController.offset;
             final result = await Navigator.push(
               context,

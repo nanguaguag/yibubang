@@ -81,6 +81,6 @@ void main() {
     await expectLater(db.insert('Question', {'id': 'old'}), throwsStateError);
     db = await UserDBHelper().database;
     await db.insert('Question', {'id': 'new'});
-    expect(await db.getVersion(), 19);
+    expect(await db.getVersion(), UserDBHelper.schemaVersion);
   });
 }

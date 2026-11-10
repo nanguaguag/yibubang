@@ -1,3 +1,4 @@
+import '../db/data_transfer.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:yibubang/models/subject.dart';
 import '../db/database_helper.dart';
@@ -81,6 +82,7 @@ Future<List<Chapter>> getChaptersBySubject(Subject subject) async {
   final prefs = await SharedPreferences.getInstance();
   var identityId = subject.identityId ?? prefs.getString('identityId');
   var bankId = prefs.getString('activeBankId') ?? 'dental_final';
+  await ensureQuestionCountProjection(bankId, bankPath: db.path);
 
   // 若 identityId 未指定，动态从题库关系表中查询该学科归属的 identity_id
   if (identityId == null || identityId.isEmpty) {
@@ -97,7 +99,8 @@ Future<List<Chapter>> getChaptersBySubject(Subject subject) async {
 
   List<Map<String, dynamic>> mainRows = [];
   if (identityId != null && identityId.isNotEmpty) {
-    mainRows = await db.rawQuery('''
+    mainRows = await db.rawQuery(
+      '''
       SELECT C.id       AS chapter_id,
              C.name     AS chapter_name,
              IC.total   AS total
@@ -106,12 +109,15 @@ Future<List<Chapter>> getChaptersBySubject(Subject subject) async {
         ON C.id = IC.chapter_id
       WHERE IC.identity_id = ?
         AND IC.subject_id  = ?
-    ''', [identityId, subject.id]);
+    ''',
+      [identityId, subject.id],
+    );
   }
 
   // 兜底查询：若特定 identity_id 无匹配，按 subject_id 获取全部同属章节
   if (mainRows.isEmpty) {
-    mainRows = await db.rawQuery('''
+    mainRows = await db.rawQuery(
+      '''
       SELECT DISTINCT C.id AS chapter_id,
              C.name     AS chapter_name,
              IC.total   AS total
@@ -119,7 +125,9 @@ Future<List<Chapter>> getChaptersBySubject(Subject subject) async {
       JOIN Chapter AS C
         ON C.id = IC.chapter_id
       WHERE IC.subject_id = ?
-    ''', [subject.id]);
+    ''',
+      [subject.id],
+    );
   }
 
   if (mainRows.isEmpty) return [];
@@ -131,19 +139,23 @@ Future<List<Chapter>> getChaptersBySubject(Subject subject) async {
   final placeholders = List.filled(chapterIds.length, '?').join(', ');
 
   // 2. 一次性拿 user_data 的 correct/incorrect
-  List<Map<String, dynamic>> userRows = await userDb.rawQuery('''
+  List<Map<String, dynamic>> userRows = await userDb.rawQuery(
+    '''
     SELECT chapter_id, correct, incorrect
     FROM IdentityChapter
     WHERE bank_id = ?
       AND identity_id = ?
       AND subject_id = ?
       AND chapter_id IN ($placeholders)
-  ''', [bankId, identityId, subject.id, ...chapterIds]);
+  ''',
+    [bankId, identityId, subject.id, ...chapterIds],
+  );
 
   // 3. 如果有缺失的，就在一个事务里批量插入
   final existingIds = userRows.map((r) => r['chapter_id'] as String).toSet();
-  final missingIds =
-      chapterIds.where((id) => !existingIds.contains(id)).toList();
+  final missingIds = chapterIds
+      .where((id) => !existingIds.contains(id))
+      .toList();
 
   if (missingIds.isNotEmpty) {
     await userDb.transaction((txn) async {

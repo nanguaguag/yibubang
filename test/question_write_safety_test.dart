@@ -1,3 +1,4 @@
+import 'package:yibubang/db/data_transfer.dart';
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -69,8 +70,8 @@ void main() {
     await dir.delete(recursive: true);
     await databaseFactory.setDatabasesPath(previous);
   });
-  Future<void> bank() async {
-    final path = p.join(dir.path, 'fixture.sqlite');
+  Future<void> bank({String bankId = 'b'}) async {
+    final path = p.join(dir.path, 'fixture_$bankId.sqlite');
     final fixture = await openDatabase(path);
     await fixture.execute(
       'CREATE TABLE IdentityQuestion(question_id TEXT,identity_id TEXT,subject_id TEXT,chapter_id TEXT)',
@@ -83,12 +84,124 @@ void main() {
     });
     await fixture.close();
     await QuestionBankDatabaseManager().openBank(
-      'b',
+      bankId,
       filePath: path,
       validate: false,
     );
   }
 
+  test('并行作答和跨库撤回只保留最终单题计数', () async {
+    await bank();
+    await bank(bankId: 'b2');
+    for (final id in ['b', 'b2']) {
+      final bankDb = await QuestionBankDatabaseManager().openBank(id);
+      await ensureQuestionCountProjection(id, bankPath: bankDb.path);
+    }
+    await getUserQuestions(Future.value([q]));
+    await Future.wait([
+      updateQuestion(
+        uq()
+          ..status = 1
+          ..userAnswer = 'A',
+        q,
+        bankId: 'b',
+      ),
+      updateQuestion(
+        uq()
+          ..status = 2
+          ..userAnswer = 'B',
+        q,
+        bankId: 'b2',
+      ),
+    ]);
+    final status = (await db.query('Question')).single['status'];
+    for (final row in await db.query('IdentitySubject')) {
+      expect(row['correct'], status == 1 ? 1 : 0);
+      expect(row['incorrect'], status == 2 ? 1 : 0);
+    }
+    await resetQuestionAnswers(
+      questionIds: ['1'],
+      bankId: 'b2',
+      chapter: Chapter(
+        id: 'c',
+        name: 'c',
+        subjectId: 's',
+        correct: 0,
+        incorrect: 0,
+        total: 1,
+      ),
+      wrongOnly: true,
+    );
+    if (status == 2) {
+      for (final row in await db.query('IdentityChapter')) {
+        expect(row['incorrect'], 0);
+      }
+    }
+  });
+  test('并行占位读取返回持久化答案且不覆盖已有答案', () async {
+    final results = await Future.wait([
+      getUserQuestions(Future.value([q, q])),
+      getUserQuestions(Future.value([q])),
+    ]);
+    expect(results.first.length, 2);
+    await db.update('Question', {
+      'status': 1,
+      'user_answer': 'A',
+    }, where: "id='1'");
+    expect((await getUserQuestions(Future.value([q]))).single.userAnswer, 'A');
+    expect((await db.query('Question')).length, 1);
+  });
+  test('批量重做原子回滚，题目历史/计数/官方任务一起恢复', () async {
+    await bank();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('sync_redo_to_ykb', true);
+    await prefs.setBool('loggedin', true);
+    await prefs.setString('user_id', 'owner');
+    await updateQuestion(
+      uq()
+        ..status = 1
+        ..userAnswer = 'A',
+      q,
+      bankId: 'b',
+    );
+    await db.execute(
+      "CREATE TRIGGER fail_redo BEFORE INSERT ON Activities WHEN NEW.title='RedoChapter' BEGIN SELECT RAISE(ABORT,'disk'); END",
+    );
+    final chapter = Chapter(
+      id: 'c',
+      name: 'c',
+      subjectId: 's',
+      identityId: 'i',
+      correct: 0,
+      incorrect: 0,
+      total: 1,
+    );
+    await expectLater(
+      resetQuestionAnswers(questionIds: ['1'], bankId: 'b', chapter: chapter),
+      throwsA(isA<DatabaseException>()),
+    );
+    expect((await db.query('Question')).single['status'], 1);
+    expect((await db.query('IdentitySubject')).single['correct'], 1);
+    expect(await db.query('YkbSyncQueue'), isEmpty);
+    await db.execute('DROP TRIGGER fail_redo');
+    await resetQuestionAnswers(
+      questionIds: ['1'],
+      bankId: 'b',
+      chapter: chapter,
+      wrongOnly: true,
+    );
+    expect((await db.query('Question')).single['status'], 1);
+    // 暂停任务发送，验证未知账号义务也持久化而不出网。
+    await prefs.setBool('loggedin', false);
+    await resetQuestionAnswers(
+      questionIds: ['1'],
+      bankId: 'b',
+      chapter: chapter,
+    );
+    expect((await db.query('Question')).single['user_answer'], 'A;');
+    expect((await db.query('IdentitySubject')).single['correct'], 0);
+    expect((await db.query('YkbSyncQueue')).single['queue_state'], 'paused');
+  });
   test('旧页面收藏/斩题意图不会覆盖云端的新答案', () async {
     await db.insert('Question', {
       'id': '1',

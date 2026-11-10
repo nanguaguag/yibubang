@@ -1,3 +1,4 @@
+import 'question_projection.dart';
 import 'user_database_coordinator.dart';
 import 'dart:io';
 
@@ -57,6 +58,32 @@ Future<bool> rebuildQuestionCount({String? bankId}) =>
       return true;
     });
 
+/// 首次使用/题库文件变更时按 ATTACH 重建关系及统计；后续答题由 SQL OLD/NEW 原子维护。
+Future<void> ensureQuestionCountProjection(
+  String bankId, {
+  required String bankPath,
+}) => UserDatabaseCoordinator.instance.run(() async {
+  final db = await UserDBHelper().database;
+  final stat = await File(bankPath).stat();
+  final stamp =
+      '$bankPath:${stat.size}:${stat.modified.microsecondsSinceEpoch}';
+  final state = await db.query(
+    'QuestionProjectionState',
+    where: 'bank_id=? AND source_stamp=?',
+    whereArgs: [bankId, stamp],
+  );
+  if (state.isNotEmpty) return;
+  await db.execute('ATTACH DATABASE ? AS projection_bank', [bankPath]);
+  try {
+    await db.transaction(
+      (tx) =>
+          rebuildAttachedQuestionCount(tx, bankId, alias: 'projection_bank'),
+    );
+  } finally {
+    await db.execute('DETACH DATABASE projection_bank');
+  }
+});
+
 /// 在调用方用户库事务内重算；题库已通过原生 ATTACH 关联且仅参与读取。
 Future<void> rebuildAttachedQuestionCount(
   DatabaseExecutor txn,
@@ -66,6 +93,18 @@ Future<void> rebuildAttachedQuestionCount(
   if (!RegExp(r'^[a-zA-Z_][a-zA-Z0-9_]*$').hasMatch(alias)) {
     throw ArgumentError.value(alias, 'alias');
   }
+  final attached = await txn.rawQuery('PRAGMA database_list');
+  final file =
+      attached.firstWhere((row) => row['name'] == alias)['file'] as String;
+  final stat = file.isEmpty ? null : await File(file).stat();
+  await QuestionProjection.refresh(
+    txn,
+    targetBankId,
+    alias,
+    file.isEmpty
+        ? 'memory'
+        : '$file:${stat!.size}:${stat.modified.microsecondsSinceEpoch}',
+  );
   await txn.rawUpdate(
     'UPDATE IdentitySubject SET correct = 0, incorrect = 0 WHERE bank_id = ?',
     [targetBankId],

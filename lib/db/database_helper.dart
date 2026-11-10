@@ -1,3 +1,4 @@
+import 'question_projection.dart';
 export 'user_database_coordinator.dart' show UserDatabaseVersion;
 import 'user_database_coordinator.dart';
 import 'cloud_outbox.dart';
@@ -272,6 +273,7 @@ class UserDBHelper {
   factory UserDBHelper() => _instance;
   UserDBHelper._internal();
 
+  static const schemaVersion = 20;
   static Database? _database;
 
   Future<Database> get database =>
@@ -286,7 +288,7 @@ class UserDBHelper {
     String path = join(await getDatabasesPath(), 'user_data.sqlite');
     return await openDatabase(
       path,
-      version: 19,
+      version: schemaVersion,
       onConfigure: (db) async {
         await db.rawQuery('PRAGMA busy_timeout = 10000');
         // 用户库为高频写库：WAL 提升并发写性能，同时保证导出前关闭连接即可完整落盘。
@@ -520,6 +522,9 @@ class UserDBHelper {
         await txn.execute(
           'CREATE TABLE IF NOT EXISTS QuestionTestTime(question_id TEXT PRIMARY KEY, duration_ms INTEGER NOT NULL DEFAULT 0)',
         );
+      }
+      if (oldVersion < 20 && newVersion >= 20) {
+        await QuestionProjection.install(txn);
       }
       await _createMigrationStateTable(txn);
     });
@@ -1038,6 +1043,8 @@ class UserDBHelper {
     await db.execute(
       'CREATE TABLE IF NOT EXISTS QuestionTestTime(question_id TEXT PRIMARY KEY, duration_ms INTEGER NOT NULL DEFAULT 0)',
     );
+
+    await QuestionProjection.install(db);
 
     // 给 Question 表按 chapter_id 建表
     await db.execute('''
