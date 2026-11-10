@@ -15,6 +15,13 @@ import '../repositories/question_bank_repository.dart';
 import '../repositories/spaced_review_repository.dart';
 import 'spaced_repetition_engine.dart';
 
+class ReviewUnavailableException implements Exception {
+  final String message;
+  const ReviewUnavailableException(this.message);
+  @override
+  String toString() => message;
+}
+
 /// 每日抽题与记忆复习调度服务
 ///
 /// 核心职责：
@@ -170,6 +177,12 @@ class DailyReviewService {
 
     // 1. 获取或构建 SpacedReviewItem 并直接标记为 mastered
     var item = await _spacedRepo.getItem(questionId, executor);
+    final tombstone = await executor.query(
+      'ReviewItemTombstones',
+      where: 'item_id=?',
+      whereArgs: [questionId],
+    );
+    if (tombstone.isNotEmpty) throw const ReviewUnavailableException('卡片已删除');
     final wasNew = item?.lastReviewAt == null || item!.lastReviewAt == 0;
     final effectivePlan =
         planId ??
@@ -185,6 +198,7 @@ class DailyReviewService {
             .copyWith(
               planId: effectivePlan,
               state: ReviewState.mastered,
+              extra: {...?item?.extra, 'suspension_reason': 'cut'},
               dueDate: 0,
               lastReviewAt: currentTime.millisecondsSinceEpoch,
               reps: (item?.reps ?? 0) + 1,
@@ -250,11 +264,13 @@ class DailyReviewService {
     DatabaseExecutor? executor,
     String? eventId,
     String? planId,
+    ReviewItemType? expectedItemType,
   }) async {
     final requestId = eventId ?? generateSimpleId();
     if (executor == null && bankId?.isNotEmpty == true) {
       final existing = await _spacedRepo.getItem(questionId);
-      if (existing?.itemType != ReviewItemType.flashcard) {
+      if (existing?.itemType != ReviewItemType.flashcard &&
+          expectedItemType != ReviewItemType.flashcard) {
         final bank = await _dbManager.openBank(bankId!);
         await ensureQuestionCountProjection(bankId, bankPath: bank.path);
       }
@@ -270,6 +286,7 @@ class DailyReviewService {
         now: now,
         eventId: requestId,
         planId: planId,
+        expectedItemType: expectedItemType,
         executor: tx,
       ),
     );
@@ -286,6 +303,7 @@ class DailyReviewService {
     DateTime? now,
     required String eventId,
     String? planId,
+    ReviewItemType? expectedItemType,
     required DatabaseExecutor executor,
   }) async {
     final currentTime = now ?? DateTime.now();
@@ -306,6 +324,7 @@ class DailyReviewService {
 
     // 1. 获取或构建 SpacedReviewItem
     var item = await _spacedRepo.getItem(questionId, executor);
+    await _validateReviewItem(executor, questionId, item, expectedItemType);
     item ??= SpacedReviewItem(
       itemId: questionId,
       itemType: ReviewItemType.question,
@@ -350,7 +369,6 @@ class DailyReviewService {
           UPDATE Question
           SET user_answer = ?,
               status = ?,
-              cut_question = '0',
               updated_at = ?
           WHERE id = ?
         ''',
@@ -367,8 +385,7 @@ class DailyReviewService {
         await userDb.rawUpdate(
           '''
           UPDATE Question
-          SET cut_question = '0',
-              updated_at = ?
+          SET updated_at = ?
           WHERE id = ?
         ''',
           [nowMs, questionId],
@@ -423,6 +440,38 @@ class DailyReviewService {
       'timestamp': currentTime.millisecondsSinceEpoch,
     });
     return updatedItem;
+  }
+
+  Future<void> _validateReviewItem(
+    DatabaseExecutor tx,
+    String id,
+    SpacedReviewItem? item,
+    ReviewItemType? expected,
+  ) async {
+    final deleted = await tx.query(
+      'ReviewItemTombstones',
+      where: 'item_id=?',
+      whereArgs: [id],
+    );
+    if (deleted.isNotEmpty) throw const ReviewUnavailableException('卡片已删除');
+    final isFlashcard =
+        item?.itemType == ReviewItemType.flashcard ||
+        expected == ReviewItemType.flashcard;
+    if (isFlashcard && await _spacedRepo.getFlashcard(id, tx) == null) {
+      throw const ReviewUnavailableException('卡片已删除');
+    }
+    if (item?.state == ReviewState.suspended ||
+        item?.extra?['suspension_reason'] == 'cut') {
+      throw const ReviewUnavailableException('该题已斩或已暂停复习');
+    }
+    if (!isFlashcard) {
+      final rows = await tx.query('Question', where: 'id=?', whereArgs: [id]);
+      if (rows.isNotEmpty &&
+          (UserQuestion.fromMap(rows.single).isCut ||
+              rows.single['status'] == 3)) {
+        throw const ReviewUnavailableException('该题已斩');
+      }
+    }
   }
 
   Future<Map<String, dynamic>> _reviewRelation(

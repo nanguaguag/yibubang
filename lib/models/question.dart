@@ -512,6 +512,31 @@ Future<void> updateQuestionSimple(
         "UPDATE Question SET status=0 WHERE id=? AND status=3",
         [snapshot['id']],
       );
+      final items = await tx.query(
+        'SpacedReviewItem',
+        where: 'item_id=?',
+        whereArgs: [snapshot['id']],
+      );
+      if (items.isNotEmpty) {
+        final extra = items.first['extra'] == null
+            ? <String, dynamic>{}
+            : Map<String, dynamic>.from(
+                jsonDecode(items.first['extra'] as String) as Map,
+              );
+        if (extra['suspension_reason'] == 'cut') {
+          extra.remove('suspension_reason');
+          await tx.update(
+            'SpacedReviewItem',
+            {
+              'state': 2,
+              'due_date': DateTime.now().millisecondsSinceEpoch,
+              'extra': jsonEncode(extra),
+            },
+            where: 'item_id=?',
+            whereArgs: [snapshot['id']],
+          );
+        }
+      }
     }
   });
 }

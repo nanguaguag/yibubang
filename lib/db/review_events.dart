@@ -2,6 +2,9 @@ import 'package:sqflite/sqflite.dart';
 
 class ReviewEvents {
   static Future<void> install(DatabaseExecutor db) async {
+    await db.execute(
+      "CREATE TABLE IF NOT EXISTS ReviewItemTombstones(item_id TEXT PRIMARY KEY,item_type TEXT NOT NULL)",
+    );
     await db.execute('''CREATE TABLE IF NOT EXISTS ReviewEvents(
       id TEXT PRIMARY KEY, item_id TEXT NOT NULL, plan_id TEXT,
       kind TEXT NOT NULL, was_new INTEGER NOT NULL,

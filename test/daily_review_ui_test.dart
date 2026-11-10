@@ -266,6 +266,35 @@ void main() {
     );
   });
 
+  testWidgets('斩卡移除当前及尾部Again副本，不再流转已斩卡', (tester) async {
+    const card = CustomFlashcard(id: 'cut_card', front: 'front', back: 'back');
+    const item = DailyReviewQueueItem(
+      questionId: 'cut_card',
+      itemType: ReviewItemType.flashcard,
+      isNew: false,
+      customFlashcard: card,
+    );
+    final session = DailyReviewSession(
+      plan: const ReviewPlan(id: 'p', name: 'p'),
+      date: DateTime.now(),
+      dueQueue: [item, item],
+      newQueue: [],
+    );
+    final service = _FakeDailyReviewService(session: session);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DailyReviewPage(service: service, initialSession: session),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('熟练斩卡'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('斩掉此卡'));
+    await tester.pumpAndSettle();
+    expect(service.lastCutQuestionId, 'cut_card');
+    expect(find.text('今日计划打卡成功！'), findsOneWidget);
+  });
+
   group('DailyPlanPage Tab Widget Tests', () {
     testWidgets(
       'renders daily plan tab with scope summary, insights and forecast',
@@ -538,6 +567,7 @@ class _FakeDailyReviewService extends DailyReviewService {
 
   Completer<void>? submissionGate;
   int submissionCount = 0;
+  String? lastCutQuestionId;
   String? lastSubmittedQuestionId;
   ReviewRating? lastSubmittedRating;
 
@@ -579,6 +609,17 @@ class _FakeDailyReviewService extends DailyReviewService {
   }
 
   @override
+  Future<void> cutQuestion({
+    required String questionId,
+    required String bankId,
+    String? planId,
+    DateTime? now,
+    dynamic executor,
+  }) async {
+    lastCutQuestionId = questionId;
+  }
+
+  @override
   Future<SpacedReviewItem> submitReviewResult({
     required String questionId,
     required ReviewRating rating,
@@ -589,6 +630,7 @@ class _FakeDailyReviewService extends DailyReviewService {
     dynamic executor,
     String? eventId,
     String? planId,
+    ReviewItemType? expectedItemType,
   }) async {
     submissionCount++;
     if (submissionGate != null) await submissionGate!.future;

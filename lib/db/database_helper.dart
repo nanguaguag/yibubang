@@ -274,7 +274,7 @@ class UserDBHelper {
   factory UserDBHelper() => _instance;
   UserDBHelper._internal();
 
-  static const schemaVersion = 21;
+  static const schemaVersion = 22;
   static Database? _database;
 
   Future<Database> get database =>
@@ -531,6 +531,7 @@ class UserDBHelper {
         await ReviewEvents.install(txn);
         await ReviewEvents.migrateLegacyActivities(txn);
       }
+      if (oldVersion < 22 && newVersion >= 22) await ReviewEvents.install(txn);
       await _createMigrationStateTable(txn);
     });
   }

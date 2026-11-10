@@ -245,6 +245,7 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
         bankId: item.bankId,
         eventId: _reviewEventId,
         planId: item.reviewItem?.planId ?? widget.plan?.id,
+        expectedItemType: item.itemType,
       );
 
       if (!mounted) return;
@@ -273,13 +274,30 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('复习保存失败，请重试：$e')));
+        if (e is ReviewUnavailableException) {
+          _removeRemainingCopies(item.questionId);
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              e is ReviewUnavailableException ? '$e，已跳过' : '复习保存失败，请重试：$e',
+            ),
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
+  }
+
+  void _removeRemainingCopies(String id) {
+    setState(() {
+      for (var i = _queue.length - 1; i >= _currentIndex; i--) {
+        if (_queue[i].questionId == id) _queue.removeAt(i);
+      }
+      if (_currentIndex < _queue.length) _resetQuestionState();
+    });
+    if (_currentIndex >= _queue.length) _onSessionCompleted();
   }
 
   Future<void> _onSessionCompleted() async {
@@ -345,14 +363,7 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
         _sessionReviewCount++;
       }
 
-      if (_currentIndex + 1 < _queue.length) {
-        setState(() {
-          _currentIndex++;
-          _resetQuestionState();
-        });
-      } else {
-        _onSessionCompleted();
-      }
+      _removeRemainingCopies(item.questionId);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(

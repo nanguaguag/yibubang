@@ -1,3 +1,4 @@
+import 'package:yibubang/models/question.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path/path.dart' as p;
 import 'package:yibubang/db/question_bank_manager.dart';
@@ -35,6 +36,59 @@ void main() {
     await UserDBHelper().close();
     await dir.delete(recursive: true);
     await databaseFactory.setDatabasesPath(originalPath);
+  });
+  test('斩题和斩卡拒绝旧评分，显式恢复后才可继续学习', () async {
+    await service.cutQuestion(questionId: 'q', bankId: '');
+    await expectLater(
+      service.submitReviewResult(questionId: 'q', rating: ReviewRating.again),
+      throwsA(isA<ReviewUnavailableException>()),
+    );
+    expect((await repo.getItem('q'))!.state, ReviewState.mastered);
+    final question = Question(id: 'q', userAnswer: '');
+    final user = UserQuestion.fromMap((await db.query('Question')).single)
+      ..isCut = false;
+    await updateQuestionSimple(user, question, fields: {'cut_question'});
+    await service.submitReviewResult(
+      questionId: 'q',
+      rating: ReviewRating.good,
+    );
+    const card = CustomFlashcard(id: 'fc', front: 'f', back: 'b');
+    await repo.saveFlashcard(card);
+    await service.cutQuestion(questionId: 'fc', bankId: '');
+    await expectLater(
+      service.submitReviewResult(questionId: 'fc', rating: ReviewRating.again),
+      throwsA(isA<ReviewUnavailableException>()),
+    );
+    expect(await repo.toggleFlashcardMastered('fc'), false);
+    await service.submitReviewResult(
+      questionId: 'fc',
+      rating: ReviewRating.good,
+    );
+    expect(await db.query('Question', where: "id='fc'"), isEmpty);
+  });
+  test('删除后未知旧会话提交不创建孤儿，显式重新建卡移除墓碑', () async {
+    const card = CustomFlashcard(id: 'deleted', front: 'f', back: 'b');
+    await repo.saveFlashcard(card);
+    await repo.deleteFlashcard(card.id);
+    await expectLater(
+      service.submitReviewResult(
+        questionId: card.id,
+        rating: ReviewRating.good,
+      ),
+      throwsA(isA<ReviewUnavailableException>()),
+    );
+    expect(await repo.getItem(card.id), isNull);
+    expect(
+      await db.query('Question', where: 'id=?', whereArgs: [card.id]),
+      isEmpty,
+    );
+    await repo.saveFlashcard(card);
+    await service.submitReviewResult(
+      questionId: card.id,
+      rating: ReviewRating.good,
+      expectedItemType: ReviewItemType.flashcard,
+    );
+    expect((await repo.getItem(card.id))!.itemType, ReviewItemType.flashcard);
   });
   test('复习8秒进入答题统计且按权威关系原子维护章节计数', () async {
     final file = p.join(dir.path, 'fixture.sqlite');

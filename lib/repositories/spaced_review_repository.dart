@@ -9,7 +9,7 @@ class SpacedReviewRepository {
   final UserDBHelper _dbHelper;
 
   SpacedReviewRepository({UserDBHelper? dbHelper})
-      : _dbHelper = dbHelper ?? UserDBHelper();
+    : _dbHelper = dbHelper ?? UserDBHelper();
 
   Future<DatabaseExecutor> _getExecutor([DatabaseExecutor? custom]) async {
     return custom ?? await _dbHelper.database;
@@ -60,7 +60,10 @@ class SpacedReviewRepository {
   }
 
   /// 获取指定 ID 的计划
-  Future<ReviewPlan?> getPlan(String planId, [DatabaseExecutor? executor]) async {
+  Future<ReviewPlan?> getPlan(
+    String planId, [
+    DatabaseExecutor? executor,
+  ]) async {
     final db = await _getExecutor(executor);
     final rows = await db.query(
       'ReviewPlans',
@@ -114,7 +117,10 @@ class SpacedReviewRepository {
   }
 
   /// 设置激活计划（并将其他计划置为非激活）
-  Future<void> setActivePlan(String planId, [DatabaseExecutor? executor]) async {
+  Future<void> setActivePlan(
+    String planId, [
+    DatabaseExecutor? executor,
+  ]) async {
     final db = await _getExecutor(executor);
     if (db is Database) {
       await db.transaction((txn) async {
@@ -148,7 +154,10 @@ class SpacedReviewRepository {
   // -------------------------------------------------------------
 
   /// 查询特定项的记忆状态
-  Future<SpacedReviewItem?> getItem(String itemId, [DatabaseExecutor? executor]) async {
+  Future<SpacedReviewItem?> getItem(
+    String itemId, [
+    DatabaseExecutor? executor,
+  ]) async {
     final db = await _getExecutor(executor);
     final rows = await db.query(
       'SpacedReviewItem',
@@ -161,7 +170,10 @@ class SpacedReviewRepository {
   }
 
   /// 保存单个记忆项状态
-  Future<void> saveItem(SpacedReviewItem item, [DatabaseExecutor? executor]) async {
+  Future<void> saveItem(
+    SpacedReviewItem item, [
+    DatabaseExecutor? executor,
+  ]) async {
     final db = await _getExecutor(executor);
     await db.insert(
       'SpacedReviewItem',
@@ -299,9 +311,14 @@ class SpacedReviewRepository {
     final forecast = <String, int>{};
 
     for (int i = 0; i < days; i++) {
-      final targetDay = DateTime(baseDate.year, baseDate.month, baseDate.day).add(Duration(days: i));
+      final targetDay = DateTime(
+        baseDate.year,
+        baseDate.month,
+        baseDate.day,
+      ).add(Duration(days: i));
       final nextDay = targetDay.add(const Duration(days: 1));
-      final dayKey = '${targetDay.year.toString().padLeft(4, '0')}-'
+      final dayKey =
+          '${targetDay.year.toString().padLeft(4, '0')}-'
           '${targetDay.month.toString().padLeft(2, '0')}-'
           '${targetDay.day.toString().padLeft(2, '0')}';
 
@@ -337,9 +354,17 @@ class SpacedReviewRepository {
   // -------------------------------------------------------------
 
   /// 保存自制卡片（同时初始化或关联一条 SpacedReviewItem 记录）
-  Future<void> saveFlashcard(CustomFlashcard card, [DatabaseExecutor? executor]) async {
+  Future<void> saveFlashcard(
+    CustomFlashcard card, [
+    DatabaseExecutor? executor,
+  ]) async {
     final db = await _getExecutor(executor);
     Future<void> perform(DatabaseExecutor tx) async {
+      await tx.delete(
+        'ReviewItemTombstones',
+        where: 'item_id=?',
+        whereArgs: [card.id],
+      );
       await tx.insert(
         'CustomFlashcards',
         card.toMap(),
@@ -395,7 +420,10 @@ class SpacedReviewRepository {
   }
 
   /// 获取自制卡片
-  Future<CustomFlashcard?> getFlashcard(String id, [DatabaseExecutor? executor]) async {
+  Future<CustomFlashcard?> getFlashcard(
+    String id, [
+    DatabaseExecutor? executor,
+  ]) async {
     final db = await _getExecutor(executor);
     final rows = await db.query(
       'CustomFlashcards',
@@ -452,7 +480,9 @@ class SpacedReviewRepository {
   }
 
   /// 获取所有自制卡片
-  Future<List<CustomFlashcard>> getAllFlashcards([DatabaseExecutor? executor]) async {
+  Future<List<CustomFlashcard>> getAllFlashcards([
+    DatabaseExecutor? executor,
+  ]) async {
     final db = await _getExecutor(executor);
     final rows = await db.query('CustomFlashcards', orderBy: 'created_at DESC');
     return rows.map((r) => CustomFlashcard.fromMap(r)).toList();
@@ -514,22 +544,49 @@ class SpacedReviewRepository {
   }
 
   /// 切换闪卡斩卡状态（在 mastered 与在学 review 状态间切换）
-  Future<bool> toggleFlashcardMastered(String id, [DatabaseExecutor? executor]) async {
+  Future<bool> toggleFlashcardMastered(
+    String id, [
+    DatabaseExecutor? executor,
+  ]) async {
     final db = await _getExecutor(executor);
-    final item = await getItem(id, db);
-    if (item == null) return false;
-    final isMastered = item.state == ReviewState.mastered;
-    final newState = isMastered ? ReviewState.review : ReviewState.mastered;
-    await saveItem(item.copyWith(state: newState), db);
-    return !isMastered;
+    Future<bool> perform(DatabaseExecutor tx) async {
+      final item = await getItem(id, tx);
+      if (item == null || await getFlashcard(id, tx) == null) return false;
+      final isMastered = item.state == ReviewState.mastered;
+      final extra = Map<String, dynamic>.from(item.extra ?? {});
+      if (isMastered) {
+        extra.remove('suspension_reason');
+      } else {
+        extra['suspension_reason'] = 'cut';
+      }
+      await saveItem(
+        item.copyWith(
+          state: isMastered ? ReviewState.review : ReviewState.mastered,
+          extra: extra,
+          dueDate: isMastered ? DateTime.now().millisecondsSinceEpoch : 0,
+        ),
+        tx,
+      );
+      return !isMastered;
+    }
+
+    return db is Database ? db.transaction(perform) : perform(db);
   }
 
   /// 删除自制卡片及对应的复习状态
   Future<void> deleteFlashcard(String id, [DatabaseExecutor? executor]) async {
     final db = await _getExecutor(executor);
     Future<void> perform(DatabaseExecutor tx) async {
+      await tx.insert('ReviewItemTombstones', {
+        'item_id': id,
+        'item_type': 'flashcard',
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
       await tx.delete('CustomFlashcards', where: 'id = ?', whereArgs: [id]);
-      await tx.delete('SpacedReviewItem', where: 'item_id = ?', whereArgs: [id]);
+      await tx.delete(
+        'SpacedReviewItem',
+        where: 'item_id = ?',
+        whereArgs: [id],
+      );
     }
 
     if (db is Database) {
