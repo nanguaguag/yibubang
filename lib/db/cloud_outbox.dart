@@ -166,6 +166,62 @@ class CloudOutbox {
     }
   }
 
+  static Future<int> pullCursor(
+    Database db,
+    String owner, {
+    bool reset = false,
+  }) async {
+    await db.execute(
+      'CREATE TABLE IF NOT EXISTS CloudPullCursor(owner TEXT PRIMARY KEY, cursor INTEGER NOT NULL DEFAULT 0)',
+    );
+    if (reset) {
+      await db.delete('CloudPullCursor', where: 'owner=?', whereArgs: [owner]);
+    }
+    final rows = await db.query(
+      'CloudPullCursor',
+      where: 'owner=?',
+      whereArgs: [owner],
+    );
+    return rows.isEmpty ? 0 : rows.single['cursor'] as int;
+  }
+
+  /// 页面数据和游标同一事务；崩溃只会重放本页，不会跳过未落库数据。
+  static Future<void> mergePage(
+    Database db,
+    String owner,
+    Map<String, dynamic> data,
+    int previous,
+  ) async {
+    final next = data['next_cursor'];
+    final high = data['high_watermark'];
+    if (next is! int ||
+        high is! int ||
+        next < previous ||
+        next > high ||
+        data['has_more'] is! bool ||
+        (data['has_more'] == true && next == previous)) {
+      throw const FormatException('云端分页游标无效');
+    }
+    await db.transaction((tx) async {
+      await tx.update('CloudSyncContext', {'applying': 1}, where: 'id=1');
+      for (final value in data['pull_activities'] as List) {
+        await tx.insert(
+          'Activities',
+          Map<String, dynamic>.from(value as Map),
+          conflictAlgorithm: ConflictAlgorithm.ignore,
+        );
+      }
+      for (final value in data['pull_questions'] as List) {
+        await mergeQuestion(tx, Map<String, dynamic>.from(value as Map));
+      }
+      await tx.insert('CloudPullCursor', {
+        'owner': owner,
+        'cursor': next,
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+      await tx.update('CloudSyncContext', {'applying': 0}, where: 'id=1');
+    });
+  }
+
   static Future<void> mergeQuestion(
     DatabaseExecutor tx,
     Map<String, dynamic> question,

@@ -44,6 +44,9 @@ void main() {
       'data': {
         'protocol': 2,
         'server_time': 9999999999,
+        'next_cursor': (body['pull_cursor'] as int? ?? 0) + 1,
+        'high_watermark': (body['pull_cursor'] as int? ?? 0) + 1,
+        'has_more': false,
         'accepted_seqs': (body['mutations'] as List)
             .map((m) => m['seq'])
             .toList(),
@@ -180,6 +183,59 @@ void main() {
     await CloudOutbox.bind(db, 'u');
     expect((await db.query('Question')).single['user_answer'], 'B');
     expect((await db.query('CloudOutbox')).single['entity_id'], 'legacy');
+  });
+  test('分页中断后从已落库游标续传，坏页不会推进游标', () async {
+    final requested = <int>[];
+    var fail = true;
+    await http.runWithClient(
+      () async {
+        expect((await CloudSyncService.instance.sync()).success, false);
+        expect(await CloudOutbox.pullCursor(db, 'u'), 500);
+        expect((await db.query('Question')).length, 1);
+        fail = false;
+        expect((await CloudSyncService.instance.sync()).success, true);
+        expect(await CloudOutbox.pullCursor(db, 'u'), 501);
+      },
+      () => MockClient((req) async {
+        final body = jsonDecode(req.body) as Map<String, dynamic>;
+        final cursor = body['pull_cursor'] as int;
+        requested.add(cursor);
+        if (cursor == 500 && fail) return http.Response('failure', 500);
+        return http.Response(
+          jsonEncode({
+            'data': {
+              'protocol': 2,
+              'accepted_seqs': [],
+              'server_time': 1000,
+              'next_cursor': cursor == 0 ? 500 : 501,
+              'high_watermark': 501,
+              'has_more': cursor == 0,
+              'pull_questions': [
+                {'id': cursor == 0 ? 'first' : 'last', 'status': 1},
+              ],
+              'pull_activities': [],
+            },
+          }),
+          200,
+        );
+      }),
+    );
+    expect(requested, [0, 500, 500]);
+    await expectLater(
+      CloudOutbox.mergePage(db, 'u', {
+        'next_cursor': 502,
+        'high_watermark': 502,
+        'has_more': false,
+        'pull_questions': [
+          {'id': 'bad', 'status': null},
+        ],
+        'pull_activities': [],
+      }, 501),
+      throwsA(isA<DatabaseException>()),
+    );
+    expect(await CloudOutbox.pullCursor(db, 'u'), 501);
+    expect(await db.query('Question', where: "id='bad'"), isEmpty);
+    expect((await db.query('CloudSyncContext')).single['applying'], 0);
   });
   test('旧服务端或缺少明确确认时保留队列', () async {
     await db.insert('Question', {'id': 'q', 'status': 1});

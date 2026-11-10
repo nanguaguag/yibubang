@@ -1,4 +1,4 @@
-import { pushMutations } from './sync_v2';
+import { pushMutations, pullChanges } from './sync_v2';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 
@@ -309,7 +309,6 @@ app.post('/api/sync', async (c) => {
   if (body.protocol !== 2) {
     return c.json({ code: 426, message: 'Please upgrade the client to sync protocol v2' }, 426);
   }
-  const lastSyncTime = Number(body.last_sync_time) || 0;
   const pushActivities = Array.isArray(body.push_activities) ? body.push_activities : [];
   const pushQuestions = Array.isArray(body.push_questions) ? body.push_questions : [];
 
@@ -404,32 +403,8 @@ app.post('/api/sync', async (c) => {
     }
   }
 
-  // 3. 查询 Pull 增量：拉取云端在 lastSyncTime 之后入库的变动 (按 created_at 判定，确保补录与历史流水不丢失)
-  // 拉取流水 (最多拉 10000 条)
-  const pullActivitiesResult = await db
-    .prepare(`
-      SELECT id, timestamp, bank_id, question_id, identity_id,
-             subject_id, chapter_id, is_right, duration, title, description
-      FROM sync_activities
-      WHERE user_id = ? AND created_at > ?
-      ORDER BY created_at ASC
-      LIMIT 10000
-    `)
-    .bind(auth.userId, lastSyncTime)
-    .all();
-
-  // 拉取题目进度 (最多拉 10000 条)
-  const pullQuestionsResult = await db
-    .prepare(`
-      SELECT question_id as id, chapter_id, chapter_parent_id,
-             cut_question, user_answer, status, collection, updated_at
-      FROM sync_questions
-      WHERE user_id = ? AND updated_at > ?
-      ORDER BY updated_at ASC
-      LIMIT 10000
-    `)
-    .bind(auth.userId, lastSyncTime)
-    .all();
+  const page = await pullChanges(db, auth.userId, Number(body.pull_cursor) || 0,
+    body.high_watermark == null ? undefined : Number(body.high_watermark));
 
   return c.json({
     code: 0,
@@ -437,8 +412,7 @@ app.post('/api/sync', async (c) => {
     data: {
       ...(accepted !== null ? { protocol: 2, accepted_seqs: accepted } : {}),
       server_time: now,
-      pull_activities: pullActivitiesResult.results || [],
-      pull_questions: pullQuestionsResult.results || [],
+      ...page,
       pushed_activities_count: pushActivities.length,
       pushed_questions_count: pushQuestions.length,
     },

@@ -75,3 +75,25 @@ CREATE TABLE IF NOT EXISTS sync_mutations (
     UNIQUE(device_id, stream, client_seq)
 );
 CREATE INDEX IF NOT EXISTS idx_sync_mutations_user ON sync_mutations(user_id, revision);
+
+-- 拉取位置使用事务内触发器分配的提交序号，覆盖旧客户端历史数据。
+CREATE TABLE IF NOT EXISTS sync_changes (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL,
+  kind TEXT NOT NULL, entity_id TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sync_changes_user ON sync_changes(user_id, seq);
+CREATE TRIGGER IF NOT EXISTS sync_question_insert AFTER INSERT ON sync_questions BEGIN
+  INSERT INTO sync_changes(user_id,kind,entity_id) VALUES(NEW.user_id,'question',NEW.question_id);
+END;
+CREATE TRIGGER IF NOT EXISTS sync_question_update AFTER UPDATE ON sync_questions BEGIN
+  INSERT INTO sync_changes(user_id,kind,entity_id) VALUES(NEW.user_id,'question',NEW.question_id);
+END;
+CREATE TRIGGER IF NOT EXISTS sync_activity_insert AFTER INSERT ON sync_activities BEGIN
+  INSERT INTO sync_changes(user_id,kind,entity_id) VALUES(NEW.user_id,'activity',NEW.id);
+END;
+INSERT INTO sync_changes(user_id,kind,entity_id)
+ SELECT user_id,'question',question_id FROM sync_questions q
+ WHERE NOT EXISTS (SELECT 1 FROM sync_changes c WHERE c.user_id=q.user_id AND c.kind='question' AND c.entity_id=q.question_id);
+INSERT INTO sync_changes(user_id,kind,entity_id)
+ SELECT user_id,'activity',id FROM sync_activities a
+ WHERE NOT EXISTS (SELECT 1 FROM sync_changes c WHERE c.user_id=a.user_id AND c.kind='activity' AND c.entity_id=a.id);

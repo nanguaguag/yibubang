@@ -6,7 +6,6 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:sqflite/sqflite.dart';
 
 import '../db/data_transfer.dart';
 import '../db/cloud_outbox.dart';
@@ -358,11 +357,11 @@ class CloudSyncService extends ChangeNotifier {
     try {
       final userDb = await UserDBHelper().database;
       final prefs = await SharedPreferences.getInstance();
-      final effectiveSyncTime = force ? 0 : _lastSyncTime;
 
       // 上传只使用事务内变更序号；服务端时间只用于展示/旧拉取协议。
       final owner = _userId!;
       await CloudOutbox.bind(userDb, owner);
+      var cursor = await CloudOutbox.pullCursor(userDb, owner, reset: force);
       final entries = await CloudOutbox.snapshot(userDb, owner);
       final totalQuestions = entries
           .where((e) => e['kind'] == 'question')
@@ -390,11 +389,7 @@ class CloudSyncService extends ChangeNotifier {
           method: 'POST',
           auth: true,
           timeout: const Duration(seconds: 45),
-          body: {
-            'protocol': 2,
-            'last_sync_time': i == 0 ? effectiveSyncTime : serverTime,
-            'mutations': mutations,
-          },
+          body: {'protocol': 2, 'pull_cursor': cursor, 'mutations': mutations},
         );
         final data = res['data'] as Map<String, dynamic>;
         if (data['protocol'] != 2 || data['accepted_seqs'] is! List) {
@@ -409,6 +404,32 @@ class CloudSyncService extends ChangeNotifier {
             data['accepted_seqs'] as List,
           ),
         );
+        await CloudOutbox.mergePage(userDb, owner, data, cursor);
+        cursor = data['next_cursor'] as int;
+        while (data['has_more'] == true) {
+          final response = await _request(
+            '/api/sync',
+            method: 'POST',
+            auth: true,
+            timeout: const Duration(seconds: 45),
+            body: {
+              'protocol': 2,
+              'mutations': [],
+              'pull_cursor': cursor,
+              'high_watermark': data['high_watermark'],
+            },
+          );
+          final page = response['data'] as Map<String, dynamic>;
+          await CloudOutbox.mergePage(userDb, owner, page, cursor);
+          cursor = page['next_cursor'] as int;
+          allPullActivities.addAll(
+            (page['pull_activities'] as List).cast<Map<String, dynamic>>(),
+          );
+          allPullQuestions.addAll(
+            (page['pull_questions'] as List).cast<Map<String, dynamic>>(),
+          );
+          data['has_more'] = page['has_more'];
+        }
         allPullActivities.addAll(
           (data['pull_activities'] as List? ?? []).cast<Map<String, dynamic>>(),
         );
@@ -417,45 +438,21 @@ class CloudSyncService extends ChangeNotifier {
         );
       }
 
-      // 3. 本地批量合并 Pull 增量
-      final affectedBankIds = <String>{};
+      // 数据已逐页原子合并；章节投影仍通过 ATTACH 聚合重算。
       if (allPullActivities.isNotEmpty || allPullQuestions.isNotEmpty) {
-        await userDb.transaction((txn) async {
-          final batch = txn.batch();
-
-          // 3.1 合并流水：以 id 为主键，冲突忽略（Append-Only）
-          for (final act in allPullActivities) {
-            batch.insert(
-              'Activities',
-              Map<String, dynamic>.from(act),
-              conflictAlgorithm: ConflictAlgorithm.ignore,
-            );
-            final bId = act['bank_id']?.toString();
-            if (bId != null && bId.isNotEmpty) {
-              affectedBankIds.add(bId);
-            }
-          }
-
-          // 按字段合并，保护上传期间新产生的本地变更；不依赖设备时钟。
-          await txn.update('CloudSyncContext', {'applying': 1}, where: 'id=1');
-          await batch.commit(noResult: true);
-          for (final q in allPullQuestions) {
-            await CloudOutbox.mergeQuestion(txn, q);
-          }
-          await txn.update('CloudSyncContext', {'applying': 0}, where: 'id=1');
-        });
-
-        // 4. 重算受影响题库及当前激活题库的章节对错数统计（确保重做后对错计数归零）
-        final banksToRebuild = <String>{...affectedBankIds};
-        final currentActiveBank = prefs.getString('activeBankId');
-        if (currentActiveBank != null && currentActiveBank.isNotEmpty) {
-          banksToRebuild.add(currentActiveBank);
-        }
-        for (final bId in banksToRebuild) {
+        final affectedBankIds = allPullActivities
+            .map((a) => a['bank_id']?.toString())
+            .whereType<String>()
+            .toSet();
+        final banks = await userDb.query('QuestionBank', columns: ['bank_id']);
+        affectedBankIds.addAll(banks.map((b) => b['bank_id'] as String));
+        final active = prefs.getString('activeBankId');
+        if (active != null && active.isNotEmpty) affectedBankIds.add(active);
+        for (final bank in affectedBankIds) {
           try {
-            await rebuildQuestionCount(bankId: bId);
+            await rebuildQuestionCount(bankId: bank);
           } catch (e) {
-            debugPrint('[cloud-sync] 重算题库 $bId 统计跳过: $e');
+            debugPrint('[cloud-sync] 重算题库 $bank 统计跳过: $e');
           }
         }
       }
@@ -487,11 +484,18 @@ class CloudSyncService extends ChangeNotifier {
     }
   }
 
-  /// 重置同步时间游标，以便下一次强制执行全量双向对齐
+  /// 重置拉取游标重新对齐云端；已确认的本地变更不重复上传。
   Future<void> resetSyncCursor() async {
     _lastSyncTime = 0;
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_keyLastSyncTime);
+    if (_userId != null) {
+      await CloudOutbox.pullCursor(
+        await UserDBHelper().database,
+        _userId!,
+        reset: true,
+      );
+    }
     notifyListeners();
   }
 

@@ -33,3 +33,22 @@ export async function pushMutations(db: D1Database, user: string, device: string
   }
   return accepted;
 }
+
+// 固定提交上界；同毫秒、慢时钟及晚提交均不会跳过，按页恢复游标。
+export async function pullChanges(db: D1Database, user: string, cursor: number, through?: number) {
+  if (!Number.isSafeInteger(cursor) || cursor < 0 ||
+      (through !== undefined && (!Number.isSafeInteger(through) || through < cursor))) throw new Error('Invalid pull cursor');
+  const maximum = await db.prepare('SELECT COALESCE(MAX(seq),0) AS seq FROM sync_changes WHERE user_id=?').bind(user).first<{seq: number}>();
+  const high = through ?? maximum!.seq;
+  const rows = await db.prepare('SELECT seq FROM sync_changes WHERE user_id=? AND seq>? AND seq<=? ORDER BY seq LIMIT 501').bind(user,cursor,high).all<{seq:number}>();
+  const page = rows.results.slice(0,500);
+  const next = page.length ? page[page.length-1].seq : high;
+  const activities = await db.prepare(`SELECT DISTINCT a.id,a.timestamp,a.bank_id,a.question_id,a.identity_id,a.subject_id,a.chapter_id,a.is_right,a.duration,a.title,a.description
+    FROM sync_changes c JOIN sync_activities a ON a.user_id=c.user_id AND a.id=c.entity_id
+    WHERE c.user_id=? AND c.kind='activity' AND c.seq>? AND c.seq<=? ORDER BY c.seq`).bind(user,cursor,next).all();
+  const questions = await db.prepare(`SELECT DISTINCT q.question_id AS id,q.chapter_id,q.chapter_parent_id,q.cut_question,q.user_answer,q.status,q.collection,q.updated_at
+    FROM sync_changes c JOIN sync_questions q ON q.user_id=c.user_id AND q.question_id=c.entity_id
+    WHERE c.user_id=? AND c.kind='question' AND c.seq>? AND c.seq<=? ORDER BY c.seq`).bind(user,cursor,next).all();
+  return { pull_activities: activities.results, pull_questions: questions.results,
+    next_cursor: next, high_watermark: high, has_more: rows.results.length > 500 };
+}
