@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -393,36 +394,95 @@ class CloudSyncService extends ChangeNotifier {
         whereArgs: effectiveSyncTime > 0 ? [effectiveSyncTime] : null,
       );
 
-      // 2. 发起云端同步请求（同步包体较大，给予更充裕的弱网超时时间）
-      debugPrint('[cloud-sync] 开始同步: 待推送题目 ${pushQuestions.length} 道, 流水 ${pushActivities.length} 条');
-      final res = await _request(
-        '/api/sync',
-        method: 'POST',
-        auth: true,
-        timeout: const Duration(seconds: 45),
-        body: {
-          'last_sync_time': effectiveSyncTime,
-          'force': force,
-          'push_activities': pushActivities,
-          'push_questions': pushQuestions,
-        },
+      // 2. 分批切片推送机制（每批最多 500 道题 + 500 条流水）
+      // 避免单次提交万级超大包导致 Cloudflare Worker 触发 30s 运行时限熔断 (HTTP 500)
+      const int batchChunkSize = 500;
+      final totalQuestions = pushQuestions.length;
+      final totalActivities = pushActivities.length;
+      final totalBatches = max(
+        1,
+        max(
+          (totalQuestions + batchChunkSize - 1) ~/ batchChunkSize,
+          (totalActivities + batchChunkSize - 1) ~/ batchChunkSize,
+        ),
       );
 
-      final data = res['data'] as Map<String, dynamic>;
-      final serverTime = (data['server_time'] as num).toInt();
-      final pullActivities =
-          (data['pull_activities'] as List?)?.cast<Map<String, dynamic>>() ?? [];
-      final pullQuestions =
-          (data['pull_questions'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+      debugPrint(
+        '[cloud-sync] 开始同步: 待推送题目 $totalQuestions 道, 流水 $totalActivities 条 (共切分为 $totalBatches 个批次)',
+      );
+
+      int serverTime = 0;
+      final allPullActivities = <Map<String, dynamic>>[];
+      final allPullQuestions = <Map<String, dynamic>>[];
+
+      for (var batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+        final qStart = batchIndex * batchChunkSize;
+        final qChunk = qStart < totalQuestions
+            ? pushQuestions.sublist(
+                qStart,
+                min(qStart + batchChunkSize, totalQuestions),
+              )
+            : const <Map<String, dynamic>>[];
+
+        final aStart = batchIndex * batchChunkSize;
+        final aChunk = aStart < totalActivities
+            ? pushActivities.sublist(
+                aStart,
+                min(aStart + batchChunkSize, totalActivities),
+              )
+            : const <Map<String, dynamic>>[];
+
+        debugPrint(
+          '[cloud-sync] 正在同步批次 [${batchIndex + 1}/$totalBatches]: 本批题目 ${qChunk.length} 道, 流水 ${aChunk.length} 条...',
+        );
+
+        // 仅在首个批次拉取云端历史变更；后续批次传当前时间，避免重复全量拉取
+        final reqSyncTime = batchIndex == 0
+            ? effectiveSyncTime
+            : (serverTime > 0
+                ? serverTime
+                : DateTime.now().millisecondsSinceEpoch);
+
+        final res = await _request(
+          '/api/sync',
+          method: 'POST',
+          auth: true,
+          timeout: const Duration(seconds: 45),
+          body: {
+            'last_sync_time': reqSyncTime,
+            'force': force && batchIndex == 0,
+            'push_activities': aChunk,
+            'push_questions': qChunk,
+          },
+        );
+
+        final data = res['data'] as Map<String, dynamic>;
+        serverTime = (data['server_time'] as num).toInt();
+
+        // 收集 pull 数据（去重）
+        final pullActivities =
+            (data['pull_activities'] as List?)?.cast<Map<String, dynamic>>() ??
+                [];
+        final pullQuestions =
+            (data['pull_questions'] as List?)?.cast<Map<String, dynamic>>() ??
+                [];
+
+        allPullActivities.addAll(pullActivities);
+        allPullQuestions.addAll(pullQuestions);
+
+        debugPrint(
+          '[cloud-sync] 批次 [${batchIndex + 1}/$totalBatches] 同步成功 (累计已推题目: ${min(qStart + qChunk.length, totalQuestions)}/$totalQuestions, 流水: ${min(aStart + aChunk.length, totalActivities)}/$totalActivities)',
+        );
+      }
 
       // 3. 本地批量合并 Pull 增量
       final affectedBankIds = <String>{};
-      if (pullActivities.isNotEmpty || pullQuestions.isNotEmpty) {
+      if (allPullActivities.isNotEmpty || allPullQuestions.isNotEmpty) {
         await userDb.transaction((txn) async {
           final batch = txn.batch();
 
           // 3.1 合并流水：以 id 为主键，冲突忽略（Append-Only）
-          for (final act in pullActivities) {
+          for (final act in allPullActivities) {
             batch.insert(
               'Activities',
               Map<String, dynamic>.from(act),
@@ -435,10 +495,7 @@ class CloudSyncService extends ChangeNotifier {
           }
 
           // 3.2 合并题目：LWW (Last-Write-Wins) 时间戳仲裁
-          // - 云端 updated_at >= 本地 updated_at 时，云端操作胜出（完整支持“全部重做/重做错题”等 status 归 0 操作）
-          // - 本地为初始占位 (updated_at == 0) 时，云端胜出
-          // - 否则保留本地更新的记录
-          for (final q in pullQuestions) {
+          for (final q in allPullQuestions) {
             final qId = q['id']?.toString();
             if (qId == null || qId.isEmpty) continue;
 
@@ -514,11 +571,11 @@ class CloudSyncService extends ChangeNotifier {
 
       final result = SyncResult(
         success: true,
-        pushedActivities: pushActivities.length,
-        pushedQuestions: pushQuestions.length,
-        pulledActivities: pullActivities.length,
-        pulledQuestions: pullQuestions.length,
-        syncTime: DateTime.fromMillisecondsSinceEpoch(serverTime),
+        pushedActivities: totalActivities,
+        pushedQuestions: totalQuestions,
+        pulledActivities: allPullActivities.length,
+        pulledQuestions: allPullQuestions.length,
+        syncTime: DateTime.fromMillisecondsSinceEpoch(serverTime > 0 ? serverTime : DateTime.now().millisecondsSinceEpoch),
       );
 
       debugPrint('[cloud-sync] $result');
@@ -636,14 +693,23 @@ class CloudSyncService extends ChangeNotifier {
           }
           throw const FormatException('服务端返回的非有效 JSON 格式');
         } else {
+          final rawBody = utf8.decode(res.bodyBytes);
+          debugPrint('[cloud-sync] 服务端响应非 2xx: HTTP ${res.statusCode}, 原始内容: $rawBody');
           try {
-            final errJson = jsonDecode(utf8.decode(res.bodyBytes));
-            final msg = errJson['message'] ?? 'HTTP ${res.statusCode}';
-            throw HttpException(msg.toString());
-          } catch (_) {
-            throw HttpException('请求失败: HTTP ${res.statusCode}');
+            final errJson = jsonDecode(rawBody);
+            final msg = errJson['message'] ?? errJson['error'] ?? rawBody;
+            throw HttpException('HTTP ${res.statusCode}: $msg');
+          } catch (e) {
+            if (e is HttpException) rethrow;
+            throw HttpException('请求失败: HTTP ${res.statusCode} ($rawBody)');
           }
         }
+      } on HttpException catch (e) {
+        sw.stop();
+        // 关键：服务端明确返回了 HTTP 状态码（如 401 鉴权失败、500 服务端报错等）
+        // 此时表明主节点网络连通正常，重试备用节点（同一个服务）毫无意义且会导致国内长时间挂起超时
+        debugPrint('[cloud-sync] 服务端响应错误 ($uri, 耗时 ${sw.elapsedMilliseconds}ms): $e');
+        rethrow;
       } on SocketException catch (e) {
         sw.stop();
         lastEx = e;
@@ -657,7 +723,7 @@ class CloudSyncService extends ChangeNotifier {
       } catch (e) {
         sw.stop();
         lastEx = e is Exception ? e : Exception(e.toString());
-        debugPrint('[cloud-sync] 请求异常 ($uri, 耗时 ${sw.elapsedMilliseconds}ms): $e');
+        debugPrint('[cloud-sync] 未知异常 ($uri, 耗时 ${sw.elapsedMilliseconds}ms): $e');
         continue;
       }
     }

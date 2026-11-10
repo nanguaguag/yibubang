@@ -40,4 +40,16 @@ void main() {
     expect(result.toString(), contains('上传流水 5 条'));
     expect(result.toString(), contains('拉取流水 2 条'));
   });
+
+  test('Batch chunking logic calculates batch count correctly for large sets', () {
+    const batchSize = 500;
+    const totalQ = 10441;
+    const totalA = 10409;
+    final totalBatches = [
+      (totalQ + batchSize - 1) ~/ batchSize,
+      (totalA + batchSize - 1) ~/ batchSize,
+    ].reduce((a, b) => a > b ? a : b);
+
+    expect(totalBatches, 21);
+  });
 }

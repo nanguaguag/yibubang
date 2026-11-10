@@ -408,6 +408,7 @@ void main() {
       await tester.pump();
       await gesture.panZoomEnd();
       await tester.pump();
+      await tester.pump(const Duration(milliseconds: 600));
       expect(tester.takeException(), isNull);
     });
 
