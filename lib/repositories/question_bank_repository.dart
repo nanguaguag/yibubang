@@ -1,3 +1,4 @@
+import '../db/user_database_coordinator.dart';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -298,7 +299,10 @@ class QuestionBankRepository {
 
   /// Removes installed content while retaining global answers, notes, course
   /// choices and history. Subscribed/built-in banks remain available to download.
-  Future<void> deleteBank(String bankId, {bool keepAvailable = false}) async {
+  Future<void> deleteBank(
+    String bankId, {
+    bool keepAvailable = false,
+  }) => UserDatabaseCoordinator.instance.run(() async {
     if (_installing.isNotEmpty) throw StateError('已有题库正在安装、更新或删除');
     _installing.add(bankId);
     FileSystemEntity? original, removed;
@@ -416,7 +420,7 @@ class QuestionBankRepository {
       }
       _installing.remove(bankId);
     }
-  }
+  });
 
   Future<BankFileValidation> validatePath(
     String filePath, {
@@ -564,7 +568,7 @@ class QuestionBankRepository {
     required int addedCount,
     BankRelease? upstream,
     bool merged = false,
-  }) async {
+  }) => UserDatabaseCoordinator.instance.run(() async {
     final bankId = metadata['bank_id'] as String;
     if (!RegExp(r'^[A-Za-z0-9_-]+$').hasMatch(bankId)) {
       throw const FormatException('题库 bank_id 含有非法路径字符');
@@ -717,7 +721,7 @@ class QuestionBankRepository {
         await attachedDb.execute('DETACH DATABASE install_bank');
       }
     }
-  }
+  });
 
   Future<void> registerRemoteEntries(List<Map<String, dynamic>> entries) async {
     final userDb = await UserDBHelper().database;

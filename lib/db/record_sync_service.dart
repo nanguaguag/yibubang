@@ -1,3 +1,4 @@
+import 'user_database_coordinator.dart';
 import 'dart:io';
 
 import 'package:archive/archive.dart';
@@ -37,8 +38,10 @@ class RecordSyncService {
     }
 
     // 关闭连接，确保 WAL/journal 落盘后再读取文件字节。
-    await UserDBHelper().close();
-    final bytes = await dbFile.readAsBytes();
+    final bytes = await UserDatabaseCoordinator.instance.run(() async {
+      await UserDBHelper().close();
+      return dbFile.readAsBytes();
+    });
 
     final archive = Archive();
     archive.addFile(ArchiveFile(_sqliteFileName, bytes.length, bytes));
@@ -81,33 +84,33 @@ class RecordSyncService {
   }
 
   /// 导入做题记录（替换）。返回是否成功。
-  static Future<bool> importReplace(Uint8List zipBytes) async {
-    final sqliteBytes = _extractSqlite(zipBytes);
-    final dbPath = p.join(await getDatabasesPath(), _sqliteFileName);
+  static Future<bool> importReplace(Uint8List zipBytes) =>
+      UserDatabaseCoordinator.instance.run(() async {
+        final sqliteBytes = _extractSqlite(zipBytes);
+        final dbPath = p.join(await getDatabasesPath(), _sqliteFileName);
 
-    await UserDBHelper().close();
-    await File(dbPath).writeAsBytes(sqliteBytes, flush: true);
-    // 清理 WAL / SHM 残留，避免旧日志污染新库。
-    for (final suffix in const ['-wal', '-shm']) {
-      try {
-        final f = File('$dbPath$suffix');
-        if (await f.exists()) await f.delete();
-      } catch (_) {/* 忽略 */}
-    }
+        await UserDBHelper().close();
+        await File(dbPath).writeAsBytes(sqliteBytes, flush: true);
+        // 清理 WAL / SHM 残留，避免旧日志污染新库。
+        for (final suffix in const ['-wal', '-shm']) {
+          try {
+            final f = File('$dbPath$suffix');
+            if (await f.exists()) await f.delete();
+          } catch (_) {
+            /* 忽略 */
+          }
+        }
 
-    // 重新打开并触发 onCreate/onUpgrade，确保 schema 就绪。
-    await UserDBHelper().database;
-    return true;
-  }
+        // 重新打开并触发 onCreate/onUpgrade，确保 schema 就绪。
+        await UserDBHelper().database;
+        return true;
+      });
 
   /// 导入做题记录（合并）。返回合并涉及的题目数量。
   static Future<int> importMerge(Uint8List zipBytes) async {
     final sqliteBytes = _extractSqlite(zipBytes);
     final tmpDir = await getTemporaryDirectory();
-    final tmpPath = p.join(
-      tmpDir.path,
-      'import_${generateSimpleId()}.sqlite',
-    );
+    final tmpPath = p.join(tmpDir.path, 'import_${generateSimpleId()}.sqlite');
     await File(tmpPath).writeAsBytes(sqliteBytes, flush: true);
 
     Database? srcDb;
@@ -140,8 +143,11 @@ class RecordSyncService {
           if (local == null) {
             final rowCopy = Map<String, dynamic>.from(row);
             rowCopy['cut_question'] = srcIsCut ? '1' : '0';
-            batch.insert('Question', rowCopy,
-                conflictAlgorithm: ConflictAlgorithm.replace);
+            batch.insert(
+              'Question',
+              rowCopy,
+              conflictAlgorithm: ConflictAlgorithm.replace,
+            );
             merged++;
             continue;
           }
@@ -151,19 +157,22 @@ class RecordSyncService {
           final localCut = (local['cut_question']?.toString()) ?? '0';
           final localIsCut = localCut == '1' || localCut == 'cutted';
           // 收藏 / 斩题取并集。
-          final newCollection =
-              (localCollection == 1 || srcCollection == 1) ? 1 : 0;
+          final newCollection = (localCollection == 1 || srcCollection == 1)
+              ? 1
+              : 0;
           final newCut = (localIsCut || srcIsCut) ? '1' : '0';
           // 仅补充本地未做的题（保留本地已做结果）。
           final useSrc = localStatus == 0 && srcStatus != 0;
           final newStatus = useSrc ? srcStatus : localStatus;
-          final newAnswer =
-              useSrc ? srcAnswer : (local['user_answer'] as String? ?? '');
+          final newAnswer = useSrc
+              ? srcAnswer
+              : (local['user_answer'] as String? ?? '');
 
           final srcUpdatedAt = (row['updated_at'] as num?)?.toInt() ?? 0;
           final localUpdatedAt = (local['updated_at'] as num?)?.toInt() ?? 0;
-          final newUpdatedAt =
-              srcUpdatedAt > localUpdatedAt ? srcUpdatedAt : localUpdatedAt;
+          final newUpdatedAt = srcUpdatedAt > localUpdatedAt
+              ? srcUpdatedAt
+              : localUpdatedAt;
 
           batch.update(
             'Question',
@@ -182,8 +191,11 @@ class RecordSyncService {
 
         // 2) 合并作答流水：按主键 id 去重追加，重复的忽略。
         for (final row in srcActivities) {
-          batch.insert('Activities', row,
-              conflictAlgorithm: ConflictAlgorithm.ignore);
+          batch.insert(
+            'Activities',
+            row,
+            conflictAlgorithm: ConflictAlgorithm.ignore,
+          );
         }
 
         await batch.commit(noResult: true);
@@ -195,7 +207,9 @@ class RecordSyncService {
       if (srcDb != null && srcDb.isOpen) await srcDb.close();
       try {
         if (await File(tmpPath).exists()) await File(tmpPath).delete();
-      } catch (_) {/* 忽略 */}
+      } catch (_) {
+        /* 忽略 */
+      }
     }
   }
 

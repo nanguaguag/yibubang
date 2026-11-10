@@ -1,3 +1,5 @@
+export 'user_database_coordinator.dart' show UserDatabaseVersion;
+import 'user_database_coordinator.dart';
 import 'cloud_outbox.dart';
 import 'durable_sync_queue.dart';
 import 'note_sync_store.dart';
@@ -272,13 +274,13 @@ class UserDBHelper {
 
   static Database? _database;
 
-  Future<Database> get database async {
-    if (_database != null) return _database!;
-    // 完整性检查是全库扫描，不能放在每次启动首次打开数据库的关键路径。
-    // 需要诊断时仍可显式调用 checkDatabaseIntegrity()。
-    _database = await _initDatabase();
-    return _database!;
-  }
+  Future<Database> get database =>
+      UserDatabaseCoordinator.instance.run(() async {
+        if (_database != null && _database!.isOpen) return _database!;
+        // 开库也进入临界区，避免并发初始化或维护期间重新打开。
+        _database = CoordinatedUserDatabase(await _initDatabase());
+        return _database!;
+      });
 
   Future<Database> _initDatabase() async {
     String path = join(await getDatabasesPath(), 'user_data.sqlite');
@@ -286,6 +288,7 @@ class UserDBHelper {
       path,
       version: 19,
       onConfigure: (db) async {
+        await db.rawQuery('PRAGMA busy_timeout = 10000');
         // 用户库为高频写库：WAL 提升并发写性能，同时保证导出前关闭连接即可完整落盘。
         // 注意：Android 原生 SQLiteDatabase.execSQL 禁止执行有返回值的 PRAGMA（如 journal_mode），
         // 否则会抛出 "Queries can be performed using SQLiteDatabase query or rawQuery methods only."
@@ -344,13 +347,11 @@ class UserDBHelper {
   /// 用于「做题记录导入（替换）」：替换 `user_data.sqlite` 文件前必须关闭
   /// 连接，让 WAL/journal 落盘，避免覆盖时文件被占用或数据不完整。
   /// 关闭后下次访问 `database` 会自动重新打开。
-  Future<void> close() async {
+  Future<void> close() => UserDatabaseCoordinator.instance.run(() async {
     final db = _database;
+    if (db != null && db.isOpen) await db.close();
     _database = null;
-    if (db != null && db.isOpen) {
-      await db.close();
-    }
-  }
+  });
 
   @visibleForTesting
   static void setDatabaseForTesting(Database? db) {

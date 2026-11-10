@@ -1,3 +1,4 @@
+import 'user_database_coordinator.dart';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -10,55 +11,58 @@ import 'question_bank_manager.dart';
 import '../models/answer_statistics.dart';
 
 // 重新统计刷题数量
-Future<bool> rebuildQuestionCount({String? bankId}) async {
-  final prefs = await SharedPreferences.getInstance();
-  final targetBankId = bankId ?? prefs.getString('activeBankId');
-  if (targetBankId == null || targetBankId.isEmpty) {
-    throw StateError('目标题库尚未初始化');
-  }
+Future<bool> rebuildQuestionCount({String? bankId}) =>
+    UserDatabaseCoordinator.instance.run(() async {
+      final prefs = await SharedPreferences.getInstance();
+      final targetBankId = bankId ?? prefs.getString('activeBankId');
+      if (targetBankId == null || targetBankId.isEmpty) {
+        throw StateError('目标题库尚未初始化');
+      }
 
-  // 显式 bankId 必须决定实际打开的 SQLite 文件，不能再通过
-  // DatabaseHelper.getDatabasePath() 间接读取当前 activeBankId。
-  final databaseManager = QuestionBankDatabaseManager();
-  final qbankPath = targetBankId == 'legacy_combined'
-      ? p.join(await getDatabasesPath(), 'question_data.sqlite')
-      : await databaseManager.pathFor(targetBankId);
-  if (!await File(qbankPath).exists()) {
-    throw StateError('目标题库文件不存在：$targetBankId');
-  }
-  if (targetBankId != 'legacy_combined') {
-    final validation = await databaseManager.validateFile(
-      qbankPath,
-      expectedBankId: targetBankId,
-    );
-    if (!validation.isValid) {
-      throw StateError('目标题库校验失败：${validation.message}');
-    }
-  }
+      // 显式 bankId 必须决定实际打开的 SQLite 文件，不能再通过
+      // DatabaseHelper.getDatabasePath() 间接读取当前 activeBankId。
+      final databaseManager = QuestionBankDatabaseManager();
+      final qbankPath = targetBankId == 'legacy_combined'
+          ? p.join(await getDatabasesPath(), 'question_data.sqlite')
+          : await databaseManager.pathFor(targetBankId);
+      if (!await File(qbankPath).exists()) {
+        throw StateError('目标题库文件不存在：$targetBankId');
+      }
+      if (targetBankId != 'legacy_combined') {
+        final validation = await databaseManager.validateFile(
+          qbankPath,
+          expectedBankId: targetBankId,
+        );
+        if (!validation.isValid) {
+          throw StateError('目标题库校验失败：${validation.message}');
+        }
+      }
 
-  final userDb = await UserDBHelper().database;
-  var attached = false;
-  try {
-    await userDb.rawQuery("PRAGMA busy_timeout = 3000;");
-    final escaped = qbankPath.replaceAll("'", "''");
-    await userDb.rawQuery("ATTACH DATABASE '$escaped' AS qbank;");
-    attached = true;
+      final userDb = await UserDBHelper().database;
+      var attached = false;
+      try {
+        final escaped = qbankPath.replaceAll("'", "''");
+        await userDb.rawQuery("ATTACH DATABASE '$escaped' AS qbank;");
+        attached = true;
 
-    await userDb.transaction((txn) => rebuildAttachedQuestionCount(
-      txn, targetBankId, alias: 'qbank',
-    ));
-  } finally {
-    if (attached) {
-      await userDb.execute('DETACH DATABASE qbank;');
-    }
-  }
-  return true;
-}
+        await userDb.transaction(
+          (txn) =>
+              rebuildAttachedQuestionCount(txn, targetBankId, alias: 'qbank'),
+        );
+      } finally {
+        if (attached) {
+          await userDb.execute('DETACH DATABASE qbank;');
+        }
+      }
+      return true;
+    });
 
 /// 在调用方用户库事务内重算；题库已通过原生 ATTACH 关联且仅参与读取。
 Future<void> rebuildAttachedQuestionCount(
-  DatabaseExecutor txn, String targetBankId, {required String alias}
-) async {
+  DatabaseExecutor txn,
+  String targetBankId, {
+  required String alias,
+}) async {
   if (!RegExp(r'^[a-zA-Z_][a-zA-Z0-9_]*$').hasMatch(alias)) {
     throw ArgumentError.value(alias, 'alias');
   }
@@ -75,7 +79,8 @@ Future<void> rebuildAttachedQuestionCount(
   // 不使用 SharedPreferences.identityId 过滤，以覆盖题库中的完整
   // Identity 子树，并保持显式 bankId 的统计边界。
   // 采用 INSERT OR REPLACE 兼容低版本 SQLite (< 3.24)
-  await txn.rawInsert('''
+  await txn.rawInsert(
+    '''
     INSERT OR REPLACE INTO IdentityChapter
       (bank_id, identity_id, subject_id, chapter_id, correct, incorrect)
     SELECT ?, iq.identity_id, iq.subject_id, iq.chapter_id,
@@ -85,9 +90,12 @@ Future<void> rebuildAttachedQuestionCount(
     JOIN $alias.IdentityQuestion AS iq ON uq.id = iq.question_id
     WHERE uq.status IN (1, 2)
     GROUP BY iq.identity_id, iq.subject_id, iq.chapter_id;
-  ''', [targetBankId]);
+  ''',
+    [targetBankId],
+  );
 
-  await txn.rawInsert('''
+  await txn.rawInsert(
+    '''
     INSERT OR REPLACE INTO IdentitySubject
       (bank_id, identity_id, subject_id, correct, incorrect, selected)
     SELECT ?, sq.identity_id, sq.subject_id,
@@ -104,7 +112,9 @@ Future<void> rebuildAttachedQuestionCount(
       WHERE uq.status IN (1, 2)
     ) AS sq
     GROUP BY sq.identity_id, sq.subject_id;
-  ''', [targetBankId, targetBankId]);
+  ''',
+    [targetBankId, targetBankId],
+  );
 }
 
 /// 修复刷题统计误差。
@@ -119,8 +129,10 @@ Future<void> rebuildAttachedQuestionCount(
 Future<void> repairActivities({String? bankId}) async {
   final prefs = await SharedPreferences.getInstance();
   final targetBankId = bankId ?? prefs.getString('activeBankId');
-  debugPrint('[repairActivities] targetBankId=$targetBankId '
-      'bankId参数=$bankId');
+  debugPrint(
+    '[repairActivities] targetBankId=$targetBankId '
+    'bankId参数=$bankId',
+  );
   if (targetBankId == null || targetBankId.isEmpty) {
     debugPrint('[repairActivities] bankId 为空，跳过修复');
     return;
