@@ -2,10 +2,10 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:sqflite/sqflite.dart';
 
 import '../common/request.dart';
 import '../db/database_helper.dart';
+import '../db/durable_sync_queue.dart';
 import '../models/chapter.dart';
 import '../models/question.dart';
 
@@ -173,7 +173,6 @@ class YkbSyncService {
   static const String keySyncAnswersToYkb = 'sync_answers_to_ykb';
   static const String keySyncRedoToYkb = 'sync_redo_to_ykb';
 
-  bool _isProcessingQueue = false;
 
   /// 是否开启斩题同步到医考帮
   Future<bool> isSyncCutEnabled() async {
@@ -206,6 +205,7 @@ class YkbSyncService {
     required bool isCut,
     Chapter? chapter,
   }) async {
+    final queueOwner = await DurableSyncQueue.owner();
     final enabled = await isSyncCutEnabled();
     if (!enabled) {
       debugPrint('[YkbSyncService] syncCutToYkb is disabled, skip cut sync');
@@ -252,7 +252,7 @@ class YkbSyncService {
       itemId: question.id,
       payload: payload,
       createdAt: DateTime.now().millisecondsSinceEpoch,
-    ));
+    ), owner: queueOwner);
 
     // 记录斩题同步流水到 Activities
     try {
@@ -285,6 +285,7 @@ class YkbSyncService {
     String? identityId,
     String? chapterParentId,
   }) async {
+    final queueOwner = await DurableSyncQueue.owner();
     final enabled = await isSyncAnswersEnabled();
     if (!enabled) {
       debugPrint('[YkbSyncService] syncAnswersToYkb is disabled, skip answer sync');
@@ -355,7 +356,7 @@ class YkbSyncService {
       itemId: question.id,
       payload: payload,
       createdAt: DateTime.now().millisecondsSinceEpoch,
-    ));
+    ), owner: queueOwner);
 
     debugPrint(
         '[YkbSyncService] 已入队作答同步: questionId=${question.id}, answer=$answerStr, isRight=$isRight, subjectId=$resolvedSubjectId, chapterId=$resolvedChapterId');
@@ -367,6 +368,7 @@ class YkbSyncService {
     required Chapter chapter,
     String? appId,
   }) async {
+    final queueOwner = await DurableSyncQueue.owner();
     final enabled = await isSyncRedoEnabled();
     if (!enabled) {
       debugPrint('[YkbSyncService] syncRedoToYkb is disabled, skip redo sync');
@@ -400,7 +402,7 @@ class YkbSyncService {
       itemId: chapter.id,
       payload: payload,
       createdAt: DateTime.now().millisecondsSinceEpoch,
-    ));
+    ), owner: queueOwner);
 
     // 记录章节重做同步流水到 Activities
     try {
@@ -423,7 +425,7 @@ class YkbSyncService {
   }
 
   /// 执行单个队列项目的网络请求，返回 true 表示成功 (200)，false 表示返回非 200，抛出异常表示网络中断
-  Future<bool> _executeItemRequest(YkbSyncQueueItem item) async {
+  Future<bool> _executeItemRequest(YkbSyncQueueItem item, String owner) async {
     String? responseCode;
     bool success = false;
     Map<String, dynamic> resp = {};
@@ -432,16 +434,19 @@ class YkbSyncService {
       resp = await basicReq(
         '/allQuestion/cutQuestion/cut',
         Map<String, dynamic>.from(item.payload),
+        expectedOwner: owner,
       );
     } else if (item.type == 'answer') {
       resp = await basicReq(
         '/Question/Answer/postBatchForAll',
         Map<String, dynamic>.from(item.payload),
+        expectedOwner: owner,
       );
     } else if (item.type == 'redo_chapter') {
       resp = await basicReq(
         '/allquestion/main/redoAnswerWithWrong',
         Map<String, dynamic>.from(item.payload),
+        expectedOwner: owner,
       );
     } else {
       throw StateError('不支持的同步任务类型: ${item.type}');
@@ -475,159 +480,17 @@ class YkbSyncService {
     return success;
   }
 
-  /// 单项手动重试（重置重试计数为 0 并立即尝试发包）
+  /// 手动重试与后台队列共享互斥，未知账号旧任务只在用户点击时认领。
   Future<bool> retryItem(String id) async {
-    final db = await UserDBHelper().database;
-    final rows =
-        await db.query('YkbSyncQueue', where: 'id = ?', whereArgs: [id]);
-    if (rows.isEmpty) return false;
-
-    await resetItemRetry(id);
-    final rawItem = YkbSyncQueueItem.fromMap(rows.first);
-    final item = rawItem.copyWith(retryCount: 0);
-
-    try {
-      final success = await _executeItemRequest(item);
-      if (success) {
-        await _dequeue(item.id);
-        return true;
-      }
-      return false;
-    } catch (e) {
-      if (e is! FormatException || e.message != '309_TOKEN_EXPIRED') {
-        SyncResponseCache.instance.record(
-          queueId: item.id,
-          itemId: item.itemId,
-          type: item.type,
-          code: 'ERR',
-          payload: item.payload,
-          response: {'error': e.toString()},
-          rawResponse: const JsonEncoder.withIndent('  ')
-              .convert({'error': e.toString()}),
-        );
-        await _markError(item, e.toString());
-      }
-      return false;
-    }
+    if (!await DurableSyncQueue.reset('YkbSyncQueue', id: id)) return false;
+    return DurableSyncQueue.run('YkbSyncQueue', _executeRow, onlyId: id);
   }
-
-  /// 单项重置重试计数
-  Future<void> resetItemRetry(String id) async {
-    final db = await UserDBHelper().database;
-    await db.update(
-      'YkbSyncQueue',
-      {'retry_count': 0, 'last_error': null},
-      where: 'id = ?',
-      whereArgs: [id],
-    );
-  }
-
-  /// 一键重置该队列所有任务的重试计数
-  Future<void> resetAllRetries() async {
-    final db = await UserDBHelper().database;
-    await db.update(
-      'YkbSyncQueue',
-      {'retry_count': 0, 'last_error': null},
-    );
-  }
-
-  /// 后台处理同步队列
-  Future<void> processQueue() async {
-    if (_isProcessingQueue) return;
-    _isProcessingQueue = true;
-
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final loggedIn = prefs.getBool('loggedin') ?? false;
-      if (!loggedIn) {
-        debugPrint('[YkbSyncService] 用户未登录医考帮，同步任务保留在队列中等待登录后同步');
-        return;
-      }
-
-      final items = await _getPendingItems();
-      if (items.isEmpty) return;
-      debugPrint('[YkbSyncService] 开始处理医考帮同步队列，待处理项数: ${items.length}');
-
-      for (final item in items) {
-        try {
-          debugPrint(
-              '[YkbSyncService] 执行队列任务: id=${item.id}, type=${item.type}, retry=${item.retryCount}');
-          final success = await _executeItemRequest(item);
-
-          if (success) {
-            await _dequeue(item.id);
-            debugPrint('[YkbSyncService] 同步任务成功并已移出队列: ${item.id}');
-          } else {
-            // 针对非网络中断的业务错误：如果已重试达到上限(5次)，出队放弃以防永久队头阻塞
-            if (item.retryCount + 1 >= 5) {
-              debugPrint(
-                  '[YkbSyncService] 任务 ${item.id} 达到最大重试次数上限(5次)，移出活跃队列');
-              await _dequeue(item.id);
-            } else {
-              debugPrint(
-                  '[YkbSyncService] 任务 ${item.id} 业务失败 (重试 ${item.retryCount + 1}/5)，继续执行队列下一项');
-            }
-          }
-        } on FormatException catch (fe) {
-          if (fe.message == '309_TOKEN_EXPIRED') {
-            debugPrint('[YkbSyncService] 登录态已失效 (309)，暂停队列执行');
-            break;
-          }
-        } catch (e, stack) {
-          debugPrint('[YkbSyncService] 网络或异常中断 ${item.type}: $e');
-          debugPrint('$stack');
-          final errStr = const JsonEncoder.withIndent('  ')
-              .convert({'error': e.toString()});
-          SyncResponseCache.instance.record(
-            queueId: item.id,
-            itemId: item.itemId,
-            type: item.type,
-            code: 'ERR',
-            payload: item.payload,
-            response: {'error': e.toString()},
-            rawResponse: errStr,
-          );
-          await _markError(item, e.toString(), lastResponse: errStr);
-          if (item.retryCount + 1 >= 5) {
-            debugPrint('[YkbSyncService] 任务 ${item.id} 异常重试达到上限(5次)，移出队列');
-            await _dequeue(item.id);
-          }
-          break; // 网络断开，保留在队列中等待下次重试
-        }
-      }
-    } finally {
-      _isProcessingQueue = false;
-    }
-  }
-
-  // --- SQLite 队列读写辅助方法 ---
-
-  Future<void> _enqueue(YkbSyncQueueItem item) async {
-    final db = await UserDBHelper().database;
-    await db.insert(
-      'YkbSyncQueue',
-      item.toMap(),
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
-  }
-
-  Future<void> _dequeue(String id) async {
-    final db = await UserDBHelper().database;
-    await db.delete(
-      'YkbSyncQueue',
-      where: 'id = ?',
-      whereArgs: [id],
-    );
-  }
-
-  Future<List<YkbSyncQueueItem>> _getPendingItems() async {
-    final db = await UserDBHelper().database;
-    final rows = await db.query(
-      'YkbSyncQueue',
-      orderBy: 'created_at ASC',
-    );
-    return rows.map((r) => YkbSyncQueueItem.fromMap(r)).toList();
-  }
+  Future<void> resetItemRetry(String id) async { await DurableSyncQueue.reset('YkbSyncQueue', id: id); }
+  Future<void> resetAllRetries() async { await DurableSyncQueue.reset('YkbSyncQueue'); }
+  Future<bool> _executeRow(Map<String,dynamic> row) =>
+      _executeItemRequest(YkbSyncQueueItem.fromMap(row), row['owner_user_id'] as String);
+  Future<void> processQueue() async { await DurableSyncQueue.run('YkbSyncQueue', _executeRow); }
+  Future<void> _enqueue(YkbSyncQueueItem item, {required String owner}) => DurableSyncQueue.enqueue('YkbSyncQueue', {...item.toMap(), 'owner_user_id': owner});
 
   Future<void> _markError(YkbSyncQueueItem item, String error,
       {String? lastResponse}) async {

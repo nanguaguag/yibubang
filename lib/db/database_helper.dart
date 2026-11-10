@@ -1,4 +1,5 @@
 import 'cloud_outbox.dart';
+import 'durable_sync_queue.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart';
@@ -282,7 +283,7 @@ class UserDBHelper {
     String path = join(await getDatabasesPath(), 'user_data.sqlite');
     return await openDatabase(
       path,
-      version: 16,
+      version: 17,
       onConfigure: (db) async {
         // 用户库为高频写库：WAL 提升并发写性能，同时保证导出前关闭连接即可完整落盘。
         // 注意：Android 原生 SQLiteDatabase.execSQL 禁止执行有返回值的 PRAGMA（如 journal_mode），
@@ -498,6 +499,9 @@ class UserDBHelper {
       }
       if (oldVersion < 16 && newVersion >= 16) {
         await CloudOutbox.install(txn);
+      }
+      if (oldVersion < 17 && newVersion >= 17) {
+        await DurableSyncQueue.install(txn);
       }
       await _createMigrationStateTable(txn);
     });
@@ -991,6 +995,7 @@ class UserDBHelper {
     await _createMigrationStateTable(db);
     await _createSpacedRepetitionTables(db);
     await CloudOutbox.install(db);
+    await DurableSyncQueue.install(db);
 
     // 给 Question 表按 chapter_id 建表
     await db.execute('''

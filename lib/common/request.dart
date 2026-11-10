@@ -14,10 +14,17 @@ Future<Map<String, dynamic>> basicReq(
   Map<String, dynamic> params, {
   String channel = channelDefault,
   String method = "POST",
+  String? expectedOwner,
+  Duration timeout = const Duration(seconds: 20),
 }) async {
   String timestamp = getTimestamp();
   SharedPreferences prefs = await SharedPreferences.getInstance();
   bool loggedin = prefs.getBool('loggedin') ?? false;
+
+  if (expectedOwner != null &&
+      (!loggedin || prefs.getString('user_id') != expectedOwner)) {
+    throw StateError('同步账号已切换，任务保留');
+  }
 
   // 如果已登录则附加登录信息
   if (loggedin) {
@@ -48,14 +55,17 @@ Future<Map<String, dynamic>> basicReq(
   debugPrint('[API-REQ] >>> $method $url');
 
   http.Response response;
+  final client = http.Client();
   try {
     if (method == "POST") {
-      response = await http.post(uri, headers: headers, body: params);
+      response = await client
+          .post(uri, headers: headers, body: params)
+          .timeout(timeout);
     } else if (method == "GET") {
       uri = uri.replace(
         queryParameters: params.map((k, v) => MapEntry(k, v?.toString() ?? '')),
       );
-      response = await http.get(uri, headers: headers);
+      response = await client.get(uri, headers: headers).timeout(timeout);
     } else {
       debugPrint('[API-REQ] Unknown method: $method');
       return {"msg": "Unknown Method"};
@@ -64,6 +74,8 @@ Future<Map<String, dynamic>> basicReq(
     debugPrint('[API-ERROR] <<< $method $url exception: $e');
     debugPrint('$stack');
     rethrow;
+  } finally {
+    client.close();
   }
 
   if (response.statusCode != 200) {

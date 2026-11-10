@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -9,6 +10,7 @@ import 'package:sqflite/sqflite.dart';
 import '../common/request.dart';
 import '../common/ykb_encrypt.dart';
 import '../db/database_helper.dart';
+import '../db/durable_sync_queue.dart';
 import '../models/note.dart';
 import '../models/question.dart';
 import 'ykb_sync_service.dart';
@@ -20,7 +22,6 @@ class NoteService {
 
   static const String keySyncNotesToYkb = 'sync_notes_to_ykb';
 
-  bool _isProcessingQueue = false;
 
   /// 全局笔记变动与同步状态更新通知器（触发 UI 实时刷新）
   final ValueNotifier<int> noteSyncEventNotifier = ValueNotifier<int>(0);
@@ -56,6 +57,7 @@ class NoteService {
 
   /// 保存或更新笔记（先落本地 SQLite，若开启同步则入队并触发同步）
   Future<void> saveNote(QuestionNote note, {Question? question}) async {
+    final queueOwner=await DurableSyncQueue.owner();
     final db = await UserDBHelper().database;
     final syncEnabled = await isSyncEnabled();
 
@@ -96,6 +98,7 @@ class NoteService {
           payload: jsonEncode(queuePayload),
           createdAt: DateTime.now().millisecondsSinceEpoch,
         ),
+        owner: queueOwner,
       );
       // 触发后台处理
       processQueue(question: question);
@@ -105,6 +108,7 @@ class NoteService {
 
   /// 删除笔记（先从本地 SQLite 移除，取消未决上传，若开启同步且有 remoteId 则入删除队列）
   Future<void> deleteNote(QuestionNote note, {Question? question}) async {
+    final queueOwner=await DurableSyncQueue.owner();
     final db = await UserDBHelper().database;
     final syncEnabled = await isSyncEnabled();
 
@@ -159,6 +163,7 @@ class NoteService {
           payload: jsonEncode(queuePayload),
           createdAt: DateTime.now().millisecondsSinceEpoch,
         ),
+        owner: queueOwner,
       );
       processQueue(question: question);
     }
@@ -171,6 +176,7 @@ class NoteService {
     required String subjectId,
     required String identityId,
     required String appId,
+    String? expectedOwner,
   }) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -178,6 +184,9 @@ class NoteService {
       if (!loggedIn) {
         debugPrint('[NoteService] uploadImage skipped: user not logged in');
         return null;
+      }
+      if(expectedOwner!=null && prefs.getString('user_id')!=expectedOwner) {
+        throw StateError('笔记同步账号已切换');
       }
       final token = prefs.getString('token') ?? '';
       final secret = prefs.getString('secret') ?? '';
@@ -214,8 +223,11 @@ class NoteService {
       request.files.add(await http.MultipartFile.fromPath('file', file.path));
 
       debugPrint('[NoteService] uploadImage start for ${file.path}');
-      final streamedResponse = await request.send();
-      final response = await http.Response.fromStream(streamedResponse);
+      final client=http.Client();
+      final http.Response response;
+      try {
+        response=await (() async => http.Response.fromStream(await client.send(request)))().timeout(const Duration(seconds:30));
+      } finally { client.close(); }
       final bodyStr = utf8.decode(response.bodyBytes);
       debugPrint(
         '[NoteService] uploadImage response (${response.statusCode}): $bodyStr',
@@ -398,182 +410,28 @@ class NoteService {
   }
 
   /// 队列入队
-  Future<void> _enqueue(NoteSyncQueueItem item) async {
-    final db = await UserDBHelper().database;
-    await db.insert(
-      'NoteSyncQueue',
-      item.toMap(),
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+  Future<void> _enqueue(NoteSyncQueueItem item, {required String owner}) => DurableSyncQueue.enqueue('NoteSyncQueue', {...item.toMap(), 'owner_user_id': owner});
+  Future<bool> _executeRow(Map<String,dynamic> row, Question? question) async {
+    final item=NoteSyncQueueItem.fromMap(row);
+    final owner=row['owner_user_id'] as String;
+    if(item.action=='upload') return _processUploadItem(item,question,owner);
+    if(item.action=='delete') return _processDeleteItem(item,question,owner);
+    throw StateError('不支持的笔记同步任务: ${item.action}');
   }
-
-  /// 单项手动重试笔记任务（重置重试计数为 0 并立即尝试发包）
   Future<bool> retryItem(String id, {Question? question}) async {
-    final db = await UserDBHelper().database;
-    final rows = await db.query(
-      'NoteSyncQueue',
-      where: 'id = ?',
-      whereArgs: [id],
-    );
-    if (rows.isEmpty) return false;
-
-    await resetItemRetry(id);
-    final item = NoteSyncQueueItem.fromMap(rows.first);
-
-    bool success = false;
-    try {
-      if (item.action == 'upload') {
-        success = await _processUploadItem(item, question);
-      } else if (item.action == 'delete') {
-        success = await _processDeleteItem(item, question);
-      } else {
-        success = true;
-      }
-    } catch (e) {
-      await db.update(
-        'NoteSyncQueue',
-        {'retry_count': 1, 'last_error': e.toString()},
-        where: 'id = ?',
-        whereArgs: [item.id],
-      );
-      return false;
-    }
-
-    if (success) {
-      await db.delete('NoteSyncQueue', where: 'id = ?', whereArgs: [item.id]);
-      return true;
-    } else {
-      await db.update(
-        'NoteSyncQueue',
-        {'retry_count': 1},
-        where: 'id = ?',
-        whereArgs: [item.id],
-      );
-      return false;
-    }
+    if(!await DurableSyncQueue.reset('NoteSyncQueue',id:id)) return false;
+    return DurableSyncQueue.run('NoteSyncQueue',(row)=>_executeRow(row,question),onlyId:id);
   }
-
-  /// 单项重置重试计数
-  Future<void> resetItemRetry(String id) async {
-    final db = await UserDBHelper().database;
-    await db.update(
-      'NoteSyncQueue',
-      {'retry_count': 0, 'last_error': null},
-      where: 'id = ?',
-      whereArgs: [id],
-    );
-  }
-
-  /// 一键重置笔记队列所有任务的重试计数
-  Future<void> resetAllRetries() async {
-    final db = await UserDBHelper().database;
-    await db.update('NoteSyncQueue', {'retry_count': 0, 'last_error': null});
-  }
-
-  /// 执行同步队列（断网重试）
+  Future<void> resetItemRetry(String id) async { await DurableSyncQueue.reset('NoteSyncQueue',id:id); }
+  Future<void> resetAllRetries() async { await DurableSyncQueue.reset('NoteSyncQueue'); }
   Future<void> processQueue({Question? question}) async {
-    if (_isProcessingQueue) return;
-    _isProcessingQueue = true;
-
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final loggedIn = prefs.getBool('loggedin') ?? false;
-      if (!loggedIn) {
-        debugPrint('[NoteService] processQueue skipped: not logged in');
-        _isProcessingQueue = false;
-        return;
-      }
-
-      final db = await UserDBHelper().database;
-      final queueRows = await db.query(
-        'NoteSyncQueue',
-        orderBy: 'created_at ASC',
-        limit: 15,
-      );
-
-      if (queueRows.isEmpty) {
-        _isProcessingQueue = false;
-        return;
-      }
-      debugPrint(
-        '[NoteService] processQueue started, pending items: ${queueRows.length}',
-      );
-
-      for (final row in queueRows) {
-        final item = NoteSyncQueueItem.fromMap(row);
-        bool success = false;
-
-        try {
-          if (item.action == 'upload') {
-            success = await _processUploadItem(item, question);
-          } else if (item.action == 'delete') {
-            success = await _processDeleteItem(item, question);
-          } else {
-            success = true;
-          }
-        } catch (e, stack) {
-          debugPrint('[NoteService] process queue item error: $e\n$stack');
-          final errJson = const JsonEncoder.withIndent(
-            '  ',
-          ).convert({'error': e.toString()});
-          await db.update(
-            'NoteSyncQueue',
-            {
-              'retry_count': item.retryCount + 1,
-              'last_error': e.toString(),
-              'last_response': errJson,
-            },
-            where: 'id = ?',
-            whereArgs: [item.id],
-          );
-          if (item.retryCount + 1 >= 5) {
-            debugPrint('[NoteService] 任务 ${item.id} 异常重试达到上限(5次)，移出队列');
-            await db.delete(
-              'NoteSyncQueue',
-              where: 'id = ?',
-              whereArgs: [item.id],
-            );
-          }
-          // 网络异常时暂停后续重试，等待下一次触发
-          break;
-        }
-
-        if (success) {
-          debugPrint('[NoteService] queue item succeeded: ${item.id}');
-          await db.delete(
-            'NoteSyncQueue',
-            where: 'id = ?',
-            whereArgs: [item.id],
-          );
-        } else {
-          debugPrint('[NoteService] queue item failed: ${item.id}');
-          if (item.retryCount + 1 >= 5) {
-            debugPrint(
-              '[NoteService] 任务 ${item.id} 达到最大重试次数上限(5次)，移出活跃队列以防队头阻塞',
-            );
-            await db.delete(
-              'NoteSyncQueue',
-              where: 'id = ?',
-              whereArgs: [item.id],
-            );
-          } else {
-            await db.update(
-              'NoteSyncQueue',
-              {'retry_count': item.retryCount + 1},
-              where: 'id = ?',
-              whereArgs: [item.id],
-            );
-          }
-        }
-      }
-    } finally {
-      _isProcessingQueue = false;
-    }
+    await DurableSyncQueue.run('NoteSyncQueue',(row)=>_executeRow(row,question));
   }
 
   Future<bool> _processUploadItem(
     NoteSyncQueueItem item,
     Question? fallbackQuestion,
+    String owner,
   ) async {
     final db = await UserDBHelper().database;
     final noteRows = await db.query(
@@ -655,6 +513,7 @@ class NoteService {
             subjectId: subjectId,
             identityId: identityId,
             appId: appId,
+            expectedOwner: owner,
           );
           if (uploaded != null) {
             updatedImages[0] = uploaded;
@@ -699,6 +558,7 @@ class NoteService {
     final resp = await basicReq(
       '/allQuestion/Note/pushNote',
       params,
+      expectedOwner: owner,
       method: 'POST',
     );
     debugPrint('[NoteService] pushNote result: $resp');
@@ -729,7 +589,7 @@ class NoteService {
             'size': '5',
             'is_vip': '0',
             'is_svip': '0',
-          }, method: 'GET');
+          }, method: 'GET', expectedOwner: owner);
           if (listResp['code'] == '200' && listResp['data'] is List) {
             final list = listResp['data'] as List;
             if (list.isNotEmpty) {
@@ -780,6 +640,7 @@ class NoteService {
   Future<bool> _processDeleteItem(
     NoteSyncQueueItem item,
     Question? fallbackQuestion,
+    String owner,
   ) async {
     if (item.noteId == null || item.noteId!.isEmpty) return true;
 
@@ -841,7 +702,7 @@ class NoteService {
       'app_id': appId,
       'is_vip': '0',
       'is_svip': '0',
-    }, method: 'POST');
+    }, method: 'POST', expectedOwner: owner);
 
     final code = resp['code']?.toString() ?? 'protocol_error';
     final rawResp = const JsonEncoder.withIndent('  ').convert(resp);

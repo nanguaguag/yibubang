@@ -155,7 +155,7 @@ void main() {
     db = await UserDBHelper().database;
     expect(await db.query('CloudOutbox'), before);
   });
-  test('v15升级至v16保留原答案并引导首次上传', () async {
+  test('v15升级至当前schema保留原答案并引导首次上传', () async {
     for (final name in [
       'cloud_question_insert',
       'cloud_question_update',
@@ -179,7 +179,7 @@ void main() {
     });
     await UserDBHelper().close();
     db = await UserDBHelper().database;
-    expect(await db.getVersion(), 16);
+    expect(await db.getVersion(), 17);
     await CloudOutbox.bind(db, 'u');
     expect((await db.query('Question')).single['user_answer'], 'B');
     expect((await db.query('CloudOutbox')).single['entity_id'], 'legacy');
