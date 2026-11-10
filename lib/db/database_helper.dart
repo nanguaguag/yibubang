@@ -1,3 +1,4 @@
+import 'user_database_replacement.dart';
 import 'review_events.dart';
 import 'question_projection.dart';
 export 'user_database_coordinator.dart' show UserDatabaseVersion;
@@ -287,6 +288,11 @@ class UserDBHelper {
 
   Future<Database> _initDatabase() async {
     String path = join(await getDatabasesPath(), 'user_data.sqlite');
+    await recoverUserDatabaseReplacement(path);
+    return _openUserDatabase(path);
+  }
+
+  Future<Database> _openUserDatabase(String path) async {
     return await openDatabase(
       path,
       version: schemaVersion,
@@ -343,6 +349,62 @@ class UserDBHelper {
         await NoteSyncStore.install(db);
       },
     );
+  }
+
+  /// 仅升级导入暂存的用户库，生产文件在此阶段完全不动。
+  Future<void> prepareImportedDatabase(String path) async {
+    // 暂存用户库允许 SQLite 创建 WAL sidecar；只读打开 WAL 快照在部分宿主会失败。
+    var db = await openDatabase(path, singleInstance: false);
+    try {
+      final version =
+          Sqflite.firstIntValue(await db.rawQuery('PRAGMA user_version')) ?? 0;
+      if (version < 1 || version > schemaVersion) {
+        throw const FormatException('不支持的做题记录数据库版本');
+      }
+      await _validateImportedDatabase(db);
+    } finally {
+      await db.close();
+    }
+    db = await _openUserDatabase(path);
+    try {
+      await _validateImportedDatabase(db);
+      if ((await db.rawQuery('PRAGMA foreign_key_check')).isNotEmpty) {
+        throw const FormatException('做题记录数据库存在无效关联');
+      }
+      final checkpoint = await db.rawQuery('PRAGMA wal_checkpoint(TRUNCATE)');
+      if (checkpoint.first.values.first != 0) throw StateError('暂存用户库日志未完成落盘');
+    } finally {
+      await db.close();
+    }
+  }
+
+  /// 替换维护区中激活已验证的新用户库；日志仍在，开库失败可回滚。
+  Future<void> activateImportedDatabase(String path) async {
+    if (_database?.isOpen == true) throw StateError('替换前必须关闭用户库');
+    _database = CoordinatedUserDatabase(await _openUserDatabase(path));
+  }
+
+  Future<void> _validateImportedDatabase(Database db) async {
+    final integrity = await db.rawQuery('PRAGMA integrity_check');
+    if (integrity.length != 1 || integrity.single.values.single != 'ok') {
+      throw const FormatException('做题记录数据库完整性检查失败');
+    }
+    for (final entry in const <String, Set<String>>{
+      'Question': {'id', 'status', 'user_answer', 'collection', 'cut_question'},
+      'Activities': {'id', 'title', 'timestamp'},
+      'Notes': {'id', 'question_id', 'content', 'imgs', 'timestamp'},
+    }.entries) {
+      final columns = await _columns(db, entry.key);
+      if (!columns.toSet().containsAll(entry.value)) {
+        throw FormatException('做题记录数据库缺少 ${entry.key} 字段');
+      }
+    }
+    final pk = (await db.rawQuery(
+      'PRAGMA table_info(Question)',
+    )).where((r) => (r['pk'] as int) > 0).toList();
+    if (pk.length != 1 || pk.single['name'] != 'id') {
+      throw const FormatException('题目状态必须使用全局单列 id 主键');
+    }
   }
 
   /// 关闭并释放当前用户库连接（置空缓存）。

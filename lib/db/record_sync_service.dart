@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'user_database_replacement.dart';
 import 'user_database_coordinator.dart';
 import 'dart:io';
 
@@ -21,6 +23,9 @@ import 'database_helper.dart';
 /// （Question + Activities）按题目 id 并入本地，不覆盖题库管理配置。
 class RecordSyncService {
   static const _sqliteFileName = 'user_data.sqlite';
+
+  @visibleForTesting
+  static Future<void> Function()? beforeReplacementOpenForTesting;
 
   /// 导出做题记录，返回最终保存的文件绝对路径；用户取消返回 `null`。
   ///
@@ -84,27 +89,57 @@ class RecordSyncService {
   }
 
   /// 导入做题记录（替换）。返回是否成功。
-  static Future<bool> importReplace(Uint8List zipBytes) =>
-      UserDatabaseCoordinator.instance.run(() async {
-        final sqliteBytes = _extractSqlite(zipBytes);
-        final dbPath = p.join(await getDatabasesPath(), _sqliteFileName);
+  static Future<bool> importReplace(
+    Uint8List zipBytes,
+  ) => UserDatabaseCoordinator.instance.run(() async {
+    final sqliteBytes = _extractSqlite(zipBytes);
+    final dbPath = p.join(await getDatabasesPath(), _sqliteFileName);
 
-        await UserDBHelper().close();
-        await File(dbPath).writeAsBytes(sqliteBytes, flush: true);
-        // 清理 WAL / SHM 残留，避免旧日志污染新库。
-        for (final suffix in const ['-wal', '-shm']) {
-          try {
-            final f = File('$dbPath$suffix');
-            if (await f.exists()) await f.delete();
-          } catch (_) {
-            /* 忽略 */
-          }
-        }
-
-        // 重新打开并触发 onCreate/onUpgrade，确保 schema 就绪。
-        await UserDBHelper().database;
-        return true;
-      });
+    final staged = File('$dbPath.importing');
+    final helper = UserDBHelper();
+    try {
+      await staged.writeAsBytes(sqliteBytes, flush: true);
+      await helper.prepareImportedDatabase(staged.path);
+      // 排空并落盘后才开始文件替换。全程持有共享维护锁。
+      final db = await helper.database;
+      final checkpoint = await db.rawQuery('PRAGMA wal_checkpoint(TRUNCATE)');
+      if (checkpoint.first.values.first != 0) throw StateError('用户库正被占用，请稍后重试');
+      final journalMode = await db.rawQuery('PRAGMA journal_mode = DELETE');
+      if (journalMode.single.values.single.toString().toLowerCase() != 'delete') {
+        throw StateError('用户库无法生成独立快照');
+      }
+      await helper.close();
+      final original = File(dbPath), backup = File('$dbPath.backup');
+      if (await backup.exists()) await backup.delete();
+      final journal = File('$dbPath.replace.json');
+      await File('${journal.path}.tmp').writeAsString(
+        jsonEncode({'had_original': await original.exists()}),
+        flush: true,
+      );
+      await File('${journal.path}.tmp').rename(journal.path);
+      if (await original.exists()) await original.rename(backup.path);
+      for (final suffix in ['-wal', '-shm', '-journal']) {
+        final file = File('$dbPath$suffix');
+        if (await file.exists()) await file.delete();
+      }
+      await staged.rename(dbPath);
+      // 通过同一开库逻辑核验，但此处暂不触发恢复日志。
+      await helper.prepareImportedDatabase(dbPath);
+      await beforeReplacementOpenForTesting?.call();
+      await helper.activateImportedDatabase(dbPath);
+      await journal.delete();
+    } catch (_) {
+      await helper.close();
+      await recoverUserDatabaseReplacement(dbPath);
+      rethrow;
+    } finally {
+      for (final suffix in ['', '-wal', '-shm', '-journal']) {
+        final file = File('${staged.path}$suffix');
+        if (await file.exists()) await file.delete();
+      }
+    }
+    return true;
+  });
 
   /// 导入做题记录（合并）。返回合并涉及的题目数量。
   static Future<int> importMerge(Uint8List zipBytes) async {
@@ -215,7 +250,13 @@ class RecordSyncService {
 
   /// 解压 zip 并取出其中的 SQLite 字节。
   static Uint8List _extractSqlite(Uint8List zipBytes) {
+    if (zipBytes.length > 256 * 1024 * 1024) {
+      throw const FormatException('做题记录压缩包过大');
+    }
     final archive = ZipDecoder().decodeBytes(zipBytes);
+    if (archive.files.fold<int>(0, (n, f) => n + f.size) > 512 * 1024 * 1024) {
+      throw const FormatException('做题记录解压内容过大');
+    }
     ArchiveFile? file = archive.findFile(_sqliteFileName);
     if (file == null) {
       for (final f in archive.files) {
@@ -227,6 +268,9 @@ class RecordSyncService {
     }
     if (file == null) {
       throw const FormatException('压缩包中未找到做题记录数据库（.sqlite）');
+    }
+    if (!file.isFile || file.size > 512 * 1024 * 1024) {
+      throw const FormatException('做题记录数据库文件无效或过大');
     }
     final content = file.content;
     if (content is! Uint8List) {
