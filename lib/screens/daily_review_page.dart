@@ -59,6 +59,7 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
   List<QuestionNote> _currentNotes = [];
   bool _isCramMode = false;
   bool _reviewNoteWithQuestion = false;
+  bool _enableFlashcard3DFlip = true;
 
   int _sessionNewCount = 0;
   int _sessionReviewCount = 0;
@@ -73,6 +74,9 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
     });
     SettingsPage.getReviewNoteWithQuestion().then((val) {
       if (mounted) setState(() => _reviewNoteWithQuestion = val);
+    });
+    SettingsPage.getFlashcard3DFlipEnabled().then((val) {
+      if (mounted) setState(() => _enableFlashcard3DFlip = val);
     });
     if (widget.initialSession != null) {
       _applySession(widget.initialSession!);
@@ -140,10 +144,19 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
   void _resetQuestionState() {
     _selectedOption = null;
     _selectedOptions.clear();
-    _isAnswerSubmitted = false;
-    _isAnswerRevealed = false;
     _currentNotes = [];
     _questionStartTime = DateTime.now();
+
+    final item = _currentItem;
+    final isDirectNoteReview = (item?.isFromNote ?? false) && !_reviewNoteWithQuestion;
+    if (isDirectNoteReview) {
+      _isAnswerSubmitted = true;
+      _isAnswerRevealed = true;
+    } else {
+      _isAnswerSubmitted = false;
+      _isAnswerRevealed = false;
+    }
+
     _loadCurrentNotes();
   }
 
@@ -388,6 +401,7 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
                   // 专属 3D 物理翻牌动效卡片
                   FlashcardFlipCard(
                     queueItem: item,
+                    enable3DAnimation: _enableFlashcard3DFlip,
                     onFlipped: (isBack) {
                       setState(() {
                         _isAnswerRevealed = isBack;
@@ -397,6 +411,23 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
                         ? () => _openOriginalQuestion(item)
                         : null,
                   ),
+                ] else if (item.isFromNote && !_reviewNoteWithQuestion) ...[
+                  // 笔记直背模式：直接呈现浓缩笔记，下方附上原题题干、正确选项与解析，无需翻转立即自评
+                  if (_currentNotes.isNotEmpty)
+                    _buildNotesCard(context, theme, scheme)
+                  else
+                    _buildNotesLoadingOrFallbackCard(context, theme, scheme),
+                  const SizedBox(height: 16),
+
+                  _buildQuestionCard(context, item, question, theme, scheme),
+                  const SizedBox(height: 16),
+
+                  if (question != null && !question.isSubjective && question.option != null) ...[
+                    _buildChoiceOptions(question, theme, scheme, readOnlyHighlightCorrect: true),
+                    const SizedBox(height: 16),
+                  ],
+
+                  _buildExplanationCard(item, question, theme, scheme),
                 ] else ...[
                   _buildQuestionCard(context, item, question, theme, scheme),
                   const SizedBox(height: 16),
@@ -404,8 +435,7 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
                   // 选项或主观题/纯笔记卡片直背区
                   if (question != null &&
                       !question.isSubjective &&
-                      question.option != null &&
-                      (!item.isFromNote || _reviewNoteWithQuestion))
+                      question.option != null)
                     _buildChoiceOptions(question, theme, scheme)
                   else
                     _buildSubjectiveOrFlashcardContent(item, question, theme, scheme),
@@ -542,7 +572,7 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
                       Icon(Icons.edit_note_rounded, size: 14, color: Colors.blue.shade700),
                       const SizedBox(width: 4),
                       Text(
-                        '笔记精选',
+                        '笔记',
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
@@ -692,12 +722,42 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
     );
   }
 
+  /// 笔记加载中或降级占位卡片
+  Widget _buildNotesLoadingOrFallbackCard(BuildContext context, ThemeData theme, ColorScheme scheme) {
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppShapes.large),
+        side: BorderSide(color: scheme.primary.withValues(alpha: 0.25)),
+      ),
+      color: scheme.primaryContainer.withValues(alpha: 0.12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            Icon(Icons.edit_note_rounded, size: 20, color: scheme.primary),
+            const SizedBox(width: 8),
+            Text(
+              '复习笔记速记知识点',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+                color: scheme.primary,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   /// 选择题选项渲染
   Widget _buildChoiceOptions(
     Question question,
     ThemeData theme,
-    ColorScheme scheme,
-  ) {
+    ColorScheme scheme, {
+    bool readOnlyHighlightCorrect = false,
+  }) {
     final options = QuestionDetailController.getOptionJson(question);
     final standardAnswer = question.answer ?? '';
     final isMulti = _isMultiChoice(question);
@@ -721,7 +781,16 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
           Color badgeTextColor = scheme.onSurface;
           Widget? statusTrailing;
 
-          if (_isAnswerSubmitted) {
+          if (readOnlyHighlightCorrect) {
+            // 直读模式：仅高亮标绿标准正确答案，无交互
+            if (isCorrectAnswer) {
+              tileColor = Colors.green.withValues(alpha: 0.12);
+              borderSide = const BorderSide(color: Colors.green, width: 1.5);
+              badgeColor = Colors.green;
+              badgeTextColor = Colors.white;
+              statusTrailing = const Icon(Icons.check_circle, color: Colors.green, size: 20);
+            }
+          } else if (_isAnswerSubmitted) {
             if (isCorrectAnswer && isSelected) {
               // 1. 选对：标准绿色
               tileColor = Colors.green.withValues(alpha: 0.12);
@@ -795,7 +864,7 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
             ),
             child: InkWell(
               borderRadius: BorderRadius.circular(AppShapes.medium),
-              onTap: _isAnswerSubmitted
+              onTap: (_isAnswerSubmitted || readOnlyHighlightCorrect)
                   ? null
                   : () {
                       if (isMulti) {
@@ -852,8 +921,8 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
           );
         }),
 
-        // 多选题专属提交按钮（作答前展示）
-        if (isMulti && !_isAnswerSubmitted && !_isAnswerRevealed) ...[
+        // 多选题专属提交按钮（作答前展示，直读模式不展示）
+        if (!readOnlyHighlightCorrect && isMulti && !_isAnswerSubmitted && !_isAnswerRevealed) ...[
           const SizedBox(height: 6),
           FilledButton(
             style: FilledButton.styleFrom(
@@ -1039,7 +1108,7 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
                 ),
                 onPressed: () => _openOriginalQuestion(item),
                 icon: const Icon(Icons.open_in_new_rounded, size: 16),
-                label: const Text('进入原题详情（查看考点与考友笔记）'),
+                label: const Text('原题详情'),
               ),
             ),
           ],
@@ -1182,7 +1251,7 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
               Icon(Icons.edit_note_rounded, color: Colors.amber.shade900, size: 22),
               const SizedBox(width: 8),
               Text(
-                '我的精粹笔记 (${_currentNotes.length})',
+                '我的笔记 (${_currentNotes.length})',
                 style: theme.textTheme.titleSmall?.copyWith(
                   fontWeight: FontWeight.bold,
                   color: Colors.amber.shade900,

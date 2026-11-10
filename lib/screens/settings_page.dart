@@ -40,6 +40,12 @@ class SettingsPage extends StatefulWidget {
     return prefs.getBool(_SettingsPageState.keyReviewNoteWithQuestion) ?? false;
   }
 
+  /// 获取“闪卡 3D 翻转动效”设置状态（默认 true，开启三维物理景深翻牌动画）
+  static Future<bool> getFlashcard3DFlipEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_SettingsPageState.keyFlashcard3DFlip) ?? true;
+  }
+
   @override
   State<SettingsPage> createState() => _SettingsPageState();
 }
@@ -76,11 +82,13 @@ class _SettingsPageState extends State<SettingsPage> {
   bool smartBankSyncEnabled = true;
   String spacedAlgorithm = 'sm2';
   bool reviewNoteWithQuestion = false;
+  bool flashcard3DFlip = true;
 
   static const String keyAcceptUpdate = 'accept_update';
   static const String keyAutoResume = 'autoResume';
   static const String keySpacedAlgorithm = 'spaced_algorithm';
   static const String keyReviewNoteWithQuestion = 'review_note_with_question';
+  static const String keyFlashcard3DFlip = 'flashcard_3d_flip';
   static const String keySyncAnswersToYkb = 'sync_answers_to_ykb';
   static const String keySyncCutToYkb = 'sync_cut_to_ykb';
   static const String keySyncNotesToYkb = 'sync_notes_to_ykb';
@@ -120,6 +128,7 @@ class _SettingsPageState extends State<SettingsPage> {
     smartBankSyncEnabled = _prefs.getBool(keySmartBankSync) ?? true;
     spacedAlgorithm = _prefs.getString(keySpacedAlgorithm) ?? 'sm2';
     reviewNoteWithQuestion = _prefs.getBool(keyReviewNoteWithQuestion) ?? false;
+    flashcard3DFlip = _prefs.getBool(keyFlashcard3DFlip) ?? true;
     mode = _prefs.getInt('mode') ?? 0;
     fontScale = _normalizeFontScale(_prefs.getDouble('fontScale') ?? 1.0);
     developerModeEnabled =
@@ -703,6 +712,17 @@ class _SettingsPageState extends State<SettingsPage> {
                   onChanged: (v) {
                     setState(() => reviewNoteWithQuestion = v);
                     _setBool(keyReviewNoteWithQuestion, v);
+                  },
+                ),
+              ),
+              IconTile(
+                icon: Icons.flip_camera_android_rounded,
+                label: '闪卡 3D 翻转动效',
+                trailing: Switch(
+                  value: flashcard3DFlip,
+                  onChanged: (v) {
+                    setState(() => flashcard3DFlip = v);
+                    _setBool(keyFlashcard3DFlip, v);
                   },
                 ),
               ),

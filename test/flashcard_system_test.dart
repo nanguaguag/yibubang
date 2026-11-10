@@ -64,6 +64,36 @@ void main() {
         duration INTEGER NOT NULL DEFAULT 0
       )
     ''');
+    await testDb.execute('''
+      CREATE TABLE IF NOT EXISTS QuestionBank (
+        bank_id TEXT PRIMARY KEY,
+        name TEXT NOT NULL DEFAULT '',
+        description TEXT NOT NULL DEFAULT '',
+        version TEXT NOT NULL DEFAULT '0.0.0',
+        schema_version INTEGER NOT NULL DEFAULT 0,
+        local_path TEXT NOT NULL DEFAULT '',
+        content_hash TEXT NOT NULL DEFAULT '',
+        size INTEGER NOT NULL DEFAULT 0,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        built_in INTEGER NOT NULL DEFAULT 0,
+        update_enabled INTEGER NOT NULL DEFAULT 1,
+        install_state TEXT NOT NULL DEFAULT 'available',
+        remote_url TEXT,
+        identity_id TEXT NOT NULL DEFAULT '',
+        updated_at INTEGER NOT NULL DEFAULT 0
+      )
+    ''');
+    await testDb.execute('''
+      CREATE TABLE IF NOT EXISTS MigrationState (
+        migration_id TEXT PRIMARY KEY,
+        from_version INTEGER,
+        to_version INTEGER,
+        state TEXT,
+        started_at INTEGER,
+        finished_at INTEGER,
+        error TEXT
+      )
+    ''');
     await UserDBHelper().createSpacedRepetitionTablesForTesting(testDb);
     UserDBHelper.setDatabaseForTesting(testDb);
   });

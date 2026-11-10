@@ -10,12 +10,14 @@ class FlashcardFlipCard extends StatefulWidget {
   final DailyReviewQueueItem queueItem;
   final ValueChanged<bool>? onFlipped;
   final VoidCallback? onOpenOriginalQuestion;
+  final bool enable3DAnimation;
 
   const FlashcardFlipCard({
     super.key,
     required this.queueItem,
     this.onFlipped,
     this.onOpenOriginalQuestion,
+    this.enable3DAnimation = true,
   });
 
   @override
@@ -70,6 +72,13 @@ class FlashcardFlipCardState extends State<FlashcardFlipCard>
   /// 翻转卡片
   void flip() {
     HapticFeedback.lightImpact();
+    if (!widget.enable3DAnimation) {
+      setState(() {
+        _isBackVisible = !_isBackVisible;
+      });
+      widget.onFlipped?.call(_isBackVisible);
+      return;
+    }
     if (_controller.isCompleted) {
       _controller.reverse();
     } else {
@@ -94,6 +103,33 @@ class FlashcardFlipCardState extends State<FlashcardFlipCard>
             : '（背面暂无答案解析）');
 
     final tags = card?.tags;
+
+    // 若未开启 3D 翻转动效，直接切换平铺卡片，免去 3D 景深计算与镜像防转
+    if (!widget.enable3DAnimation) {
+      final isFront = !_isBackVisible;
+      return InkWell(
+        onTap: flip,
+        borderRadius: BorderRadius.circular(AppShapes.extraLarge),
+        child: Card(
+          elevation: isFront ? 1.5 : 2.5,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppShapes.extraLarge),
+            side: BorderSide(
+              color: isFront
+                  ? scheme.outlineVariant.withValues(alpha: 0.5)
+                  : scheme.secondary.withValues(alpha: 0.4),
+              width: isFront ? 1 : 1.5,
+            ),
+          ),
+          color: isFront
+              ? scheme.surfaceContainerLow
+              : scheme.secondaryContainer.withValues(alpha: 0.25),
+          child: isFront
+              ? _buildFrontFace(context, frontText, tags, theme, scheme)
+              : _buildBackFace(context, backText, tags, theme, scheme),
+        ),
+      );
+    }
 
     return AnimatedBuilder(
       animation: _animation,
@@ -252,7 +288,9 @@ class FlashcardFlipCardState extends State<FlashcardFlipCard>
                 Icon(Icons.touch_app_rounded, size: 16, color: scheme.primary),
                 const SizedBox(width: 6),
                 Text(
-                  '轻触卡片 3D 翻转至背面查看解析 ✨',
+                  widget.enable3DAnimation
+                      ? '轻触卡片 3D 翻转至背面查看解析 ✨'
+                      : '轻触卡片查看背面解析 ✨',
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
@@ -353,28 +391,28 @@ class FlashcardFlipCardState extends State<FlashcardFlipCard>
           const SizedBox(height: 20),
 
           // 底部自评引导
-          Container(
-            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-            decoration: BoxDecoration(
-              color: scheme.secondary.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(AppShapes.medium),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.arrow_downward_rounded, size: 15, color: scheme.secondary),
-                const SizedBox(width: 6),
-                Text(
-                  '请在下方选择你的记忆留存程度（轻触卡片可翻回正面）',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: scheme.secondary,
-                  ),
-                ),
-              ],
-            ),
-          ),
+          //Container(
+          //  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+          //  decoration: BoxDecoration(
+          //    color: scheme.secondary.withValues(alpha: 0.08),
+          //    borderRadius: BorderRadius.circular(AppShapes.medium),
+          //  ),
+          //  child: Row(
+          //    mainAxisAlignment: MainAxisAlignment.center,
+          //    children: [
+          //      Icon(Icons.arrow_downward_rounded, size: 15, color: scheme.secondary),
+          //      const SizedBox(width: 6),
+          //      Text(
+          //        '轻触卡片可翻回正面',
+          //        style: TextStyle(
+          //          fontSize: 12,
+          //          fontWeight: FontWeight.w600,
+          //          color: scheme.secondary,
+          //        ),
+          //      ),
+          //    ],
+          //  ),
+          //),
         ],
       ),
     );

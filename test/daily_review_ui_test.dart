@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:yibubang/models/daily_review_session.dart';
 import 'package:yibubang/models/question.dart';
 import 'package:yibubang/models/spaced_review_item.dart';
@@ -374,6 +375,135 @@ void main() {
 
       // 6. 验证完成打卡弹窗
       expect(find.text('今日计划打卡成功！'), findsOneWidget);
+    });
+
+    testWidgets('reviews note directly without flipping and evaluates immediately', (tester) async {
+      SharedPreferences.setMockInitialValues({
+        'review_note_with_question': false,
+      });
+
+      const plan = ReviewPlan(
+        id: 'plan_note',
+        name: '笔记复习计划',
+        targetType: 'all',
+        dailyNewTarget: 10,
+        dailyReviewLimit: 20,
+      );
+
+      final question = Question(
+        id: 'q_note_001',
+        title: '下列生理活动中，属于负反馈调节的是什么？',
+        type: '1',
+        typeStr: '单选题',
+        answer: 'A',
+        option: '[{"key":"A","title":"降压反射调节血压"},{"key":"B","title":"排尿反射"},{"key":"C","title":"血液凝固"},{"key":"D","title":"分娩过程"}]',
+        userAnswer: 'A',
+      );
+
+      final queueItem = DailyReviewQueueItem(
+        questionId: question.id,
+        itemType: ReviewItemType.question,
+        isNew: false,
+        isFromNote: true,
+        question: question,
+      );
+
+      final session = DailyReviewSession(
+        plan: plan,
+        date: DateTime.now(),
+        dueQueue: [queueItem],
+        newQueue: [],
+      );
+
+      final fakeService = _FakeDailyReviewService(session: session);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: DailyReviewPage(
+            plan: plan,
+            service: fakeService,
+            initialSession: session,
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      // 1. 无需翻转，直接展示题目题干与选项
+      expect(find.text('下列生理活动中，属于负反馈调节的是什么？'), findsOneWidget);
+      expect(find.text('降压反射调节血压'), findsOneWidget);
+
+      // 2. 评级栏直接可见，无需任何翻转卡片步骤
+      expect(find.text('良好'), findsOneWidget);
+      expect(find.text('困难'), findsOneWidget);
+      expect(find.text('简单'), findsOneWidget);
+
+      // 3. 直接自评打分切题
+      await tester.tap(find.text('良好'));
+      await tester.pumpAndSettle();
+
+      expect(fakeService.lastSubmittedQuestionId, 'q_note_001');
+      expect(fakeService.lastSubmittedRating, ReviewRating.good);
+    });
+
+    testWidgets('reviews flashcard without 3D animation when setting disabled', (tester) async {
+      SharedPreferences.setMockInitialValues({
+        'flashcard_3d_flip': false,
+      });
+
+      const plan = ReviewPlan(
+        id: 'plan_flashcard_flat',
+        name: '平面闪卡计划',
+        targetType: 'all',
+        dailyNewTarget: 10,
+        dailyReviewLimit: 20,
+      );
+
+      final flashcard = const CustomFlashcard(
+        id: 'fc_physio_2',
+        title: '动作电位去极化离子基础',
+        front: '动作电位上升支（去极化）是由哪种离子流产生的？',
+        back: 'Na+快速大量内流。',
+      );
+
+      final queueItem = DailyReviewQueueItem(
+        questionId: flashcard.id,
+        itemType: ReviewItemType.flashcard,
+        isNew: true,
+        customFlashcard: flashcard,
+      );
+
+      final session = DailyReviewSession(
+        plan: plan,
+        date: DateTime.now(),
+        dueQueue: [],
+        newQueue: [queueItem],
+      );
+
+      final fakeService = _FakeDailyReviewService(session: session);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: DailyReviewPage(
+            plan: plan,
+            service: fakeService,
+            initialSession: session,
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      // 验证提示文案为平面切换提示
+      expect(find.text('轻触卡片查看背面解析 ✨'), findsOneWidget);
+      expect(find.text('动作电位上升支（去极化）是由哪种离子流产生的？'), findsOneWidget);
+
+      // 点击直接切换到背面
+      await tester.tap(find.text('动作电位上升支（去极化）是由哪种离子流产生的？'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Na+快速大量内流。'), findsOneWidget);
+      expect(find.text('良好'), findsOneWidget);
     });
   });
 }

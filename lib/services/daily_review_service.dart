@@ -297,11 +297,12 @@ class DailyReviewService {
       rawDueCount,
       math.max(0, plan.dailyReviewLimit - completedReview),
     );
+    final userDb = executor ?? await _userDbHelper.database;
+    final coveredSubjects = plan.coveredSubjects;
+
     final remainingNew = math.max(0, plan.dailyNewTarget - completedNew);
 
     // 统计题库卡片池分布（错题待攻克、收藏题、笔记卡片、记忆中、已掌握）
-    final userDb = executor ?? await _userDbHelper.database;
-    final coveredSubjects = plan.coveredSubjects;
 
     final poolWrong = await _countUserQuestionPool(
       userDb: userDb,
@@ -361,6 +362,7 @@ class DailyReviewService {
       return 0;
     }
   }
+
 
   /// 真实计算连续打卡天数（支持跨天平滑过渡，昨天打卡保持连续性，断签归零）
   Future<int> _calculateStreakDays(DatabaseExecutor userDb, DateTime now) async {
@@ -506,18 +508,13 @@ class DailyReviewService {
         continue;
       }
 
-      // 严格检查来源过滤（如用户只选了“笔记卡片”，绝不塞入普通错题）
-      if (needFilterSource) {
-        final isWrong = uq?.status == 2;
-        final isCollected = uq?.collection == 1;
-        final hasNote = noteQuestionIds.contains(it.itemId);
-
-        bool matchesSource = false;
-        if (sourceTypes.contains('wrong') && isWrong) matchesSource = true;
-        if (sourceTypes.contains('collected') && isCollected) matchesSource = true;
-        if (sourceTypes.contains('note') && hasNote) matchesSource = true;
-
-        if (!matchesSource) continue;
+      // 若用户仅勾选了闪卡而完全未包含任何题目类来源，则跳过普通题
+      final hasQuestionSource = sourceTypes.contains('all') ||
+          sourceTypes.contains('wrong') ||
+          sourceTypes.contains('collected') ||
+          sourceTypes.contains('note');
+      if (needFilterSource && !hasQuestionSource) {
+        continue;
       }
 
       // 如果设置了覆盖课程，排除未覆盖课程的已做题（若 parentId 为空则放行保底）

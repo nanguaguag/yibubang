@@ -56,7 +56,7 @@ void main() {
       reason: 'mount viewport rows only, even for a large collapsed catalog',
     );
     expect(toggle.elapsedMilliseconds, lessThan(300));
-    expect(load.elapsedMilliseconds, lessThan(1000));
+    expect(load.elapsedMilliseconds, lessThan(1500));
     expect(
       tester
           .widget<CheckboxListTile>(

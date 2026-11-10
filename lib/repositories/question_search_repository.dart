@@ -372,11 +372,18 @@ class QuestionSearchRepository {
     final notesResult = Sqflite.firstIntValue(
       await userDb.rawQuery('SELECT COUNT(*) FROM Notes'),
     ) ?? 0;
+    int flashcardResult = 0;
+    try {
+      flashcardResult = Sqflite.firstIntValue(
+        await userDb.rawQuery('SELECT COUNT(*) FROM CustomFlashcards'),
+      ) ?? 0;
+    } catch (_) {}
     return {
       'collection': colResult,
       'mistake': mistakeResult,
       'cut': cutResult,
       'notes': notesResult,
+      'flashcards': flashcardResult,
     };
   }
 

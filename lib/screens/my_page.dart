@@ -16,6 +16,7 @@ import '../widgets/common/app_network_image.dart';
 import '../widgets/common/info_card.dart';
 import '../widgets/common/styled_tile.dart';
 import '../common/platform_adaptive.dart';
+import '../widgets/flashcard_deck_dialog.dart';
 import './my_notes_page.dart';
 import './settings_page.dart';
 import './user_questions_list_page.dart';
@@ -52,6 +53,7 @@ class _MyPageState extends State<MyPage> {
   int _mistakeCount = 0;
   int _notesCount = 0;
   int _cutCount = 0;
+  int _flashcardsCount = 0;
   bool _loadingCounts = true;
 
   @override
@@ -86,6 +88,7 @@ class _MyPageState extends State<MyPage> {
       _mistakeCount = counts['mistake'] ?? 0;
       _notesCount = counts['notes'] ?? 0;
       _cutCount = counts['cut'] ?? 0;
+      _flashcardsCount = counts['flashcards'] ?? 0;
       _loadingCounts = false;
     });
   }
@@ -338,6 +341,20 @@ class _MyPageState extends State<MyPage> {
                   type: UserQuestionsType.cut,
                 ),
               );
+              _loadData();
+            },
+          ),
+          _buildModuleCard(
+            context: context,
+            title: '自制闪卡',
+            subtitle: '记忆快翻，双面概念与考点速记',
+            count: _flashcardsCount,
+            unit: '张卡片',
+            icon: Icons.style_rounded,
+            iconColor: const Color(0xFF00897B),
+            iconBgColor: const Color(0xFFE0F2F1),
+            onTap: () async {
+              await FlashcardDeckPage.open(context);
               _loadData();
             },
           ),

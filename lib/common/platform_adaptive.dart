@@ -178,6 +178,23 @@ class _AdaptiveModalNavigatorObserver extends NavigatorObserver {
   }
 }
 
+/// 模态弹窗内置首层路由（重写 didPop 以便第一时间将返回值同步冒泡给外层 Dialog）
+class _AdaptiveModalPageRoute<T> extends MaterialPageRoute<T> {
+  final void Function(dynamic result)? onDismissModal;
+
+  _AdaptiveModalPageRoute({
+    required super.builder,
+    super.fullscreenDialog = true,
+    this.onDismissModal,
+  });
+
+  @override
+  bool didPop(T? result) {
+    onDismissModal?.call(result);
+    return super.didPop(result);
+  }
+}
+
 /// 承载内置 Navigator 的模态弹窗容器
 class _AdaptiveModalContainer extends StatefulWidget {
   final BuildContext dialogContext;
@@ -240,10 +257,15 @@ class _AdaptiveModalContainerState extends State<_AdaptiveModalContainer> {
             onGenerateInitialRoutes: (navigator, initialRouteName) {
               return [
                 _ModalSentinelRoute(),
-                MaterialPageRoute(
+                _AdaptiveModalPageRoute(
                   builder: (nestedContext) =>
                       widget.initialBuilder(nestedContext),
                   fullscreenDialog: true,
+                  onDismissModal: (result) {
+                    if (mounted && Navigator.of(widget.dialogContext).canPop()) {
+                      Navigator.of(widget.dialogContext).pop(result);
+                    }
+                  },
                 ),
               ];
             },

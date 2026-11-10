@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../common/app_shapes.dart';
+import '../common/platform_adaptive.dart';
 import '../models/spaced_review_item.dart';
 import '../models/subject.dart';
 import '../repositories/spaced_review_repository.dart';
@@ -26,15 +27,23 @@ class DailyReviewPlanDialog extends StatefulWidget {
     SpacedReviewRepository? repository,
     List<Subject>? availableSubjects,
   }) {
-    return showDialog<ReviewPlan>(
-      context: context,
-      builder: (context) => DailyReviewPlanDialog(
-        initialPlan: initialPlan,
-        onSaved: onSaved,
-        repository: repository,
-        availableSubjects: availableSubjects,
-      ),
+    final page = DailyReviewPlanDialog(
+      initialPlan: initialPlan,
+      onSaved: onSaved,
+      repository: repository,
+      availableSubjects: availableSubjects,
     );
+    if (isDesktopLayout(context)) {
+      return pushAdaptiveModalPage<ReviewPlan>(
+        context,
+        desktopConstraints: const BoxConstraints(maxWidth: 580, maxHeight: 720),
+        builder: (_) => page,
+      );
+    } else {
+      return Navigator.of(context).push<ReviewPlan>(
+        MaterialPageRoute(builder: (_) => page),
+      );
+    }
   }
 
   @override
@@ -186,214 +195,202 @@ class _DailyReviewPlanDialogState extends State<DailyReviewPlanDialog> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final isDesktop = isDesktopLayout(context);
 
-    return AlertDialog(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppShapes.extraLarge),
-      ),
-      titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 12),
-      contentPadding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
-      actionsPadding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
-      title: Row(
-        children: [
+    final formContent = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 8),
+        TextField(
+          controller: _nameController,
+          decoration: InputDecoration(
+            labelText: '计划名称',
+            prefixIcon: const Icon(Icons.edit_note_outlined),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(AppShapes.medium),
+            ),
+            isDense: true,
+          ),
+        ),
+        const SizedBox(height: 18),
+
+        // 1. 抽题来源配置（Anki 核心浓缩理念：重点攻克错题、收藏与笔记）
+        Text(
+          '自定义抽题来源',
+          style: theme.textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.bold,
+            color: scheme.onSurface,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          '建议选择需要反复温习的收藏/笔记，不要重复刷无意义的简单题。',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: scheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 6,
+          children: [
+            _buildSourceChip('错题', 'wrong', Icons.error_outline),
+            _buildSourceChip('收藏', 'collected', Icons.star_border),
+            _buildSourceChip('笔记卡片', 'note', Icons.edit_note_rounded),
+            _buildSourceChip('自制闪卡', 'flashcard', Icons.style_outlined),
+            _buildSourceChip('未做新题', 'all', Icons.auto_awesome_outlined),
+          ],
+        ),
+        const SizedBox(height: 18),
+
+        // 2. 覆盖的课程配置
+        Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '选择覆盖的课程 (${_coveredSubjects.isEmpty ? "全部" : "已选 ${_coveredSubjects.length} 门"})',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: scheme.onSurface,
+                    ),
+                  ),
+                  Text(
+                    '已学完或无需复习的课程可取消勾选，其错题不再出现。',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            TextButton.icon(
+              onPressed: _syncWithHomeCourses,
+              icon: const Icon(Icons.sync_rounded, size: 16),
+              label: const Text('一键选首页课程', style: TextStyle(fontSize: 12)),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (_allAvailableSubjects.isNotEmpty)
           Container(
+            constraints: const BoxConstraints(maxHeight: 320),
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: scheme.primaryContainer,
-              shape: BoxShape.circle,
+              color: scheme.surfaceContainerHighest.withValues(alpha: 0.35),
+              borderRadius: BorderRadius.circular(AppShapes.medium),
+              border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.3)),
             ),
-            child: Icon(Icons.psychology_outlined, color: scheme.primary, size: 24),
+            child: SingleChildScrollView(
+              child: Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                children: _allAvailableSubjects.map((subject) {
+                  final idStr = subject.id.toString();
+                  final isSelected = _coveredSubjects.contains(idStr);
+                  return FilterChip(
+                    label: Text(subject.name),
+                    selected: isSelected,
+                    onSelected: (selected) {
+                      setState(() {
+                        if (selected) {
+                          _coveredSubjects.add(idStr);
+                        } else {
+                          _coveredSubjects.remove(idStr);
+                        }
+                      });
+                    },
+                  );
+                }).toList(),
+              ),
+            ),
           ),
-          const SizedBox(width: 12),
-          Text(
-            widget.initialPlan == null ? '设置记忆计划' : '计划与抽题范围',
-            style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+        const SizedBox(height: 18),
+
+        // 3. 每日目标设置
+        Text(
+          '每日新学题量 ($_dailyNewTarget 题)',
+          style: theme.textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.bold,
+            color: scheme.onSurface,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          children: _newTargetPresets.map((count) {
+            final isSelected = _dailyNewTarget == count;
+            return ChoiceChip(
+              label: Text('$count 题'),
+              selected: isSelected,
+              onSelected: (selected) {
+                if (selected) {
+                  setState(() => _dailyNewTarget = count);
+                }
+              },
+            );
+          }).toList(),
+        ),
+        const SizedBox(height: 16),
+        Text(
+          '每日复习上限 ($_dailyReviewLimit 题)',
+          style: theme.textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.bold,
+            color: scheme.onSurface,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          children: _reviewLimitPresets.map((count) {
+            final isSelected = _dailyReviewLimit == count;
+            return ChoiceChip(
+              label: Text('$count 题'),
+              selected: isSelected,
+              onSelected: (selected) {
+                if (selected) {
+                  setState(() => _dailyReviewLimit = count);
+                }
+              },
+            );
+          }).toList(),
+        ),
+        const SizedBox(height: 24),
+        FilledButton(
+          style: FilledButton.styleFrom(
+            minimumSize: const Size.fromHeight(48),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppShapes.medium),
+            ),
+          ),
+          onPressed: _loading ? null : _handleSave,
+          child: const Text('保存计划', style: TextStyle(fontWeight: FontWeight.bold)),
+        ),
+      ],
+    );
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(widget.initialPlan == null ? '设置记忆计划' : '计划与抽题范围'),
+        leading: IconButton(
+          icon: Icon(isDesktop ? Icons.close_rounded : Icons.arrow_back_rounded),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        actions: [
+          TextButton(
+            onPressed: _loading ? null : _handleSave,
+            child: const Text('保存', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
-      content: _loading
-          ? const SizedBox(
-              height: 160,
-              child: Center(child: CircularProgressIndicator()),
-            )
-          : SizedBox(
-              width: 480,
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: _nameController,
-                      decoration: InputDecoration(
-                        labelText: '计划名称',
-                        prefixIcon: const Icon(Icons.edit_note_outlined),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(AppShapes.medium),
-                        ),
-                        isDense: true,
-                      ),
-                    ),
-                    const SizedBox(height: 18),
-
-                    // 1. 抽题来源配置（Anki 核心浓缩理念：重点攻克错题、收藏与笔记）
-                    Text(
-                      '自定义抽题来源',
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: scheme.onSurface,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '建议选择需要反复温习的收藏/笔记，不要重复刷无意义的简单题。',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 6,
-                      children: [
-                        _buildSourceChip('错题', 'wrong', Icons.error_outline),
-                        _buildSourceChip('收藏', 'collected', Icons.star_border),
-                        _buildSourceChip('笔记卡片', 'note', Icons.edit_note_rounded),
-                        _buildSourceChip('自制闪卡', 'flashcard', Icons.style_outlined),
-                        _buildSourceChip('未做新题', 'all', Icons.auto_awesome_outlined),
-                      ],
-                    ),
-                    const SizedBox(height: 18),
-
-                    // 2. 覆盖的课程配置
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                '选择覆盖的课程 (${_coveredSubjects.isEmpty ? "全部" : "已选 ${_coveredSubjects.length} 门"})',
-                                style: theme.textTheme.titleSmall?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                  color: scheme.onSurface,
-                                ),
-                              ),
-                              Text(
-                                '已学完或无需复习的课程可取消勾选，其错题不再出现。',
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: scheme.onSurfaceVariant,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        TextButton.icon(
-                          onPressed: _syncWithHomeCourses,
-                          icon: const Icon(Icons.sync_rounded, size: 16),
-                          label: const Text('一键选首页课程', style: TextStyle(fontSize: 12)),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    if (_allAvailableSubjects.isNotEmpty)
-                      Container(
-                        constraints: const BoxConstraints(maxHeight: 140),
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: scheme.surfaceContainerHighest.withValues(alpha: 0.35),
-                          borderRadius: BorderRadius.circular(AppShapes.medium),
-                          border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.3)),
-                        ),
-                        child: SingleChildScrollView(
-                          child: Wrap(
-                            spacing: 6,
-                            runSpacing: 4,
-                            children: _allAvailableSubjects.map((subject) {
-                              final idStr = subject.id.toString();
-                              final isSelected = _coveredSubjects.contains(idStr);
-                              return FilterChip(
-                                label: Text(subject.name),
-                                selected: isSelected,
-                                onSelected: (selected) {
-                                  setState(() {
-                                    if (selected) {
-                                      _coveredSubjects.add(idStr);
-                                    } else {
-                                      _coveredSubjects.remove(idStr);
-                                    }
-                                  });
-                                },
-                              );
-                            }).toList(),
-                          ),
-                        ),
-                      ),
-                    const SizedBox(height: 18),
-
-                    // 3. 每日目标设置
-                    Text(
-                      '每日新学题量 ($_dailyNewTarget 题)',
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: scheme.onSurface,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      children: _newTargetPresets.map((count) {
-                        final isSelected = _dailyNewTarget == count;
-                        return ChoiceChip(
-                          label: Text('$count 题'),
-                          selected: isSelected,
-                          onSelected: (selected) {
-                            if (selected) {
-                              setState(() => _dailyNewTarget = count);
-                            }
-                          },
-                        );
-                      }).toList(),
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      '每日复习上限 ($_dailyReviewLimit 题)',
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: scheme.onSurface,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      children: _reviewLimitPresets.map((count) {
-                        final isSelected = _dailyReviewLimit == count;
-                        return ChoiceChip(
-                          label: Text('$count 题'),
-                          selected: isSelected,
-                          onSelected: (selected) {
-                            if (selected) {
-                              setState(() => _dailyReviewLimit = count);
-                            }
-                          },
-                        );
-                      }).toList(),
-                    ),
-                  ],
-                ),
-              ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              child: formContent,
             ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('取消'),
-        ),
-        FilledButton.tonal(
-          onPressed: _loading ? null : _handleSave,
-          child: const Text('保存计划'),
-        ),
-      ],
     );
   }
 

@@ -193,7 +193,7 @@ class _StatisticsPageState extends State<StatisticsPage> {
                 _buildChartToggle(context),
                 const SizedBox(height: 16),
                 _ChartCard(
-                  title: '答题正确率全景 ($_chartPeriodTitle)',
+                  title: '正确率 ($_chartPeriodTitle)',
                   chart: AnimatedSwitcher(
                     duration: const Duration(milliseconds: 250),
                     child: KeyedSubtree(
