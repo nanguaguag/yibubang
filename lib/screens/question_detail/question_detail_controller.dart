@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../common/shortcut_config.dart';
 import '../../models/chapter.dart';
+import '../../db/database_helper.dart';
 import '../../models/question.dart';
 import '../../services/ykb_sync_service.dart';
 
@@ -21,7 +22,111 @@ class QuestionDetailController extends ChangeNotifier
   final Stopwatch _answerWatch = Stopwatch()..start();
   bool _foreground = true;
   Object? lastSaveError;
-  bool get isSaving => _pendingWrites.isNotEmpty;
+  Future<MapEntry<int, int>>? _finishing;
+  bool _changingMode = false;
+  bool get isSaving =>
+      _pendingWrites.isNotEmpty || _finishing != null || _changingMode;
+  final Map<String, int> _unsavedTestTime = {};
+  final Map<String, UserQuestion> _pendingTestSelections = {};
+  Future<void> _persistTestTime(String id, int ms) async {
+    final db = await UserDBHelper().database;
+    await db.transaction((tx) async {
+      await tx.rawInsert(
+        'INSERT OR IGNORE INTO QuestionTestTime(question_id,duration_ms) VALUES (?,0)',
+        [id],
+      );
+      await tx.rawUpdate(
+        'UPDATE QuestionTestTime SET duration_ms=duration_ms+? WHERE question_id=?',
+        [ms, id],
+      );
+    });
+    final remaining = (_unsavedTestTime[id] ?? 0) - ms;
+    if (remaining <= 0) {
+      _unsavedTestTime.remove(id);
+    } else {
+      _unsavedTestTime[id] = remaining;
+    }
+  }
+
+  void _captureTestTime(int index) {
+    if (_mode != 2 ||
+        _finishing != null ||
+        index < 0 ||
+        index >= questions.length) {
+      return;
+    }
+    final ms = _answerWatch.elapsedMilliseconds;
+    _answerWatch.reset();
+    if (ms == 0) return;
+    final id = questions[index].id;
+    _unsavedTestTime[id] = (_unsavedTestTime[id] ?? 0) + ms;
+    trackLocalWrite(_persistTestTime(id, ms));
+  }
+
+  Future<MapEntry<int, int>> finishTestAndFlush() {
+    if (_finishing != null) return _finishing!;
+    final work = _finishTestAndFlush();
+    _finishing = work;
+    return work.whenComplete(() => _finishing = null);
+  }
+
+  Future<MapEntry<int, int>> _finishTestAndFlush() async {
+    _captureTestTime(_currentPage);
+    if (_mode == 2) {
+      _stopTestTimer();
+      _answerWatch.stop();
+    }
+    try {
+      await flushPendingWrites();
+      // 弱盘/锁冲突时选答可能尚未落库；交卷先重试保存，再判分。
+      for (final entry in Map<String, UserQuestion>.from(
+        _pendingTestSelections,
+      ).entries) {
+        final q = questions.firstWhere((q) => q.id == entry.key);
+        await updateQuestionSimple(
+          entry.value,
+          q,
+          fields: const {'status', 'user_answer'},
+        );
+        if (identical(_pendingTestSelections[entry.key], entry.value)) {
+          _pendingTestSelections.remove(entry.key);
+        }
+      }
+      for (final entry in Map<String, int>.from(_unsavedTestTime).entries) {
+        await _persistTestTime(entry.key, entry.value);
+      }
+      if (_mode != 2) return const MapEntry(0, 0);
+      final result = await gradePendingQuestions(
+        questions,
+        userQuestions,
+        bankId: bankId,
+      );
+      _mode = 0;
+      _testBaseMs = 0;
+      _answerWatch.reset();
+      if (_foreground) _answerWatch.start();
+      if (!_disposed) {
+        modeNotifier.value = 0;
+        _updateAnsweredCount();
+        notifyListeners();
+      }
+      await _saveSettings();
+      await _saveTestElapsed(0);
+      return result;
+    } catch (_) {
+      if (!_disposed && _mode == 2) {
+        if (_foreground) {
+          _testStopwatch.start();
+          _answerWatch.start();
+        }
+        _testTicker = Timer.periodic(const Duration(seconds: 1), (_) {
+          elapsedNotifier.value = testElapsed;
+        });
+      }
+      rethrow;
+    }
+  }
+
   void trackLocalWrite(
     Future<void> write, {
     BuildContext? context,
@@ -61,14 +166,34 @@ class QuestionDetailController extends ChangeNotifier
     UserQuestion uq, {
     BuildContext? context,
   }) {
+    final snapshot = UserQuestion.fromMap(uq.toMap());
+    _pendingTestSelections[q.id] = snapshot;
     trackLocalWrite(
-      updateQuestionSimple(uq, q, fields: const {'status', 'user_answer'}),
+      updateQuestionSimple(
+        snapshot,
+        q,
+        fields: const {'status', 'user_answer'},
+      ),
       context: context,
+      onSaved: () {
+        if (identical(_pendingTestSelections[q.id], snapshot)) {
+          _pendingTestSelections.remove(q.id);
+        }
+      },
     );
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) {
+      _captureTestTime(_currentPage);
+      if (_mode == 2) {
+        _testStopwatch.stop();
+        trackLocalWrite(_saveTestElapsed(testElapsed.inMilliseconds));
+      }
+    } else if (_mode == 2) {
+      _testStopwatch.start();
+    }
     _foreground = state == AppLifecycleState.resumed;
     if (_foreground) {
       _answerWatch.start();
@@ -130,10 +255,11 @@ class QuestionDetailController extends ChangeNotifier
     _updateAnsweredCount();
   }
 
-  Future<void> init() async {
+  Future<void> init({bool persistPosition = true}) async {
     await ShortcutConfig.load();
+    if (_disposed) return;
     await _loadSettings();
-    await _saveLastQIndex();
+    if (persistPosition && !_disposed) await _saveLastQIndex();
   }
 
   ScrollController controllerFor(int index) =>
@@ -181,6 +307,7 @@ class QuestionDetailController extends ChangeNotifier
 
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
+    if (_disposed) return;
     _mode = prefs.getInt('mode') ?? 0;
     modeNotifier.value = _mode;
     _testBaseMs = prefs.getInt('testElapsedMs') ?? 0;
@@ -220,6 +347,7 @@ class QuestionDetailController extends ChangeNotifier
   }
 
   void onPageChanged(int page) {
+    _captureTestTime(_currentPage);
     _currentPage = page;
     currentPageNotifier.value = page;
     pageOpenedAt = DateTime.now().millisecondsSinceEpoch;
@@ -399,6 +527,7 @@ class QuestionDetailController extends ChangeNotifier
     }
 
     if (_mode == 2) {
+      _captureTestTime(index);
       userQuestion.status = 4; // 测试模式 - 待提交
       savePendingSelection(question, userQuestion, context: context);
       userQuestions[index].status = 4;
@@ -455,6 +584,7 @@ class QuestionDetailController extends ChangeNotifier
     userQuestion.userAnswer = isCorrect ? '已掌握' : '未掌握';
 
     if (_mode == 2) {
+      _captureTestTime(index);
       userQuestion.status = 4; // 测试模式 - 待提交
       savePendingSelection(question, userQuestion, context: context);
       userQuestions[index].status = 4;
@@ -608,30 +738,52 @@ class QuestionDetailController extends ChangeNotifier
   }
 
   Future<void> onModeChanged(int newMode, BuildContext context) async {
-    if (newMode == _mode) return;
-
-    final bool enteringTest = newMode == 2;
-    final bool leavingTest = _mode == 2;
-
-    if (leavingTest) {
-      final bool? confirmed = await confirmLeaveTest(context);
-      if (confirmed != true) {
-        return;
+    if (newMode == _mode || _changingMode) return;
+    _changingMode = true;
+    try {
+      final entering = newMode == 2;
+      if (_mode == 2) {
+        if (await confirmLeaveTest(context) != true ||
+            !context.mounted ||
+            _disposed) {
+          return;
+        }
+        await finishTestAndFlush();
       }
-      _stopTestTimer();
-      _testBaseMs = 0;
-      await _saveTestElapsed(0);
-      await gradePendingQuestions(questions, userQuestions, bankId: bankId);
-      _updateAnsweredCount();
-    }
-
-    _mode = newMode;
-    modeNotifier.value = newMode;
-    notifyListeners();
-    await _saveSettings();
-
-    if (enteringTest) {
-      _startTestTimer();
+      if (entering) {
+        final db = await UserDBHelper().database;
+        await db.transaction((tx) async {
+          final ids = questions.map((q) => q.id).toList();
+          for (var i = 0; i < ids.length; i += 500) {
+            final chunk = ids.sublist(
+              i,
+              i + 500 < ids.length ? i + 500 : ids.length,
+            );
+            await tx.rawDelete(
+              'DELETE FROM QuestionTestTime WHERE question_id IN (${List.filled(chunk.length, '?').join(',')})',
+              chunk,
+            );
+          }
+        });
+      }
+      if (_disposed) return;
+      _mode = newMode;
+      modeNotifier.value = newMode;
+      notifyListeners();
+      await _saveSettings();
+      if (entering) {
+        _answerWatch.reset();
+        _startTestTimer();
+      }
+    } catch (e) {
+      lastSaveError = e;
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('切换模式失败：$e')));
+      }
+    } finally {
+      _changingMode = false;
     }
   }
 
@@ -662,22 +814,19 @@ class QuestionDetailController extends ChangeNotifier
     final bool? confirmed = await confirmSubmit(context);
     if (confirmed != true) return;
 
-    _stopTestTimer();
+    if (!context.mounted || _disposed) return;
     final String used = formatElapsed();
-    final MapEntry<int, int> result = await gradePendingQuestions(
-      questions,
-      userQuestions,
-      bankId: bankId,
-    );
-
-    _mode = 0;
-    modeNotifier.value = 0;
-    _testBaseMs = 0;
-    _updateAnsweredCount();
-    notifyListeners();
-
-    await _saveSettings();
-    await _saveTestElapsed(0);
+    MapEntry<int, int> result;
+    try {
+      result = await finishTestAndFlush();
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('交卷失败，请重试：$e')));
+      }
+      return;
+    }
 
     final int answered = result.key;
     final int correct = result.value;
@@ -793,13 +942,14 @@ class QuestionDetailController extends ChangeNotifier
   @override
   void dispose() {
     if (_disposed) return;
+    _captureTestTime(_currentPage);
     _disposed = true;
     WidgetsBinding.instance.removeObserver(this);
     _answerWatch.stop();
     if (_mode == 2) {
       _testStopwatch.stop();
       _testTicker?.cancel();
-      _saveTestElapsed(testElapsed.inMilliseconds);
+      trackLocalWrite(_saveTestElapsed(testElapsed.inMilliseconds));
     } else {
       _testTicker?.cancel();
     }

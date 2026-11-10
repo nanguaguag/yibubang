@@ -377,28 +377,39 @@ Future<MapEntry<int, int>> gradePendingQuestions(
   List<UserQuestion> userQuestions, {
   String? bankId,
 }) async {
+  final db = await UserDBHelper().database;
+  final timeRows = await db.query('QuestionTestTime');
+  final times = {
+    for (final row in timeRows)
+      row['question_id'] as String: row['duration_ms'] as int,
+  };
   int graded = 0;
   int correct = 0;
   for (int i = 0; i < questions.length && i < userQuestions.length; i++) {
-    final UserQuestion uq = userQuestions[i];
+    final UserQuestion uq = UserQuestion.fromMap(userQuestions[i].toMap());
     if (uq.status != 4) continue;
     final Question q = questions[i];
     final String ans = getLastAnswer(uq.userAnswer);
     if (q.isSubjective) {
-      uq.status =
-          (ans == '已掌握' || ans == '正确' || ans == '1' || uq.status == 1)
-              ? 1
-              : 2;
+      uq.status = (ans == '已掌握' || ans == '正确' || ans == '1' || uq.status == 1)
+          ? 1
+          : 2;
     } else {
       final String correctAns = q.answer ?? '';
       uq.status =
           (correctAns.isNotEmpty && sortString(ans) == sortString(correctAns))
-              ? 1
-              : 2;
+          ? 1
+          : 2;
     }
     if (uq.status == 1) correct++;
     graded++;
-    await updateQuestion(uq, q, durationMs: 0, bankId: bankId);
+    await updateQuestion(uq, q, durationMs: times[uq.id] ?? 0, bankId: bankId);
+    userQuestions[i].status = uq.status;
+    await db.delete(
+      'QuestionTestTime',
+      where: 'question_id=?',
+      whereArgs: [uq.id],
+    );
   }
   return MapEntry(graded, correct);
 }
@@ -578,90 +589,93 @@ Future<void> updateQuestion(
     final shouldUpdateSubject = updatedSubjects.add('$identityId|$subjectId');
     if (shouldUpdateSubject && (deltaCorrect != 0 || deltaIncorrect != 0)) {
       // 2.1 新增作答：确保行存在后原子累加（兼容 SQLite < 3.24）
-      batch.rawInsert('''
+      batch.rawInsert(
+        '''
         INSERT OR IGNORE INTO IdentitySubject(bank_id, identity_id, subject_id, correct, incorrect, selected)
         VALUES(?, ?, ?, 0, 0, 0);
-      ''', [
-        resolvedBankId,
-        identityId,
-        subjectId,
-      ]);
-      batch.rawUpdate('''
+      ''',
+        [resolvedBankId, identityId, subjectId],
+      );
+      batch.rawUpdate(
+        '''
         UPDATE IdentitySubject
         SET
           correct   = correct + ?,
           incorrect = incorrect + ?
         WHERE bank_id = ? AND identity_id = ? AND subject_id = ?;
-      ''', [
-        deltaCorrect,
-        deltaIncorrect,
-        resolvedBankId,
-        identityId,
-        subjectId,
-      ]);
+      ''',
+        [deltaCorrect, deltaIncorrect, resolvedBankId, identityId, subjectId],
+      );
     } else if (shouldUpdateSubject && uq.status == 0) {
       // 2.2 撤回作答：只 UPDATE（避免“撤回但记录不存在”导致插入奇怪数据）
       // 并且把结果截断到 >=0，防止撤回过头出现负数
-      batch.rawUpdate('''
+      batch.rawUpdate(
+        '''
         UPDATE IdentitySubject
         SET
           correct   = CASE WHEN correct + ? < 0 THEN 0 ELSE correct + ? END,
           incorrect = CASE WHEN incorrect + ? < 0 THEN 0 ELSE incorrect + ? END
         WHERE bank_id = ? AND identity_id = ? AND subject_id = ?;
-      ''', [
-        deltaCorrect,
-        deltaCorrect,
-        deltaIncorrect,
-        deltaIncorrect,
-        resolvedBankId,
-        identityId,
-        subjectId,
-      ]);
+      ''',
+        [
+          deltaCorrect,
+          deltaCorrect,
+          deltaIncorrect,
+          deltaIncorrect,
+          resolvedBankId,
+          identityId,
+          subjectId,
+        ],
+      );
     }
 
     // 2.2 IdentityChapter 的原子累加（兼容 SQLite < 3.24）
     if (deltaCorrect != 0 || deltaIncorrect != 0) {
-      batch.rawInsert('''
+      batch.rawInsert(
+        '''
         INSERT OR IGNORE INTO IdentityChapter(bank_id, identity_id, subject_id, chapter_id, correct, incorrect)
         VALUES(?, ?, ?, ?, 0, 0);
-      ''', [
-        resolvedBankId,
-        identityId,
-        subjectId,
-        chapterId,
-      ]);
-      batch.rawUpdate('''
+      ''',
+        [resolvedBankId, identityId, subjectId, chapterId],
+      );
+      batch.rawUpdate(
+        '''
         UPDATE IdentityChapter
         SET
           correct   = correct + ?,
           incorrect = incorrect + ?
         WHERE bank_id = ? AND identity_id = ? AND subject_id = ? AND chapter_id = ?;
-      ''', [
-        deltaCorrect,
-        deltaIncorrect,
-        resolvedBankId,
-        identityId,
-        subjectId,
-        chapterId,
-      ]);
+      ''',
+        [
+          deltaCorrect,
+          deltaIncorrect,
+          resolvedBankId,
+          identityId,
+          subjectId,
+          chapterId,
+        ],
+      );
     } else if (uq.status == 0) {
       // 撤回作答：只 UPDATE，且截断到 >=0，避免负数
-      batch.rawUpdate('''
+      batch.rawUpdate(
+        '''
         UPDATE IdentityChapter
         SET
           correct   = CASE WHEN correct + ? < 0 THEN 0 ELSE correct + ? END,
           incorrect = CASE WHEN incorrect + ? < 0 THEN 0 ELSE incorrect + ? END
         WHERE bank_id = ? AND identity_id = ? AND subject_id = ? AND chapter_id = ?;
-      ''', [
-        deltaCorrect,
-        deltaCorrect,
-        deltaIncorrect,
-        deltaIncorrect,
-        resolvedBankId,
-        identityId,
-        subjectId,
-        chapterId,
-      ]);
+      ''',
+        [
+          deltaCorrect,
+          deltaCorrect,
+          deltaIncorrect,
+          deltaIncorrect,
+          resolvedBankId,
+          identityId,
+          subjectId,
+          chapterId,
+        ],
+      );
     }
   }
 
@@ -670,11 +684,7 @@ Future<void> updateQuestion(
   uq.updatedAt = nowMs;
   batch.update(
     'Question',
-    {
-      'status': uq.status,
-      'user_answer': uq.userAnswer,
-      'updated_at': nowMs,
-    },
+    {'status': uq.status, 'user_answer': uq.userAnswer, 'updated_at': nowMs},
     where: 'id = ?',
     whereArgs: [uq.id],
   );
@@ -699,19 +709,19 @@ Future<void> updateQuestion(
   // 3. UserDB Activity 表中插入记录
   final int isCorrect = 2 - uq.status; // 1 -> 1, 2 -> 0
   // 只有在真正作答（status 1/2）时才把时长计入统计；撤题/测试模式记为 0。
-  final int recordedDuration =
-      (uq.status == 1 || uq.status == 2) ? durationMs : 0;
+  final int recordedDuration = (uq.status == 1 || uq.status == 2)
+      ? durationMs
+      : 0;
   final int recordedDurationSec = (recordedDuration / 1000).round();
   final resolvedAppId = (q.nativeAppId?.isNotEmpty == true)
       ? q.nativeAppId!
       : (q.appId?.isNotEmpty == true ? q.appId! : '12');
 
-  batch.insert(
-    'Activities',
-    {
-      'id': generateSimpleId(),
-      'title': 'NewAnswer',
-      'description': '''{
+  batch.insert('Activities', {
+    'id': generateSimpleId(),
+    'title': 'NewAnswer',
+    'description':
+        '''{
         "paper_id": "0",
         "identity_id": "${resolvedIdentityId ?? q.identityId ?? ''}",
         "chapter_id": "${resolvedChapterId ?? q.chapterId ?? ''}",
@@ -725,29 +735,30 @@ Future<void> updateQuestion(
         "duration": "$recordedDurationSec",
         "subject_id": "${resolvedSubjectId ?? q.chapterParentId ?? ''}"
       }''',
-      'bank_id': resolvedBankId,
-      'question_id': q.id,
-      'identity_id': resolvedIdentityId ?? q.identityId,
-      'subject_id': resolvedSubjectId ?? q.chapterParentId,
-      'chapter_id': resolvedChapterId ?? q.chapterId,
-      'is_right': '$isCorrect',
-      'duration': recordedDuration,
-      'timestamp': DateTime.now().millisecondsSinceEpoch,
-    },
-  );
+    'bank_id': resolvedBankId,
+    'question_id': q.id,
+    'identity_id': resolvedIdentityId ?? q.identityId,
+    'subject_id': resolvedSubjectId ?? q.chapterParentId,
+    'chapter_id': resolvedChapterId ?? q.chapterId,
+    'is_right': '$isCorrect',
+    'duration': recordedDuration,
+    'timestamp': DateTime.now().millisecondsSinceEpoch,
+  });
   // 一次性提交
   await batch.commit(noResult: true);
   notifyAnswersChanged();
 
   if (uq.status == 1 || uq.status == 2) {
-    unawaited(YkbSyncService.instance.syncAnswer(
-      question: q,
-      userQuestion: uq,
-      durationMs: durationMs,
-      subjectId: resolvedSubjectId,
-      chapterId: resolvedChapterId,
-      identityId: resolvedIdentityId,
-      chapterParentId: q.chapterParentId,
-    ));
+    unawaited(
+      YkbSyncService.instance.syncAnswer(
+        question: q,
+        userQuestion: uq,
+        durationMs: durationMs,
+        subjectId: resolvedSubjectId,
+        chapterId: resolvedChapterId,
+        identityId: resolvedIdentityId,
+        chapterParentId: q.chapterParentId,
+      ),
+    );
   }
 }

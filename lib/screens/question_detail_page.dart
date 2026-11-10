@@ -72,7 +72,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
   Chapter? _prevChapter;
   Chapter? _nextChapter;
   bool _isSwitchingChapter = false;
-  bool _isLeaving=false;
+  bool _isLeaving = false;
   double _transitionDirection = 1.0;
   Key _chapterKey = UniqueKey();
 
@@ -84,8 +84,9 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
       ValueNotifier<_OverscrollState>(const _OverscrollState());
 
   /// 章节切换顶部浮现 Badge 提示
-  final ValueNotifier<String?> _switchBannerNotifier =
-      ValueNotifier<String?>(null);
+  final ValueNotifier<String?> _switchBannerNotifier = ValueNotifier<String?>(
+    null,
+  );
   Timer? _switchBannerTimer;
 
   bool _hasTriggeredHaptic = false;
@@ -159,14 +160,18 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
       _nextChapter = null;
       return;
     }
-    final index = _siblingChapters.indexWhere((c) => c.id == _currentChapter.id);
+    final index = _siblingChapters.indexWhere(
+      (c) => c.id == _currentChapter.id,
+    );
     if (index == -1) {
       _prevChapter = null;
       _nextChapter = null;
       return;
     }
     _prevChapter = index > 0 ? _siblingChapters[index - 1] : null;
-    _nextChapter = index < _siblingChapters.length - 1 ? _siblingChapters[index + 1] : null;
+    _nextChapter = index < _siblingChapters.length - 1
+        ? _siblingChapters[index + 1]
+        : null;
   }
 
   /// 后台极速静默预取相邻章节题目，切换时 0 延迟
@@ -183,7 +188,9 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
 
   /// 监听屏幕抬手或触控板释放事件（在松手的瞬间立即触发切章）
   void _handleTriggerRelease() {
-    if (_canTriggerChapter && _targetChapterToTrigger != null && !_isSwitchingChapter) {
+    if (_canTriggerChapter &&
+        _targetChapterToTrigger != null &&
+        !_isSwitchingChapter) {
       final target = _targetChapterToTrigger!;
       final toFirst = _isTriggeringNext;
       _canTriggerChapter = false;
@@ -206,7 +213,8 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     if (notification.metrics.axis != Axis.horizontal) return false;
     if (_isSwitchingChapter) return false;
 
-    if (notification is UserScrollNotification && notification.direction == ScrollDirection.idle) {
+    if (notification is UserScrollNotification &&
+        notification.direction == ScrollDirection.idle) {
       _handleTriggerRelease();
     }
 
@@ -266,110 +274,79 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     Chapter targetChapter, {
     required bool toFirstQuestion,
   }) async {
-    if (_isSwitchingChapter) return;
+    if (_isSwitchingChapter || _isLeaving) return;
     _isSwitchingChapter = true;
-
-    // 保护：测试模式下弹窗确认
-    if (_controller.mode == 2) {
-      final confirmed = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('退出测试并切换章节？'),
-          content: Text('当前处于测试模式中，切换至《${targetChapter.name}》将结束本次测试，是否继续？'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('切换章节'),
-            ),
-          ],
-        ),
-      );
-      if (confirmed != true) {
-        _isSwitchingChapter = false;
+    final oldController = _controller;
+    QuestionDetailController? next;
+    var installed = false;
+    try {
+      if (oldController.mode == 2) {
+        final confirmed = await oldController.confirmLeaveTest(context);
+        if (confirmed != true || !mounted || _isLeaving) return;
+      }
+      await oldController.finishTestAndFlush();
+      if (!mounted || _isLeaving) return;
+      final newQuestions =
+          _prefetchedQuestions[targetChapter.id] ??
+          await getQuestionsFromChapter(targetChapter);
+      if (newQuestions.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('《${targetChapter.name}》暂无可做题目')),
+          );
+        }
         return;
       }
-    }
-
-    // 获取目标题目
-    List<Question> newQuestions = _prefetchedQuestions[targetChapter.id] ?? [];
-    List<UserQuestion> newUserQuestions = [];
-    if (newQuestions.isEmpty) {
-      try {
-        newQuestions = await getQuestionsFromChapter(targetChapter);
-        newUserQuestions = await getUserQuestions(Future.value(newQuestions));
-      } catch (e) {
-        debugPrint('[QuestionDetailPage] 切换章节加载题目失败：$e');
-      }
-    }
-
-    if(newQuestions.isNotEmpty) {
-      await _controller.flushPendingWrites();
-      newUserQuestions=await getUserQuestions(Future.value(newQuestions));
-    }
-    if (newQuestions.isEmpty) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('《${targetChapter.name}》暂无可做题目'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-      _isSwitchingChapter = false;
-      return;
-    }
-
-    final targetIndex = toFirstQuestion ? 0 : newQuestions.length - 1;
-
-    // 记录章节进度
-    try {
+      final newUserQuestions = await getUserQuestions(
+        Future.value(newQuestions),
+      );
+      if (!mounted || _isLeaving) return;
+      final index = toFirstQuestion ? 0 : newQuestions.length - 1;
+      next = QuestionDetailController(
+        chapter: targetChapter,
+        questions: newQuestions,
+        userQuestions: newUserQuestions,
+        initialIndex: index,
+        bankId: widget.bankId,
+        defaultShowCutContent: widget.defaultShowCutContent,
+      );
+      await next.init(persistPosition: false);
+      if (!mounted || _isLeaving) return;
+      setState(() {
+        _currentChapter = targetChapter;
+        _questions = newQuestions;
+        _userQuestions = newUserQuestions;
+        _controller = next!;
+        _transitionDirection = toFirstQuestion ? 1 : -1;
+        _chapterKey = UniqueKey();
+        _updatePrevNextChapters();
+      });
+      installed = true;
+      oldController.dispose();
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('lastChapterId', targetChapter.id);
-      await prefs.setString('lastSubjectId', targetChapter.subjectId);
-      await prefs.setInt('lastQIndex', targetIndex);
-    } catch (_) {}
-
-    // 销毁旧控制器并构建新控制器
-    _controller.dispose();
-    final newController = QuestionDetailController(
-      chapter: targetChapter,
-      questions: newQuestions,
-      userQuestions: newUserQuestions,
-      initialIndex: targetIndex,
-      bankId: widget.bankId,
-      defaultShowCutContent: widget.defaultShowCutContent,
-    );
-    await newController.init();
-
-    if (!mounted) {
+      if (mounted) {
+        await prefs.setString('lastChapterId', targetChapter.id);
+        await prefs.setString('lastSubjectId', targetChapter.subjectId);
+        await prefs.setInt('lastQIndex', index);
+        _prefetchAdjacentChapters();
+        _showChapterSwitchBadge(targetChapter, index + 1, newQuestions.length);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('切换章节失败：$e')));
+      }
+    } finally {
+      if (!installed) next?.dispose();
       _isSwitchingChapter = false;
-      return;
     }
-
-    setState(() {
-      _currentChapter = targetChapter;
-      _questions = newQuestions;
-      _userQuestions = newUserQuestions;
-      _controller = newController;
-      _transitionDirection = toFirstQuestion ? 1.0 : -1.0;
-      _chapterKey = UniqueKey();
-      _updatePrevNextChapters();
-    });
-
-    _prefetchAdjacentChapters();
-    _isSwitchingChapter = false;
-
-    // 提示 Banner 浮现
-    _showChapterSwitchBadge(targetChapter, targetIndex + 1, newQuestions.length);
   }
 
   void _showChapterSwitchBadge(Chapter chapter, int currentIndex, int total) {
     _switchBannerTimer?.cancel();
-    _switchBannerNotifier.value = '已进入：${chapter.name}（第 $currentIndex / $total 题）';
+    _switchBannerNotifier.value =
+        '已进入：${chapter.name}（第 $currentIndex / $total 题）';
     _switchBannerTimer = Timer(const Duration(milliseconds: 2200), () {
       if (mounted) {
         _switchBannerNotifier.value = null;
@@ -379,131 +356,157 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
 
   @override
   Widget build(BuildContext context) {
-    return PopScope<Object?>(canPop:false,onPopInvokedWithResult:(didPop,result) async {
-      if(didPop || _isLeaving) return;
-      _isLeaving=true;
-      await _controller.flushPendingWrites();
-      if(context.mounted) Navigator.of(context).pop(_currentChapter);
-    },child:ValueListenableBuilder<double>(
-      valueListenable: _controller.fontScaleNotifier,
-      builder: (context, fontScale, child) {
-        return MediaQuery(
-          data: MediaQuery.of(
-            context,
-          ).copyWith(textScaler: TextScaler.linear(fontScale)),
-          child: child!,
-        );
+    return PopScope<Object?>(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop || _isLeaving) return;
+        _isLeaving = true;
+        final controller = _controller;
+        var popped = false;
+        try {
+          if (controller.mode == 2) {
+            final confirmed = await controller.confirmLeaveTest(context);
+            if (confirmed != true || !context.mounted) return;
+          }
+          await controller.finishTestAndFlush();
+          if (context.mounted) {
+            Navigator.of(context).pop(_currentChapter);
+            popped = true;
+          }
+        } catch (e) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(SnackBar(content: Text('保存或交卷失败：$e')));
+          }
+        } finally {
+          if (!popped) _isLeaving = false;
+        }
       },
-      child: Focus(
-        focusNode: _shortcutFocusNode,
-        autofocus: true,
-        onKeyEvent: _handleShortcutKeyEvent,
-        child: Scaffold(
-          appBar: AppBar(
-            title: Text(_currentChapter.name, overflow: TextOverflow.ellipsis),
-            centerTitle: true,
-            actions: <Widget>[
-              _buildCutQuestionBtn(),
-              _buildCopyBtn(),
-              _buildCollectionBtn(),
-              _buildModeMenu(),
-            ],
-          ),
-          body: Column(
-            children: [
-              ValueListenableBuilder<int>(
-                valueListenable: _controller.modeNotifier,
-                builder: (context, mode, _) {
-                  if (mode == 2) {
-                    return QuestionTestInfoBar(controller: _controller);
-                  }
-                  return const SizedBox.shrink();
-                },
+      child: ValueListenableBuilder<double>(
+        valueListenable: _controller.fontScaleNotifier,
+        builder: (context, fontScale, child) {
+          return MediaQuery(
+            data: MediaQuery.of(
+              context,
+            ).copyWith(textScaler: TextScaler.linear(fontScale)),
+            child: child!,
+          );
+        },
+        child: Focus(
+          focusNode: _shortcutFocusNode,
+          autofocus: true,
+          onKeyEvent: _handleShortcutKeyEvent,
+          child: Scaffold(
+            appBar: AppBar(
+              title: Text(
+                _currentChapter.name,
+                overflow: TextOverflow.ellipsis,
               ),
-              Expanded(
-                child: ScrollConfiguration(
-                  behavior: MyCustomScrollBehavior(),
-                  child: Stack(
-                    children: [
-                      Listener(
-                        behavior: HitTestBehavior.translucent,
-                        onPointerUp: (_) => _handleTriggerRelease(),
-                        onPointerPanZoomEnd: (_) => _handleTriggerRelease(),
-                        onPointerCancel: _handlePointerCancel,
-                        child: NotificationListener<ScrollNotification>(
-                          onNotification: _handleScrollNotification,
-                          child: AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 320),
-                            switchInCurve: Curves.easeOutCubic,
-                            switchOutCurve: Curves.easeInCubic,
-                            transitionBuilder: (child, animation) {
-                              final inOffset = Tween<Offset>(
-                                begin: Offset(_transitionDirection, 0.0),
-                                end: Offset.zero,
-                              ).animate(animation);
-                              return SlideTransition(
-                                position: inOffset,
-                                child: child,
-                              );
-                            },
-                            child: KeyedSubtree(
-                              key: _chapterKey,
-                              child: PageView.builder(
-                                controller: _controller.pageController,
-                                onPageChanged: _controller.onPageChanged,
-                                itemCount: _questions.length,
-                                itemBuilder: (context, index) {
-                                  return QuestionPageItem(
-                                    key: ValueKey(_questions[index].id),
-                                    question: _questions[index],
-                                    userQuestion: _userQuestions[index],
-                                    index: index,
-                                    controller: _controller,
-                                  );
-                                },
+              centerTitle: true,
+              actions: <Widget>[
+                _buildCutQuestionBtn(),
+                _buildCopyBtn(),
+                _buildCollectionBtn(),
+                _buildModeMenu(),
+              ],
+            ),
+            body: Column(
+              children: [
+                ValueListenableBuilder<int>(
+                  valueListenable: _controller.modeNotifier,
+                  builder: (context, mode, _) {
+                    if (mode == 2) {
+                      return QuestionTestInfoBar(controller: _controller);
+                    }
+                    return const SizedBox.shrink();
+                  },
+                ),
+                Expanded(
+                  child: ScrollConfiguration(
+                    behavior: MyCustomScrollBehavior(),
+                    child: Stack(
+                      children: [
+                        Listener(
+                          behavior: HitTestBehavior.translucent,
+                          onPointerUp: (_) => _handleTriggerRelease(),
+                          onPointerPanZoomEnd: (_) => _handleTriggerRelease(),
+                          onPointerCancel: _handlePointerCancel,
+                          child: NotificationListener<ScrollNotification>(
+                            onNotification: _handleScrollNotification,
+                            child: AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 320),
+                              switchInCurve: Curves.easeOutCubic,
+                              switchOutCurve: Curves.easeInCubic,
+                              transitionBuilder: (child, animation) {
+                                final inOffset = Tween<Offset>(
+                                  begin: Offset(_transitionDirection, 0.0),
+                                  end: Offset.zero,
+                                ).animate(animation);
+                                return SlideTransition(
+                                  position: inOffset,
+                                  child: child,
+                                );
+                              },
+                              child: KeyedSubtree(
+                                key: _chapterKey,
+                                child: PageView.builder(
+                                  controller: _controller.pageController,
+                                  onPageChanged: _controller.onPageChanged,
+                                  itemCount: _questions.length,
+                                  itemBuilder: (context, index) {
+                                    return QuestionPageItem(
+                                      key: ValueKey(_questions[index].id),
+                                      question: _questions[index],
+                                      userQuestion: _userQuestions[index],
+                                      index: index,
+                                      controller: _controller,
+                                    );
+                                  },
+                                ),
                               ),
                             ),
                           ),
                         ),
-                      ),
 
-                      // 跨章节滑动边缘指示器
-                      ValueListenableBuilder<_OverscrollState>(
-                        valueListenable: _overscrollNotifier,
-                        builder: (context, state, _) {
-                          return ChapterCrossIndicator(
-                            isNext: state.isNext,
-                            overscrollDistance: state.distance,
-                            threshold: _overscrollThreshold,
-                            targetChapter: state.targetChapter,
-                          );
-                        },
-                      ),
+                        // 跨章节滑动边缘指示器
+                        ValueListenableBuilder<_OverscrollState>(
+                          valueListenable: _overscrollNotifier,
+                          builder: (context, state, _) {
+                            return ChapterCrossIndicator(
+                              isNext: state.isNext,
+                              overscrollDistance: state.distance,
+                              threshold: _overscrollThreshold,
+                              targetChapter: state.targetChapter,
+                            );
+                          },
+                        ),
 
-                      // 章节切换成功顶部悬浮通知
-                      _buildFloatingSwitchBanner(),
+                        // 章节切换成功顶部悬浮通知
+                        _buildFloatingSwitchBanner(),
 
-                      _buildDesktopNavigation(),
-                    ],
+                        _buildDesktopNavigation(),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-              ValueListenableBuilder<int>(
-                valueListenable: _controller.modeNotifier,
-                builder: (context, mode, _) {
-                  if (mode == 2) {
-                    return QuestionTestSubmitBar(
-                      onSubmit: () => _controller.submitTest(context),
-                    );
-                  }
-                  return const SizedBox.shrink();
-                },
-              ),
-            ],
+                ValueListenableBuilder<int>(
+                  valueListenable: _controller.modeNotifier,
+                  builder: (context, mode, _) {
+                    if (mode == 2) {
+                      return QuestionTestSubmitBar(
+                        onSubmit: () => _controller.submitTest(context),
+                      );
+                    }
+                    return const SizedBox.shrink();
+                  },
+                ),
+              ],
+            ),
           ),
         ),
       ),
-    ));
+    );
   }
 
   /// 章节切换顶部浮现小徽章
@@ -524,10 +527,16 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
               transitionBuilder: (child, anim) => FadeTransition(
                 opacity: anim,
                 child: SlideTransition(
-                  position: Tween<Offset>(
-                    begin: const Offset(0.0, -0.4),
-                    end: Offset.zero,
-                  ).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutBack)),
+                  position:
+                      Tween<Offset>(
+                        begin: const Offset(0.0, -0.4),
+                        end: Offset.zero,
+                      ).animate(
+                        CurvedAnimation(
+                          parent: anim,
+                          curve: Curves.easeOutBack,
+                        ),
+                      ),
                   child: child,
                 ),
               ),
@@ -539,11 +548,18 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
                       borderRadius: BorderRadius.circular(24),
                       color: scheme.primaryContainer,
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.auto_stories_rounded, size: 18, color: scheme.primary),
+                            Icon(
+                              Icons.auto_stories_rounded,
+                              size: 18,
+                              color: scheme.primary,
+                            ),
                             const SizedBox(width: 8),
                             Flexible(
                               child: Text(
@@ -843,7 +859,10 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
                               if (!isAtFirst) {
                                 _controller.previousPage();
                               } else if (_prevChapter != null) {
-                                _switchToChapter(_prevChapter!, toFirstQuestion: false);
+                                _switchToChapter(
+                                  _prevChapter!,
+                                  toFirstQuestion: false,
+                                );
                               }
                             },
                       style: ElevatedButton.styleFrom(
@@ -877,7 +896,10 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
                               if (!isAtLast) {
                                 _controller.nextPage();
                               } else if (_nextChapter != null) {
-                                _switchToChapter(_nextChapter!, toFirstQuestion: true);
+                                _switchToChapter(
+                                  _nextChapter!,
+                                  toFirstQuestion: true,
+                                );
                               }
                             },
                       style: ElevatedButton.styleFrom(

@@ -54,8 +54,12 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
   static const Duration _dwellDuration = Duration(milliseconds: 500);
 
   final ValueNotifier<ChapterCrossOverscrollState> _overscrollNotifier =
-      ValueNotifier<ChapterCrossOverscrollState>(const ChapterCrossOverscrollState());
-  final ValueNotifier<String?> _switchBannerNotifier = ValueNotifier<String?>(null);
+      ValueNotifier<ChapterCrossOverscrollState>(
+        const ChapterCrossOverscrollState(),
+      );
+  final ValueNotifier<String?> _switchBannerNotifier = ValueNotifier<String?>(
+    null,
+  );
   Timer? _switchBannerTimer;
 
   // 筛选选项
@@ -100,7 +104,9 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
       final idx = siblings.indexWhere((c) => c.id == _currentChapter.id);
       setState(() {
         _prevChapter = (idx > 0) ? siblings[idx - 1] : null;
-        _nextChapter = (idx >= 0 && idx < siblings.length - 1) ? siblings[idx + 1] : null;
+        _nextChapter = (idx >= 0 && idx < siblings.length - 1)
+            ? siblings[idx + 1]
+            : null;
       });
     } catch (e) {
       debugPrint('[QuestionGridPage] 获取相邻章节失败: $e');
@@ -190,7 +196,8 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
             _overscrollNotifier.value = const ChapterCrossOverscrollState();
           }
           // 用户主动滑回深层内容区域时取消触发态
-          if (metrics.pixels > 30.0 && metrics.pixels < metrics.maxScrollExtent - 30.0) {
+          if (metrics.pixels > 30.0 &&
+              metrics.pixels < metrics.maxScrollExtent - 30.0) {
             _hasTriggeredHaptic = false;
           }
         }
@@ -201,7 +208,10 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
     return false;
   }
 
-  Future<void> _switchToChapter(Chapter targetChapter, {required bool isNext}) async {
+  Future<void> _switchToChapter(
+    Chapter targetChapter, {
+    required bool isNext,
+  }) async {
     if (_isSwitchingChapter) return;
     _isSwitchingChapter = true;
 
@@ -344,8 +354,9 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
     // 4️⃣ 取交集
     final Set<String> commonIds = userIds.intersection(questionIds);
     // 5️⃣ 双向同步过滤
-    userQuestions =
-        userQuestions.where((uq) => commonIds.contains(uq.id)).toList();
+    userQuestions = userQuestions
+        .where((uq) => commonIds.contains(uq.id))
+        .toList();
     questions = questions.where((q) => commonIds.contains(q.id)).toList();
 
     return MapEntry(questions, userQuestions);
@@ -357,8 +368,14 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
     // 获取设置数据并更新状态
     setState(() {
       cutType = (prefs.getInt('cutType') ?? 0).clamp(0, cutTypes.length - 1);
-      questionType = (prefs.getInt('questionType') ?? 0).clamp(0, questionTypes.length - 1);
-      category = (prefs.getInt('category') ?? 0).clamp(0, categories.length - 1);
+      questionType = (prefs.getInt('questionType') ?? 0).clamp(
+        0,
+        questionTypes.length - 1,
+      );
+      category = (prefs.getInt('category') ?? 0).clamp(
+        0,
+        categories.length - 1,
+      );
       mode = (prefs.getInt('mode') ?? 0).clamp(0, modesList.length - 1);
     });
   }
@@ -418,19 +435,26 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
       final bool? confirmed = await _confirmLeaveTest();
       if (confirmed != true || !mounted) return;
     }
-    setState(() {
-      mode = newMode;
-    });
-    await saveSettings();
-    if (!leavingTest) return;
-    // 放弃测试：清零累计用时并判分遗留待提交题
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('testElapsedMs', 0);
-    final List<Question> questions = await allQuestions;
-    final List<UserQuestion> userQuestions = await allUserQuestions;
-    await gradePendingQuestions(questions, userQuestions);
+    if (leavingTest) {
+      try {
+        final questions = await allQuestions;
+        final userQuestions = await allUserQuestions;
+        await gradePendingQuestions(questions, userQuestions);
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setInt('testElapsedMs', 0);
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('交卷失败：$e')));
+        }
+        return;
+      }
+    }
     if (!mounted) return;
-    _refreshPage();
+    setState(() => mode = newMode);
+    await saveSettings();
+    if (leavingTest && mounted) _refreshPage();
   }
 
   /// 切换离开测试模式前的确认弹窗
@@ -503,10 +527,12 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
                 final String? appId = questions.isNotEmpty
                     ? (questions.first.nativeAppId ?? questions.first.appId)
                     : null;
-                unawaited(YkbSyncService.instance.syncRedoChapter(
-                  chapter: _currentChapter,
-                  appId: appId,
-                ));
+                unawaited(
+                  YkbSyncService.instance.syncRedoChapter(
+                    chapter: _currentChapter,
+                    appId: appId,
+                  ),
+                );
                 if (CloudSyncService.instance.isConfigured &&
                     CloudSyncService.instance.autoSync) {
                   unawaited(CloudSyncService.instance.sync());
@@ -713,7 +739,8 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
                   ),
                 );
               }
-              final stats = snapshot.data ??
+              final stats =
+                  snapshot.data ??
                   const PeriodStats(
                     totalDuration: Duration.zero,
                     answeredCount: 0,
@@ -756,10 +783,14 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
     double buttonSize,
   ) {
     final int safeCount = math.max(1, crossAxisCount);
-    final double safeSpacing = safeCount > 1 ? math.max(0.0, crossSpacing) : 0.0;
+    final double safeSpacing = safeCount > 1
+        ? math.max(0.0, crossSpacing)
+        : 0.0;
     return GridView.builder(
       controller: _scrollController,
-      physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+      physics: const BouncingScrollPhysics(
+        parent: AlwaysScrollableScrollPhysics(),
+      ),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: safeCount,
         childAspectRatio: 1.0, // 设置 item 宽高比例,
@@ -834,15 +865,18 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
                 )
               : ElevatedButton.styleFrom(
                   padding: EdgeInsets.zero,
-                  foregroundColor:
-                      questionState == 0 ? Colors.black : Colors.white,
+                  foregroundColor: questionState == 0
+                      ? Colors.black
+                      : Colors.white,
                   backgroundColor: buttonColor,
                   minimumSize: Size(buttonSize, buttonSize),
                   shape: const RoundedRectangleBorder(
                     borderRadius: BorderRadius.all(Radius.circular(8)),
                   ),
                 ),
-          child: Text('${_chapterQuestionNumbers[questions[index].id] ?? index + 1}'),
+          child: Text(
+            '${_chapterQuestionNumbers[questions[index].id] ?? index + 1}',
+          ),
         );
       },
     );
@@ -894,11 +928,7 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
               ),
             ),
           ],
-          title: Wrap(
-            children: [
-              Text(_currentChapter.name),
-            ],
-          ),
+          title: Wrap(children: [Text(_currentChapter.name)]),
         ),
         endDrawer: FractionallySizedBox(
           widthFactor: 0.72, // 宽度占父容器的72%
@@ -1026,37 +1056,51 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
                       onNotification: _handleScrollNotification,
                       child: Padding(
                         padding: const EdgeInsets.all(16.0),
-                        child: FutureBuilder<MapEntry<List<Question>, List<UserQuestion>>>(
-                          future: _filter(allQuestions, allUserQuestions),
-                          builder: (context, snapshot) {
-                            if (snapshot.connectionState == ConnectionState.waiting) {
-                              return _buildLoadingIndicator();
-                            } else if (snapshot.hasError) {
-                              return _buildErrorMessage(snapshot.error);
-                            } else if (!snapshot.hasData || snapshot.data!.key.isEmpty) {
-                              return _buildEmptyMessage('在当前筛选条件下\n本章节中还没有题目哦~');
-                            } else {
-                              return LayoutBuilder(
-                                builder: (context, constraints) {
-                                  // 每个按钮的固定宽度和高度
-                                  const double btnSize = 52.0;
-                                  final double width = constraints.maxWidth;
-                                  final int count = math.max(1, ((width + 24) / (btnSize + 24)).floor());
-                                  final double crossSpacing = count > 1
-                                      ? math.max(0.0, (width - count * btnSize) / (count - 1))
-                                      : 0.0;
-                                  return _buildQuestionGrid(
-                                    snapshot.data!.key,
-                                    snapshot.data!.value,
-                                    count,
-                                    crossSpacing,
-                                    btnSize,
+                        child:
+                            FutureBuilder<
+                              MapEntry<List<Question>, List<UserQuestion>>
+                            >(
+                              future: _filter(allQuestions, allUserQuestions),
+                              builder: (context, snapshot) {
+                                if (snapshot.connectionState ==
+                                    ConnectionState.waiting) {
+                                  return _buildLoadingIndicator();
+                                } else if (snapshot.hasError) {
+                                  return _buildErrorMessage(snapshot.error);
+                                } else if (!snapshot.hasData ||
+                                    snapshot.data!.key.isEmpty) {
+                                  return _buildEmptyMessage(
+                                    '在当前筛选条件下\n本章节中还没有题目哦~',
                                   );
-                                },
-                              );
-                            }
-                          },
-                        ),
+                                } else {
+                                  return LayoutBuilder(
+                                    builder: (context, constraints) {
+                                      // 每个按钮的固定宽度和高度
+                                      const double btnSize = 52.0;
+                                      final double width = constraints.maxWidth;
+                                      final int count = math.max(
+                                        1,
+                                        ((width + 24) / (btnSize + 24)).floor(),
+                                      );
+                                      final double crossSpacing = count > 1
+                                          ? math.max(
+                                              0.0,
+                                              (width - count * btnSize) /
+                                                  (count - 1),
+                                            )
+                                          : 0.0;
+                                      return _buildQuestionGrid(
+                                        snapshot.data!.key,
+                                        snapshot.data!.value,
+                                        count,
+                                        crossSpacing,
+                                        btnSize,
+                                      );
+                                    },
+                                  );
+                                }
+                              },
+                            ),
                       ),
                     ),
                   ),
@@ -1105,10 +1149,16 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
               transitionBuilder: (child, anim) => FadeTransition(
                 opacity: anim,
                 child: SlideTransition(
-                  position: Tween<Offset>(
-                    begin: const Offset(0.0, -0.4),
-                    end: Offset.zero,
-                  ).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutBack)),
+                  position:
+                      Tween<Offset>(
+                        begin: const Offset(0.0, -0.4),
+                        end: Offset.zero,
+                      ).animate(
+                        CurvedAnimation(
+                          parent: anim,
+                          curve: Curves.easeOutBack,
+                        ),
+                      ),
                   child: child,
                 ),
               ),
@@ -1120,11 +1170,18 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
                       borderRadius: BorderRadius.circular(24),
                       color: scheme.primaryContainer,
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.auto_stories_rounded, size: 18, color: scheme.primary),
+                            Icon(
+                              Icons.auto_stories_rounded,
+                              size: 18,
+                              color: scheme.primary,
+                            ),
                             const SizedBox(width: 8),
                             Flexible(
                               child: Text(
@@ -1181,10 +1238,7 @@ class _StatItem extends StatelessWidget {
           const SizedBox(height: 2),
           Text(
             label,
-            style: TextStyle(
-              fontSize: 11,
-              color: scheme.onSurfaceVariant,
-            ),
+            style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
           ),
         ],
       ),

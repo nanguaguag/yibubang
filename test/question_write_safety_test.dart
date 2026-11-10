@@ -10,6 +10,7 @@ import 'package:yibubang/db/question_bank_manager.dart';
 import 'package:yibubang/models/chapter.dart';
 import 'package:yibubang/models/question.dart';
 import 'package:yibubang/screens/question_detail/question_detail_controller.dart';
+import 'package:yibubang/screens/question_detail_page.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -158,6 +159,176 @@ void main() {
     await flushing;
     expect(flushed, true);
     expect(c.lastSaveError, isA<StateError>());
+  });
+  test('测试交卷保存恢复用时并同时退出模式，重复调用不重复记账', () async {
+    await bank();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('mode', 2);
+    await db.insert('Question', {'id': '1', 'status': 4, 'user_answer': 'A'});
+    await db.insert('QuestionTestTime', {
+      'question_id': '1',
+      'duration_ms': 1234,
+    });
+    final user = uq()
+      ..userAnswer = 'A'
+      ..status = 4;
+    final c = controller(user);
+    await c.init();
+    final results = await Future.wait([
+      c.finishTestAndFlush(),
+      c.finishTestAndFlush(),
+    ]);
+    expect(results.first.key, 1);
+    expect(results.last.key, 1);
+    expect(c.mode, 0);
+    expect(prefs.getInt('mode'), 0);
+    expect(
+      (await db.query('Activities')).single['duration'] as int,
+      greaterThanOrEqualTo(1234),
+    );
+    expect((await db.query('Question')).single['status'], 1);
+    expect(await db.query('QuestionTestTime'), isEmpty);
+    c.dispose();
+    await c.flushPendingWrites();
+  });
+  test('交卷失败保留待提交状态和用时，重试成功后才退出', () async {
+    await bank();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('mode', 2);
+    await db.insert('Question', {'id': '1', 'status': 4, 'user_answer': 'A'});
+    await db.insert('QuestionTestTime', {
+      'question_id': '1',
+      'duration_ms': 4321,
+    });
+    await db.execute(
+      "CREATE TRIGGER fail_grade BEFORE INSERT ON Activities BEGIN SELECT RAISE(ABORT,'fail'); END",
+    );
+    final user = uq()
+      ..userAnswer = 'A'
+      ..status = 4;
+    final c = controller(user);
+    await c.init();
+    await expectLater(
+      c.finishTestAndFlush(),
+      throwsA(isA<DatabaseException>()),
+    );
+    expect(c.mode, 2);
+    expect(user.status, 4);
+    expect((await db.query('Question')).single['status'], 4);
+    expect(
+      (await db.query('QuestionTestTime')).single['duration_ms'] as int,
+      greaterThanOrEqualTo(4321),
+    );
+    await db.execute('DROP TRIGGER fail_grade');
+    await c.finishTestAndFlush();
+    expect(c.mode, 0);
+    expect((await db.query('Activities')).length, 1);
+    c.dispose();
+    await c.flushPendingWrites();
+  });
+  test('初始化期间销毁控制器不会使用已释放的notifier', () async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('mode', 2);
+    final c = controller(uq());
+    final init = c.init(persistPosition: false);
+    c.dispose();
+    await init;
+    expect(c.mode, 0);
+  });
+  test('待交选答保存失败时不提前退出，恢复磁盘后交卷可重试', () async {
+    await bank();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('mode', 2);
+    final user = uq()
+      ..userAnswer = 'A'
+      ..status = 4;
+    final c = controller(user);
+    await c.init();
+    await db.execute(
+      "CREATE TRIGGER fail_selection BEFORE UPDATE ON Question BEGIN SELECT RAISE(ABORT,'disk'); END",
+    );
+    c.savePendingSelection(q, user);
+    await expectLater(
+      c.finishTestAndFlush(),
+      throwsA(isA<DatabaseException>()),
+    );
+    expect(c.mode, 2);
+    expect(await db.query('Activities'), isEmpty);
+    await db.execute('DROP TRIGGER fail_selection');
+    await c.finishTestAndFlush();
+    expect(c.mode, 0);
+    expect((await db.query('Activities')).single['is_right'], '1');
+    c.dispose();
+    await c.flushPendingWrites();
+  });
+  testWidgets('返回取消保留测试，确认后交卷并冒泡当前章节结果', (tester) async {
+    late SharedPreferences prefs;
+    await tester.runAsync(() async {
+      await bank();
+      prefs = await SharedPreferences.getInstance();
+      await prefs.setInt('mode', 2);
+      await db.insert('Question', {'id': '1', 'status': 4, 'user_answer': 'A'});
+      await db.insert('QuestionTestTime', {
+        'question_id': '1',
+        'duration_ms': 500,
+      });
+    });
+    final nav = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorKey: nav,
+        home: const Scaffold(body: Text('home')),
+      ),
+    );
+    final chapter = Chapter(
+      id: 'c',
+      name: 'chapter',
+      subjectId: 's',
+      correct: 0,
+      incorrect: 0,
+      total: 1,
+    );
+    Object? returned;
+    nav.currentState!
+        .push(
+          MaterialPageRoute<Object?>(
+            builder: (_) => QuestionDetailPage(
+              chapter: chapter,
+              questions: [q],
+              userQuestions: [
+                uq()
+                  ..status = 4
+                  ..userAnswer = 'A',
+              ],
+              questionIndex: 0,
+              bankId: 'b',
+            ),
+          ),
+        )
+        .then((value) => returned = value);
+    await tester.pumpAndSettle();
+    await tester.runAsync(() => tester.tap(find.byType(BackButton)));
+    await tester.pumpAndSettle();
+    expect(find.text('退出测试模式'), findsOneWidget);
+    await tester.runAsync(() => tester.tap(find.text('取消')));
+    await tester.pumpAndSettle();
+    expect(returned, isNull);
+    expect(prefs.getInt('mode'), 2);
+    await tester.runAsync(() => tester.tap(find.byType(BackButton)));
+    await tester.pumpAndSettle();
+    await tester.runAsync(() => tester.tap(find.text('继续')));
+    for (var i = 0; i < 250 && returned == null; i++) {
+      await tester.pump(const Duration(milliseconds: 10));
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 5)),
+      );
+    }
+    expect(returned, isA<Chapter>());
+    expect((returned as Chapter).id, 'c');
+    expect(prefs.getInt('mode'), 0);
+    final rows = await tester.runAsync(() => db.query('Activities'));
+    expect(rows!.single['duration'] as int, greaterThanOrEqualTo(500));
+    await tester.pumpAndSettle();
   });
   testWidgets('后台停留与系统时钟跳变不会污染毫秒时长', (tester) async {
     await tester.runAsync(() async {

@@ -284,7 +284,7 @@ class UserDBHelper {
     String path = join(await getDatabasesPath(), 'user_data.sqlite');
     return await openDatabase(
       path,
-      version: 18,
+      version: 19,
       onConfigure: (db) async {
         // 用户库为高频写库：WAL 提升并发写性能，同时保证导出前关闭连接即可完整落盘。
         // 注意：Android 原生 SQLiteDatabase.execSQL 禁止执行有返回值的 PRAGMA（如 journal_mode），
@@ -308,9 +308,13 @@ class UserDBHelper {
       onUpgrade: _onUpgrade,
       onOpen: (db) async {
         try {
-          final verRes = await db.rawQuery('SELECT sqlite_version() AS version');
+          final verRes = await db.rawQuery(
+            'SELECT sqlite_version() AS version',
+          );
           if (verRes.isNotEmpty) {
-            debugPrint('[UserDBHelper] SQLite 引擎版本: ${verRes.first["version"]}');
+            debugPrint(
+              '[UserDBHelper] SQLite 引擎版本: ${verRes.first["version"]}',
+            );
           }
         } catch (e) {
           debugPrint('[UserDBHelper] 获取 SQLite 版本失败: $e');
@@ -354,8 +358,11 @@ class UserDBHelper {
   }
 
   @visibleForTesting
-  Future<void> upgradeForTesting(Database db, int oldVersion, {int newVersion = 15}) =>
-      _onUpgrade(db, oldVersion, newVersion);
+  Future<void> upgradeForTesting(
+    Database db,
+    int oldVersion, {
+    int newVersion = 15,
+  }) => _onUpgrade(db, oldVersion, newVersion);
 
   @visibleForTesting
   Future<void> createSpacedRepetitionTablesForTesting(DatabaseExecutor db) =>
@@ -508,6 +515,11 @@ class UserDBHelper {
       if (oldVersion < 18 && newVersion >= 18) {
         await NoteSyncStore.install(txn);
       }
+      if (oldVersion < 19 && newVersion >= 19) {
+        await txn.execute(
+          'CREATE TABLE IF NOT EXISTS QuestionTestTime(question_id TEXT PRIMARY KEY, duration_ms INTEGER NOT NULL DEFAULT 0)',
+        );
+      }
       await _createMigrationStateTable(txn);
     });
   }
@@ -540,7 +552,9 @@ class UserDBHelper {
 
     final columns = await _columns(db, 'CustomFlashcards');
     if (!columns.contains('question_id')) {
-      await db.execute('ALTER TABLE CustomFlashcards ADD COLUMN question_id TEXT');
+      await db.execute(
+        'ALTER TABLE CustomFlashcards ADD COLUMN question_id TEXT',
+      );
       await db.execute(
         'CREATE INDEX IF NOT EXISTS idx_custom_flashcards_qid ON CustomFlashcards(question_id)',
       );
@@ -554,7 +568,10 @@ class UserDBHelper {
     );
     if (res.isEmpty) return;
     final sql = res.first['sql'] as String? ?? '';
-    if (RegExp(r'REFERENCES\s+questions\s*\(', caseSensitive: false).hasMatch(sql)) {
+    if (RegExp(
+      r'REFERENCES\s+questions\s*\(',
+      caseSensitive: false,
+    ).hasMatch(sql)) {
       debugPrint('[UserDBHelper] 检测到 Notes 表外键指向不存在的 questions 表，自动迁移修复...');
       await db.execute('PRAGMA foreign_keys = OFF');
       await db.transaction((txn) async {
@@ -574,13 +591,22 @@ class UserDBHelper {
         final oldColumns = await _columns(txn, 'Notes');
         final selectCols = [
           'id',
-          if (oldColumns.contains('remote_id')) 'remote_id' else 'NULL AS remote_id',
+          if (oldColumns.contains('remote_id'))
+            'remote_id'
+          else
+            'NULL AS remote_id',
           'question_id',
           'content',
           'imgs',
           'timestamp',
-          if (oldColumns.contains('updated_at')) 'updated_at' else '0 AS updated_at',
-          if (oldColumns.contains('sync_status')) 'sync_status' else '0 AS sync_status',
+          if (oldColumns.contains('updated_at'))
+            'updated_at'
+          else
+            '0 AS updated_at',
+          if (oldColumns.contains('sync_status'))
+            'sync_status'
+          else
+            '0 AS sync_status',
         ];
         // 保证旧笔记对应的题目在 Question 表中存在，防止外键检查报错
         await txn.execute('''
@@ -740,13 +766,19 @@ class UserDBHelper {
 
     // 兼容可能已创建旧版 ReviewPlans 的数据库，安全追加字段
     try {
-      await db.execute("ALTER TABLE ReviewPlans ADD COLUMN source_types TEXT DEFAULT 'wrong,collected,note'");
+      await db.execute(
+        "ALTER TABLE ReviewPlans ADD COLUMN source_types TEXT DEFAULT 'wrong,collected,note'",
+      );
     } catch (_) {}
     try {
-      await db.execute("ALTER TABLE ReviewPlans ADD COLUMN covered_subjects TEXT DEFAULT ''");
+      await db.execute(
+        "ALTER TABLE ReviewPlans ADD COLUMN covered_subjects TEXT DEFAULT ''",
+      );
     } catch (_) {}
     try {
-      await db.execute("ALTER TABLE CustomFlashcards ADD COLUMN question_id TEXT");
+      await db.execute(
+        "ALTER TABLE CustomFlashcards ADD COLUMN question_id TEXT",
+      );
     } catch (_) {}
 
     await db.execute('''
@@ -1002,6 +1034,9 @@ class UserDBHelper {
     await CloudOutbox.install(db);
     await DurableSyncQueue.install(db);
     await NoteSyncStore.install(db);
+    await db.execute(
+      'CREATE TABLE IF NOT EXISTS QuestionTestTime(question_id TEXT PRIMARY KEY, duration_ms INTEGER NOT NULL DEFAULT 0)',
+    );
 
     // 给 Question 表按 chapter_id 建表
     await db.execute('''
