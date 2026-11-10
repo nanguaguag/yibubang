@@ -49,33 +49,78 @@ class Chapter {
 }
 
 void sortChaptersById(List<Chapter> chapters) {
-  // 将一个 List<Chapter> 按照 id 转成数字后的大小排序
-  chapters.sort((a, b) => int.parse(a.id).compareTo(int.parse(b.id)));
+  // 将一个 List<Chapter> 按照 id 转成数字后的大小排序（兼顾非纯数字 ID）
+  chapters.sort((a, b) {
+    final int? aNum = int.tryParse(a.id);
+    final int? bNum = int.tryParse(b.id);
+    if (aNum != null && bNum != null) {
+      return aNum.compareTo(bNum);
+    }
+    return a.id.compareTo(b.id);
+  });
+}
+
+/// 查询同属一个学科的同级所有章节列表（按章节 ID 升序排列）
+Future<List<Chapter>> getSiblingChapters(Chapter chapter) async {
+  return await getChaptersBySubject(
+    Subject(
+      id: chapter.subjectId,
+      name: '',
+      selected: 1,
+      correct: 0,
+      incorrect: 0,
+      total: 0,
+      identityId: chapter.identityId,
+    ),
+  );
 }
 
 Future<List<Chapter>> getChaptersBySubject(Subject subject) async {
   final db = await DatabaseHelper().database;
   final userDb = await UserDBHelper().database;
   final prefs = await SharedPreferences.getInstance();
-  final identityId = subject.identityId ?? prefs.getString('identityId');
-  final bankId = prefs.getString('activeBankId');
-  if (identityId == null ||
-      identityId.isEmpty ||
-      bankId == null ||
-      bankId.isEmpty) {
-    return [];
+  var identityId = subject.identityId ?? prefs.getString('identityId');
+  var bankId = prefs.getString('activeBankId') ?? 'dental_final';
+
+  // 若 identityId 未指定，动态从题库关系表中查询该学科归属的 identity_id
+  if (identityId == null || identityId.isEmpty) {
+    try {
+      final idRows = await db.rawQuery(
+        'SELECT identity_id FROM IdentityChapter WHERE subject_id = ? LIMIT 1',
+        [subject.id],
+      );
+      if (idRows.isNotEmpty) {
+        identityId = idRows.first['identity_id'] as String?;
+      }
+    } catch (_) {}
   }
 
-  List<Map<String, dynamic>> mainRows = await db.rawQuery('''
-    SELECT C.id       AS chapter_id,
-           C.name     AS chapter_name,
-           IC.total   AS total
-    FROM IdentityChapter AS IC
-    JOIN Chapter AS C
-      ON C.id = IC.chapter_id
-    WHERE IC.identity_id = ?
-      AND IC.subject_id  = ?
-  ''', [identityId, subject.id]);
+  List<Map<String, dynamic>> mainRows = [];
+  if (identityId != null && identityId.isNotEmpty) {
+    mainRows = await db.rawQuery('''
+      SELECT C.id       AS chapter_id,
+             C.name     AS chapter_name,
+             IC.total   AS total
+      FROM IdentityChapter AS IC
+      JOIN Chapter AS C
+        ON C.id = IC.chapter_id
+      WHERE IC.identity_id = ?
+        AND IC.subject_id  = ?
+    ''', [identityId, subject.id]);
+  }
+
+  // 兜底查询：若特定 identity_id 无匹配，按 subject_id 获取全部同属章节
+  if (mainRows.isEmpty) {
+    mainRows = await db.rawQuery('''
+      SELECT DISTINCT C.id AS chapter_id,
+             C.name     AS chapter_name,
+             IC.total   AS total
+      FROM IdentityChapter AS IC
+      JOIN Chapter AS C
+        ON C.id = IC.chapter_id
+      WHERE IC.subject_id = ?
+    ''', [subject.id]);
+  }
 
   if (mainRows.isEmpty) return [];
 

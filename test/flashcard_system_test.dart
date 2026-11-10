@@ -492,13 +492,13 @@ void main() {
       await tester.pumpAndSettle();
 
       // 验证引用考点还原
-      expect(find.text('✨ 引用考点还原'), findsOneWidget);
-      await tester.tap(find.text('✨ 引用考点还原'));
+      expect(find.text('引用考点还原'), findsOneWidget);
+      await tester.tap(find.text('引用考点还原'));
       await tester.pumpAndSettle();
 
       // 验证引用答案解析
-      expect(find.text('💡 引用答案解析'), findsOneWidget);
-      await tester.tap(find.text('💡 引用答案解析'));
+      expect(find.text('引用答案解析'), findsOneWidget);
+      await tester.tap(find.text('引用答案解析'));
       await tester.pumpAndSettle();
 
       // 验证快捷选择常用标签
