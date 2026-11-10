@@ -1,3 +1,4 @@
+import 'package:shared_preferences/shared_preferences.dart';
 import '../db/user_database_coordinator.dart';
 import '../db/data_transfer.dart';
 import '../models/answer_statistics.dart';
@@ -36,6 +37,8 @@ class DailyReviewService {
   final SpacedRepetitionEngine _engine;
   final UserDBHelper _userDbHelper;
   final Future<String?> Function(ReviewPlan plan)? _bankPathResolver;
+  final Future<Map<String, String>> Function(ReviewPlan plan)?
+  _bankPathsResolver;
 
   DailyReviewService({
     SpacedReviewRepository? spacedRepo,
@@ -44,12 +47,14 @@ class DailyReviewService {
     SpacedRepetitionEngine? engine,
     UserDBHelper? userDbHelper,
     Future<String?> Function(ReviewPlan plan)? bankPathResolver,
+    Future<Map<String, String>> Function(ReviewPlan plan)? bankPathsResolver,
   }) : _spacedRepo = spacedRepo ?? SpacedReviewRepository(),
        _bankRepo = bankRepo ?? QuestionBankRepository(),
        _dbManager = dbManager ?? QuestionBankDatabaseManager(),
        _engine = engine ?? const SpacedRepetitionEngine(),
        _userDbHelper = userDbHelper ?? UserDBHelper(),
-       _bankPathResolver = bankPathResolver;
+       _bankPathResolver = bankPathResolver,
+       _bankPathsResolver = bankPathsResolver;
 
   /// 组装今日刷题会话（到期复习队列 + 今日新题队列）
   /// [isExtraSession] 为 true 时表示用户主动“再学一组”，无视今日已完成目标限制，直接按 dailyNewTarget 抽取新卡片
@@ -523,47 +528,21 @@ class DailyReviewService {
       executor: executor,
     );
 
-    final rawDueCount = await _spacedRepo.getDueCount(
-      planId: plan.id,
-      now: currentTime,
-      executor: executor,
-    );
-    final remainingDue = math.min(
-      rawDueCount,
-      math.max(0, plan.dailyReviewLimit - completedReview),
-    );
     final userDb = executor ?? await _userDbHelper.database;
-    final coveredSubjects = plan.coveredSubjects;
-
+    final remainingDue = (await _fetchDueReviewQueue(
+      plan: plan,
+      limit: math.max(0, plan.dailyReviewLimit - completedReview),
+      now: currentTime,
+      executor: userDb,
+    )).length;
     final remainingNew = math.max(0, plan.dailyNewTarget - completedNew);
-
-    // 统计题库卡片池分布（错题待攻克、收藏题、笔记卡片、记忆中、已掌握）
-
-    final poolWrong = await _countUserQuestionPool(
-      userDb: userDb,
-      whereCondition: "status = 2 AND cut_question != '1'",
-      coveredSubjects: coveredSubjects,
-    );
-    final poolCollected = await _countUserQuestionPool(
-      userDb: userDb,
-      whereCondition: "collection = 1 AND cut_question != '1'",
-      coveredSubjects: coveredSubjects,
-    );
-    final poolNote = await _countNotePool(
-      userDb: userDb,
-      coveredSubjects: coveredSubjects,
-    );
+    final pools = await _scopePoolCounts(userDb, plan);
+    final poolWrong = pools['wrong'] ?? 0;
+    final poolCollected = pools['collected'] ?? 0;
+    final poolNote = pools['notes'] ?? 0;
     final poolFlashcard = await _countFlashcardPool(userDb: userDb);
-    final poolLearning = await _countSpacedItemState(
-      userDb: userDb,
-      state: ReviewState.learning.value,
-      planId: plan.id,
-    );
-    final poolMastered = await _countMasteredPool(
-      userDb: userDb,
-      planId: plan.id,
-      coveredSubjects: coveredSubjects,
-    );
+    final poolLearning = pools['learning'] ?? 0;
+    final poolMastered = pools['mastered'] ?? 0;
 
     final streak = await _calculateStreakDays(userDb, currentTime);
 
@@ -750,18 +729,21 @@ class DailyReviewService {
     // 查询这些题目中哪些存在用户笔记
     Set<String> noteQuestionIds = {};
     try {
-      final noteRows = await userDb.query(
-        'Notes',
-        columns: ['question_id'],
-        where: 'question_id IN (${List.filled(itemIds.length, '?').join(',')})',
-        whereArgs: itemIds,
-      );
+      final noteRows = await _noteRows(userDb, itemIds);
       noteQuestionIds = noteRows
           .map((r) => r['question_id']?.toString() ?? '')
           .where((id) => id.isNotEmpty)
           .toSet();
     } catch (_) {}
 
+    final actualQuestions = await _loadQuestionsByIds(
+      {
+        ...itemIds,
+        ...flashcardsMap.values.map((fc) => fc.questionId).whereType<String>(),
+      }.toList(),
+      plan: plan,
+      executor: userDb,
+    );
     final sourceTypes = plan.sourceTypes;
     final needFilterSource = !sourceTypes.contains('all');
 
@@ -800,15 +782,7 @@ class DailyReviewService {
         continue;
       }
 
-      // 如果设置了覆盖课程，排除未覆盖课程的已做题（若 parentId 为空则放行保底）
-      if (plan.coveredSubjects.isNotEmpty) {
-        final parentId = uq?.chapterParentId;
-        if (parentId != null &&
-            parentId.isNotEmpty &&
-            !plan.coveredSubjects.contains(parentId)) {
-          continue;
-        }
-      }
+      if (!actualQuestions.containsKey(it.itemId)) continue;
 
       validDueItems.add(it);
       if (validDueItems.length >= limit) break;
@@ -816,24 +790,7 @@ class DailyReviewService {
 
     if (validDueItems.isEmpty) return [];
 
-    // 加载 Question 实体（包含关联原题）
-    final targetQuestionIds = <String>{};
-    for (final item in validDueItems) {
-      if (item.itemType != ReviewItemType.flashcard) {
-        targetQuestionIds.add(item.itemId);
-      } else {
-        final fc = flashcardsMap[item.itemId];
-        if (fc?.questionId != null && fc!.questionId!.isNotEmpty) {
-          targetQuestionIds.add(fc.questionId!);
-        }
-      }
-    }
-
-    final questionsMap = await _loadQuestionsByIds(
-      targetQuestionIds.toList(),
-      plan: plan,
-      executor: executor,
-    );
+    final questionsMap = actualQuestions;
 
     return validDueItems.map((rev) {
       final qId = rev.itemId;
@@ -850,7 +807,7 @@ class DailyReviewService {
         question: linkedQuestion,
         userQuestion: userQuestionsMap[qId],
         reviewItem: rev,
-        bankId: plan.bankId,
+        bankId: linkedQuestion?.sourceBankId ?? plan.bankId,
         customFlashcard: fc,
         isFromNote: noteQuestionIds.contains(qId),
       );
@@ -875,12 +832,7 @@ class DailyReviewService {
     if (sourceTypes.contains('wrong')) {
       final whereParts = ["status = 2", "cut_question != '1'"];
       final whereArgs = <dynamic>[];
-      if (coveredSubjects.isNotEmpty) {
-        whereParts.add(
-          "chapter_parent_id IN (${List.filled(coveredSubjects.length, '?').join(',')})",
-        );
-        whereArgs.addAll(coveredSubjects);
-      }
+
       final rows = await userDb.query(
         'Question',
         columns: ['id'],
@@ -897,12 +849,7 @@ class DailyReviewService {
     if (sourceTypes.contains('collected')) {
       final whereParts = ["collection = 1", "cut_question != '1'"];
       final whereArgs = <dynamic>[];
-      if (coveredSubjects.isNotEmpty) {
-        whereParts.add(
-          "chapter_parent_id IN (${List.filled(coveredSubjects.length, '?').join(',')})",
-        );
-        whereArgs.addAll(coveredSubjects);
-      }
+
       final rows = await userDb.query(
         'Question',
         columns: ['id'],
@@ -915,30 +862,14 @@ class DailyReviewService {
       }
     }
 
-    // 3. 从笔记抽选
+    // 3. 从笔记抽选；课程范围由只读题库的真实关系验证。
     if (sourceTypes.contains('note')) {
-      try {
-        final whereParts = ["COALESCE(uq.cut_question, '0') != '1'"];
-        final whereArgs = <dynamic>[];
-        if (coveredSubjects.isNotEmpty) {
-          whereParts.add(
-            "(uq.chapter_parent_id IN (${List.filled(coveredSubjects.length, '?').join(',')}) OR uq.chapter_parent_id IS NULL OR uq.chapter_parent_id = '')",
-          );
-          whereArgs.addAll(coveredSubjects);
-        }
-        final rows = await userDb.rawQuery('''
-          SELECT DISTINCT n.question_id as id
-          FROM Notes n
-          LEFT JOIN Question uq ON n.question_id = uq.id
-          WHERE ${whereParts.join(' AND ')}
-        ''', whereArgs);
-        for (final r in rows) {
-          final qId = r['id']?.toString();
-          if (qId != null && qId.isNotEmpty) {
-            candidateIds.add(qId);
-          }
-        }
-      } catch (_) {}
+      final rows = await userDb.rawQuery("""
+        SELECT DISTINCT n.question_id AS id FROM Notes n
+        LEFT JOIN Question uq ON uq.id=n.question_id
+        WHERE COALESCE(uq.cut_question,'0') NOT IN ('1','cutted')
+      """);
+      candidateIds.addAll(rows.map((r) => r['id'] as String));
     }
 
     // 4. 从自制闪卡抽选 (sourceTypes.contains('flashcard'))
@@ -1000,8 +931,16 @@ class DailyReviewService {
       );
       final cutIds = cutRows.map((r) => r['id'] as String).toSet();
 
+      final entities = await _loadQuestionsByIds(
+        chunk,
+        plan: plan,
+        executor: userDb,
+      );
+      final cards = await _spacedRepo.getFlashcardsByIds(chunk, userDb);
       for (final id in chunk) {
-        if (!inReviewSet.contains(id) && !cutIds.contains(id)) {
+        if (!inReviewSet.contains(id) &&
+            !cutIds.contains(id) &&
+            (entities.containsKey(id) || cards.containsKey(id))) {
           selectedIds.add(id);
           if (selectedIds.length >= count) break;
         }
@@ -1043,13 +982,7 @@ class DailyReviewService {
     // 查询抽取的题目中哪些包含笔记
     Set<String> noteQuestionIds = {};
     try {
-      final noteRows = await userDb.query(
-        'Notes',
-        columns: ['question_id'],
-        where:
-            'question_id IN (${List.filled(selectedIds.length, '?').join(',')})',
-        whereArgs: selectedIds,
-      );
+      final noteRows = await _noteRows(userDb, selectedIds);
       noteQuestionIds = noteRows
           .map((r) => r['question_id']?.toString() ?? '')
           .toSet();
@@ -1075,7 +1008,7 @@ class DailyReviewService {
         question: linkedQuestion,
         userQuestion: userQuestionsMap[id],
         reviewItem: initialItem,
-        bankId: plan.bankId,
+        bankId: linkedQuestion?.sourceBankId ?? plan.bankId,
         customFlashcard: fc,
         isFromNote: noteQuestionIds.contains(id),
       );
@@ -1129,57 +1062,38 @@ class DailyReviewService {
     // 查询笔记
     Set<String> noteQuestionIds = {};
     try {
-      final noteRows = await userDb.query(
-        'Notes',
-        columns: ['question_id'],
-        where: 'question_id IN (${List.filled(itemIds.length, '?').join(',')})',
-        whereArgs: itemIds,
-      );
+      final noteRows = await _noteRows(userDb, itemIds);
       noteQuestionIds = noteRows
           .map((r) => r['question_id']?.toString() ?? '')
           .toSet();
     } catch (_) {}
 
+    final actualQuestions = await _loadQuestionsByIds(
+      {
+        ...itemIds,
+        ...flashcardsMap.values.map((fc) => fc.questionId).whereType<String>(),
+      }.toList(),
+      plan: plan,
+      executor: userDb,
+    );
     final validItems = <SpacedReviewItem>[];
     for (final it in cramItems) {
       if (it.itemType == ReviewItemType.flashcard) {
+        if (!flashcardsMap.containsKey(it.itemId)) continue;
         validItems.add(it);
         if (validItems.length >= limit) break;
         continue;
       }
       final uq = userQuestionsMap[it.itemId];
       if (uq != null && uq.isCut) continue;
-      if (plan.coveredSubjects.isNotEmpty) {
-        final parentId = uq?.chapterParentId;
-        if (parentId != null &&
-            parentId.isNotEmpty &&
-            !plan.coveredSubjects.contains(parentId)) {
-          continue;
-        }
-      }
+      if (!actualQuestions.containsKey(it.itemId)) continue;
       validItems.add(it);
       if (validItems.length >= limit) break;
     }
 
     if (validItems.isEmpty) return [];
 
-    final targetQuestionIds = <String>{};
-    for (final item in validItems) {
-      if (item.itemType != ReviewItemType.flashcard) {
-        targetQuestionIds.add(item.itemId);
-      } else {
-        final fc = flashcardsMap[item.itemId];
-        if (fc?.questionId != null && fc!.questionId!.isNotEmpty) {
-          targetQuestionIds.add(fc.questionId!);
-        }
-      }
-    }
-
-    final questionsMap = await _loadQuestionsByIds(
-      targetQuestionIds.toList(),
-      plan: plan,
-      executor: executor,
-    );
+    final questionsMap = actualQuestions;
 
     return validItems.map((rev) {
       final qId = rev.itemId;
@@ -1196,7 +1110,7 @@ class DailyReviewService {
         question: linkedQuestion,
         userQuestion: userQuestionsMap[qId],
         reviewItem: rev,
-        bankId: plan.bankId,
+        bankId: linkedQuestion?.sourceBankId ?? plan.bankId,
         customFlashcard: fc,
         isFromNote: noteQuestionIds.contains(qId),
       );
@@ -1204,69 +1118,165 @@ class DailyReviewService {
   }
 
   /// 从只读题库中抽选未做新题 ID（针对勾选 'all' 模式）
+  Future<Map<String, Database>> _scopeBanks(ReviewPlan plan) async {
+    final result = <String, Database>{};
+    if (_bankPathsResolver != null) {
+      final paths = await _bankPathsResolver(plan);
+      for (final entry in paths.entries) {
+        if (plan.bankId?.isNotEmpty == true && entry.key != plan.bankId) {
+          continue;
+        }
+        result[entry.key] = await _dbManager.openBank(
+          entry.key,
+          filePath: entry.value,
+          validate: false,
+        );
+      }
+      return result;
+    }
+    if (plan.bankId?.isNotEmpty == true || _bankPathResolver != null) {
+      final bank = await _getBankDatabase(plan);
+      if (bank != null) {
+        result[await _resolveBankId(plan) ??
+                p.basenameWithoutExtension(bank.path)] =
+            bank;
+      }
+      return result;
+    }
+    final banks = (await _bankRepo.listBanks())
+        .where((b) => b.enabled && b.isInstalled)
+        .toList();
+    final active = (await SharedPreferences.getInstance()).getString(
+      'activeBankId',
+    );
+    banks.sort(
+      (a, b) => a.bankId == b.bankId
+          ? 0
+          : a.bankId == active
+          ? -1
+          : b.bankId == active
+          ? 1
+          : a.bankId.compareTo(b.bankId),
+    );
+    for (final bank in banks) {
+      if (await File(bank.localPath).exists()) {
+        result[bank.bankId] = await _dbManager.openBank(
+          bank.bankId,
+          filePath: bank.localPath,
+          validate: false,
+        );
+      }
+    }
+    return result;
+  }
+
+  /// 课程集合放用户连接的临时表；题库只参与 ATTACH SELECT。
+  Future<T> _withScopeBank<T>(
+    DatabaseExecutor db,
+    Database bank,
+    ReviewPlan plan,
+    Future<T> Function(
+      String from,
+      String filter,
+      List<Object?> args,
+      bool relations,
+    )
+    work,
+  ) => UserDatabaseCoordinator.instance.run(() async {
+    await db.execute(
+      'CREATE TEMP TABLE review_scope_subjects(id TEXT PRIMARY KEY)',
+    );
+    var attached = false;
+    try {
+      final batch = db.batch();
+      for (final id in plan.coveredSubjects.toSet()) {
+        batch.rawInsert(
+          'INSERT OR IGNORE INTO temp.review_scope_subjects VALUES (?)',
+          [id],
+        );
+      }
+      await batch.apply(noResult: true);
+      await db.execute('ATTACH DATABASE ? AS review_scope_bank', [bank.path]);
+      attached = true;
+      final hasRelations = (await db.rawQuery(
+        "SELECT name FROM review_scope_bank.sqlite_master WHERE name='IdentityQuestion'",
+      )).isNotEmpty;
+      final from = hasRelations
+          ? 'review_scope_bank.Question q JOIN review_scope_bank.IdentityQuestion iq ON iq.question_id=q.id'
+          : 'review_scope_bank.Question q';
+      final subject = hasRelations ? 'iq.subject_id' : 'q.chapter_parent_id';
+      final conditions = <String>['1=1'];
+      final args = <Object?>[];
+      if (plan.coveredSubjects.isNotEmpty) {
+        conditions.add(
+          'EXISTS(SELECT 1 FROM temp.review_scope_subjects s WHERE s.id=$subject)',
+        );
+      }
+      if (plan.subjectId?.isNotEmpty == true) {
+        conditions.add('$subject=?');
+        args.add(plan.subjectId);
+      }
+      if (hasRelations && plan.identityId?.isNotEmpty == true) {
+        conditions.add('iq.identity_id=?');
+        args.add(plan.identityId);
+      }
+      return await work(from, conditions.join(' AND '), args, hasRelations);
+    } finally {
+      if (attached) await db.execute('DETACH DATABASE review_scope_bank');
+      await db.execute('DROP TABLE temp.review_scope_subjects');
+    }
+  });
+
   Future<List<String>> _queryBankNewQuestionIds({
     required ReviewPlan plan,
     required int count,
     required List<String> coveredSubjects,
     DatabaseExecutor? executor,
   }) async {
-    final bankDb = await _getBankDatabase(plan);
-    if (bankDb == null || count <= 0) return [];
+    if (count <= 0) return [];
     final db = executor ?? await _userDbHelper.database;
-    final bankId = await _resolveBankId(plan) ?? bankDb.path;
-    return UserDatabaseCoordinator.instance.run(() async {
-      await db.execute('ATTACH DATABASE ? AS review_draw_bank', [bankDb.path]);
-      try {
+    final candidates = <String>{};
+    for (final entry in (await _scopeBanks(plan)).entries) {
+      final ids = await _withScopeBank(db, entry.value, plan, (
+        from,
+        filter,
+        args,
+        relations,
+      ) async {
         final cursorRows = await db.query(
           'ReviewDrawCursor',
           where: 'plan_id=? AND bank_id=?',
-          whereArgs: [plan.id, bankId],
+          whereArgs: [plan.id, entry.key],
         );
         final cursor = cursorRows.isEmpty
             ? ''
             : cursorRows.single['last_id'] as String;
-        final hasRelations = (await db.rawQuery(
-          "SELECT name FROM review_draw_bank.sqlite_master WHERE name='IdentityQuestion'",
-        )).isNotEmpty;
-        final coverage = coveredSubjects.isEmpty
-            ? ''
-            : hasRelations
-            ? 'AND EXISTS(SELECT 1 FROM review_draw_bank.IdentityQuestion iq WHERE iq.question_id=q.id AND iq.subject_id IN (${List.filled(coveredSubjects.length, '?').join(',')}))'
-            : 'AND q.chapter_parent_id IN (${List.filled(coveredSubjects.length, '?').join(',')})';
         Future<List<String>> load(String after, int take) async {
           final rows = await db.rawQuery(
-            '''
-            SELECT q.id FROM review_draw_bank.Question q
-            LEFT JOIN main.Question uq ON uq.id=q.id
-            LEFT JOIN main.SpacedReviewItem sr ON sr.item_id=q.id
-            WHERE COALESCE(uq.cut_question,'0') NOT IN ('1','cutted') AND COALESCE(uq.status,0)!=3
-              AND COALESCE(sr.state,0)=0 AND q.id>? $coverage
-            ORDER BY q.id LIMIT ?
-          ''',
-            [after, ...coveredSubjects, take],
+            "SELECT DISTINCT q.id FROM $from LEFT JOIN main.Question uq ON uq.id=q.id LEFT JOIN main.SpacedReviewItem sr ON sr.item_id=q.id WHERE $filter AND COALESCE(uq.cut_question,'0') NOT IN ('1','cutted') AND COALESCE(uq.status,0)!=3 AND COALESCE(sr.state,0)=0 AND q.id>? ORDER BY q.id LIMIT ?",
+            [...args, after, take],
           );
           return rows.map((r) => r['id'] as String).toList();
         }
 
-        final ids = await load(cursor, count);
-        if (ids.length < count && cursor.isNotEmpty) {
-          final first = await load('', count - ids.length);
-          for (final id in first) {
-            if (!ids.contains(id)) ids.add(id);
+        final found = await load(cursor, count);
+        if (found.length < count && cursor.isNotEmpty) {
+          for (final id in await load('', count - found.length)) {
+            if (!found.contains(id)) found.add(id);
           }
         }
-        if (ids.isNotEmpty) {
+        if (found.isNotEmpty) {
           await db.insert('ReviewDrawCursor', {
             'plan_id': plan.id,
-            'bank_id': bankId,
-            'last_id': ids.last,
+            'bank_id': entry.key,
+            'last_id': found.last,
           }, conflictAlgorithm: ConflictAlgorithm.replace);
         }
-        return ids;
-      } finally {
-        await db.execute('DETACH DATABASE review_draw_bank');
-      }
-    });
+        return found;
+      });
+      candidates.addAll(ids);
+    }
+    return candidates.toList();
   }
 
   /// 批量加载题目实体（严格通过 QuestionBankDatabaseManager 单例连接池复用，杜绝 macOS 6922 锁异常）
@@ -1276,47 +1286,38 @@ class DailyReviewService {
     DatabaseExecutor? executor,
   }) async {
     if (ids.isEmpty) return {};
-
-    // 1. 若测试中由 executor 内存库直接持有 Question（如单元测试桩），优先从 executor 读取
-    if (executor != null) {
-      try {
-        final rows = await executor.query(
-          'Question',
-          where: 'id IN (${List.filled(ids.length, '?').join(',')})',
-          whereArgs: ids,
-        );
-        if (rows.isNotEmpty && rows.first.containsKey('title')) {
-          final map = <String, Question>{};
-          for (final r in rows) {
-            final q = Question.fromMap(r);
-            map[q.id] = q;
+    final db = executor ?? await _userDbHelper.database;
+    final result = <String, Question>{};
+    final banks = await _scopeBanks(plan);
+    for (final bank in banks.entries) {
+      await _withScopeBank(db, bank.value, plan, (
+        from,
+        filter,
+        args,
+        relations,
+      ) async {
+        for (var i = 0; i < ids.length; i += 500) {
+          final chunk = ids.sublist(i, math.min(i + 500, ids.length));
+          final contextColumns = relations
+              ? ',iq.subject_id AS scope_subject,iq.chapter_id AS scope_chapter,iq.identity_id AS scope_identity'
+              : '';
+          final rows = await db.rawQuery(
+            "SELECT q.* $contextColumns FROM $from WHERE $filter AND q.id IN (${List.filled(chunk.length, '?').join(',')}) ORDER BY q.id",
+            [...args, ...chunk],
+          );
+          for (final row in rows) {
+            final q = Question.fromMap(row)..sourceBankId = bank.key;
+            if (relations) {
+              q.chapterParentId = row['scope_subject'] as String?;
+              q.chapterId = row['scope_chapter'] as String?;
+              q.identityId = row['scope_identity'] as String?;
+            }
+            result.putIfAbsent(q.id, () => q);
           }
-          return map;
         }
-      } catch (_) {}
+      });
     }
-
-    // 2. 真实题库复用连接只读查询
-    final bankDb = await _getBankDatabase(plan);
-    if (bankDb == null) return {};
-
-    try {
-      final rows = await bankDb.query(
-        'Question',
-        where: 'id IN (${List.filled(ids.length, '?').join(',')})',
-        whereArgs: ids,
-      );
-
-      final map = <String, Question>{};
-      for (final r in rows) {
-        final q = Question.fromMap(r);
-        map[q.id] = q;
-      }
-      return map;
-    } catch (e) {
-      debugPrint('[DailyReviewService] Error loading questions from bank: $e');
-      return {};
-    }
+    return result;
   }
 
   /// 解析目标题库 ID
@@ -1355,16 +1356,17 @@ class DailyReviewService {
   }) async {
     if (ids.isEmpty) return {};
     final userDb = executor ?? await _userDbHelper.database;
-    final rows = await userDb.query(
-      'Question',
-      where: 'id IN (${List.filled(ids.length, '?').join(',')})',
-      whereArgs: ids,
-    );
-
     final map = <String, UserQuestion>{};
-    for (final r in rows) {
-      final uq = UserQuestion.fromMap(r);
-      map[uq.id] = uq;
+    for (var i = 0; i < ids.length; i += 500) {
+      final chunk = ids.sublist(i, math.min(i + 500, ids.length));
+      for (final row in await userDb.query(
+        'Question',
+        where: 'id IN (${List.filled(chunk.length, '?').join(',')})',
+        whereArgs: chunk,
+      )) {
+        final uq = UserQuestion.fromMap(row);
+        map[uq.id] = uq;
+      }
     }
     return map;
   }
@@ -1385,89 +1387,70 @@ class DailyReviewService {
     return await _dbManager.pathFor(activeId);
   }
 
-  Future<int> _countUserQuestionPool({
-    required DatabaseExecutor userDb,
-    required String whereCondition,
-    required List<String> coveredSubjects,
-  }) async {
-    final whereParts = [whereCondition];
-    final whereArgs = <dynamic>[];
-    if (coveredSubjects.isNotEmpty) {
-      whereParts.add(
-        "chapter_parent_id IN (${List.filled(coveredSubjects.length, '?').join(',')})",
+  Future<List<Map<String, Object?>>> _noteRows(
+    DatabaseExecutor db,
+    List<String> ids,
+  ) async {
+    final rows = <Map<String, Object?>>[];
+    for (var i = 0; i < ids.length; i += 500) {
+      final chunk = ids.sublist(i, math.min(i + 500, ids.length));
+      rows.addAll(
+        await db.query(
+          'Notes',
+          columns: ['question_id'],
+          where: 'question_id IN (${List.filled(chunk.length, '?').join(',')})',
+          whereArgs: chunk,
+        ),
       );
-      whereArgs.addAll(coveredSubjects);
     }
-    final rows = await userDb.rawQuery(
-      'SELECT COUNT(*) as count FROM Question WHERE ${whereParts.join(' AND ')}',
-      whereArgs,
-    );
-    return Sqflite.firstIntValue(rows) ?? 0;
+    return rows;
   }
 
-  Future<int> _countNotePool({
-    required DatabaseExecutor userDb,
-    required List<String> coveredSubjects,
-  }) async {
-    try {
-      final whereParts = ["COALESCE(uq.cut_question, '0') != '1'"];
-      final whereArgs = <dynamic>[];
-      if (coveredSubjects.isNotEmpty) {
-        whereParts.add(
-          "(uq.chapter_parent_id IN (${List.filled(coveredSubjects.length, '?').join(',')}) OR uq.chapter_parent_id IS NULL OR uq.chapter_parent_id = '')",
+  Future<Map<String, int>> _scopePoolCounts(
+    DatabaseExecutor db,
+    ReviewPlan plan,
+  ) async {
+    final banks = await _scopeBanks(plan);
+    return UserDatabaseCoordinator.instance.run(() async {
+      await db.execute(
+        'CREATE TEMP TABLE review_pool_ids(id TEXT PRIMARY KEY)',
+      );
+      try {
+        for (final bank in banks.values) {
+          await _withScopeBank(
+            db,
+            bank,
+            plan,
+            (from, filter, args, relations) => db.rawInsert(
+              'INSERT OR IGNORE INTO temp.review_pool_ids SELECT DISTINCT q.id FROM $from WHERE $filter',
+              args,
+            ),
+          );
+        }
+        final counts = (await db.rawQuery(
+          "SELECT SUM(CASE WHEN uq.status=2 THEN 1 ELSE 0 END) AS wrong,SUM(CASE WHEN uq.collection=1 THEN 1 ELSE 0 END) AS collected FROM main.Question uq JOIN temp.review_pool_ids p ON p.id=uq.id WHERE COALESCE(uq.cut_question,'0') NOT IN ('1','cutted')",
+        )).single;
+        final noteRows = await db.rawQuery(
+          "SELECT COUNT(DISTINCT n.question_id) FROM main.Notes n JOIN temp.review_pool_ids p ON p.id=n.question_id LEFT JOIN main.Question uq ON uq.id=n.question_id WHERE COALESCE(uq.cut_question,'0') NOT IN ('1','cutted')",
         );
-        whereArgs.addAll(coveredSubjects);
+        final learning = await db.rawQuery(
+          "SELECT COUNT(*) FROM main.SpacedReviewItem s WHERE s.state=1 AND (s.plan_id=? OR s.plan_id IS NULL) AND (s.item_type='flashcard' OR s.item_id IN (SELECT id FROM temp.review_pool_ids))",
+          [plan.id],
+        );
+        final mastered = await db.rawQuery(
+          "SELECT COUNT(*) FROM (SELECT uq.id FROM main.Question uq JOIN temp.review_pool_ids p ON p.id=uq.id WHERE uq.cut_question IN ('1','cutted') UNION SELECT s.item_id AS id FROM main.SpacedReviewItem s WHERE s.state=3 AND (s.plan_id=? OR s.plan_id IS NULL) AND (s.item_type='flashcard' OR s.item_id IN (SELECT id FROM temp.review_pool_ids)))",
+          [plan.id],
+        );
+        return {
+          'wrong': (counts['wrong'] as num?)?.toInt() ?? 0,
+          'collected': (counts['collected'] as num?)?.toInt() ?? 0,
+          'notes': Sqflite.firstIntValue(noteRows) ?? 0,
+          'learning': Sqflite.firstIntValue(learning) ?? 0,
+          'mastered': Sqflite.firstIntValue(mastered) ?? 0,
+        };
+      } finally {
+        await db.execute('DROP TABLE temp.review_pool_ids');
       }
-      final rows = await userDb.rawQuery('''
-        SELECT COUNT(DISTINCT n.question_id) as count
-        FROM Notes n
-        LEFT JOIN Question uq ON n.question_id = uq.id
-        WHERE ${whereParts.join(' AND ')}
-      ''', whereArgs);
-      return Sqflite.firstIntValue(rows) ?? 0;
-    } catch (_) {
-      return 0;
-    }
-  }
-
-  /// 统计熟练掌握/斩题卡片池总量（用户库标记 cut_question = '1' 或 SpacedReviewItem 状态为 mastered 的并集去重）
-  Future<int> _countMasteredPool({
-    required DatabaseExecutor userDb,
-    required String planId,
-    required List<String> coveredSubjects,
-  }) async {
-    try {
-      final innerWhere = coveredSubjects.isNotEmpty
-          ? "AND (chapter_parent_id IN (${List.filled(coveredSubjects.length, '?').join(',')}) OR chapter_parent_id IS NULL OR chapter_parent_id = '')"
-          : '';
-      final rows = await userDb.rawQuery('''
-        SELECT COUNT(*) as count FROM (
-          SELECT id FROM Question WHERE cut_question = '1' $innerWhere
-          UNION
-          SELECT item_id as id FROM SpacedReviewItem WHERE state = 3
-        )
-      ''', coveredSubjects.isNotEmpty ? [...coveredSubjects] : []);
-      return Sqflite.firstIntValue(rows) ?? 0;
-    } catch (_) {
-      return 0;
-    }
-  }
-
-  Future<int> _countSpacedItemState({
-    required DatabaseExecutor userDb,
-    required int state,
-    required String planId,
-  }) async {
-    final whereParts = ['state = ?'];
-    final whereArgs = <dynamic>[state];
-    if (planId.isNotEmpty) {
-      whereParts.add('(plan_id = ? OR plan_id IS NULL)');
-      whereArgs.add(planId);
-    }
-    final rows = await userDb.rawQuery(
-      'SELECT COUNT(*) as count FROM SpacedReviewItem WHERE ${whereParts.join(' AND ')}',
-      whereArgs,
-    );
-    return Sqflite.firstIntValue(rows) ?? 0;
+    });
   }
 }

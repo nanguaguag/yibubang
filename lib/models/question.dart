@@ -66,6 +66,8 @@ class UserQuestion {
 }
 
 class Question {
+  /// 本次只读实体加载的真实来源，不写入题库或用户状态主键。
+  String? sourceBankId;
   String id;
   String? year; // 年份
   String? unit;

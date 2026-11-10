@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:yibubang/db/database_helper.dart';
+import 'package:yibubang/db/question_bank_manager.dart';
 import 'package:yibubang/models/spaced_review_item.dart';
 import 'package:yibubang/repositories/spaced_review_repository.dart';
 import 'package:yibubang/services/daily_review_service.dart';
@@ -94,6 +95,7 @@ void main() {
   });
 
   tearDown(() async {
+    await QuestionBankDatabaseManager().closeAll();
     await userDb.close();
     await bankDb.close();
     if (await tempDir.exists()) {
@@ -102,6 +104,126 @@ void main() {
   });
 
   group('DailyReviewService Integration Tests', () {
+    test('全库计划加载跨库实体并按真实关系去重，限定题库不越界', () async {
+      final otherPath = p.join(tempDir.path, "other's.sqlite");
+      final other = await openDatabase(otherPath);
+      await other.execute(
+        'CREATE TABLE Question(id TEXT PRIMARY KEY,title TEXT,chapter_id TEXT,chapter_parent_id TEXT,answer TEXT,type TEXT)',
+      );
+      await other.execute(
+        'CREATE TABLE IdentityQuestion(question_id TEXT,subject_id TEXT,chapter_id TEXT,identity_id TEXT)',
+      );
+      for (final id in ['q_1', 'b_1']) {
+        await other.insert('Question', {
+          'id': id,
+          'title': id,
+          'chapter_parent_id': 'stale',
+          'answer': 'A',
+          'type': '1',
+        });
+        await other.insert('IdentityQuestion', {
+          'question_id': id,
+          'subject_id': 'B',
+          'chapter_id': 'Bchapter',
+          'identity_id': 'Bidentity',
+        });
+        await userDb.insert('Question', {
+          'id': id,
+          'status': 2,
+          'chapter_parent_id': 'wrong_source',
+        });
+      }
+      await other.close();
+      final service = DailyReviewService(
+        bankPathsResolver: (_) async => {
+          'fixture_bank': bankDbPath,
+          'B': otherPath,
+        },
+      );
+      const plan = ReviewPlan(
+        id: 'scope',
+        name: 'scope',
+        sourceTypes: ['wrong'],
+        coveredSubjects: ['B'],
+        dailyNewTarget: 10,
+        dailyReviewLimit: 0,
+      );
+      final session = await service.buildDailySession(
+        customPlan: plan,
+        executor: userDb,
+      );
+      expect(session.newQueue.map((q) => q.questionId).toSet(), {'q_1', 'b_1'});
+      expect(
+        session.newQueue.every(
+          (q) => q.bankId == 'B' && q.question?.chapterParentId == 'B',
+        ),
+        isTrue,
+      );
+      final summary = await service.getTodaySummary(
+        customPlan: plan,
+        executor: userDb,
+      );
+      expect(summary.poolWrongCount, 2);
+      final limited = await service.buildDailySession(
+        customPlan: plan.copyWith(bankId: 'fixture_bank'),
+        executor: userDb,
+      );
+      expect(limited.newQueue, isEmpty);
+      final all = await service.buildDailySession(
+        customPlan: const ReviewPlan(
+          id: 'all',
+          name: 'all',
+          sourceTypes: ['wrong'],
+          dailyNewTarget: 10,
+          dailyReviewLimit: 0,
+        ),
+        executor: userDb,
+      );
+      expect(all.newQueue.map((q) => q.questionId).toSet(), {'q_1', 'b_1'});
+      expect(
+        all.newQueue.firstWhere((q) => q.questionId == 'q_1').bankId,
+        'fixture_bank',
+      );
+    });
+    test('1005题实体、用户状态与笔记加载及1005课程范围遵守999参数限制', () async {
+      final batch = bankDb.batch();
+      for (var i = 0; i < 1005; i++) {
+        batch.insert('Question', {
+          'id': 'large_$i',
+          'title': '题$i',
+          'chapter_parent_id': 'sub_1',
+          'type': '1',
+          'answer': 'A',
+        });
+      }
+      await batch.commit(noResult: true);
+      final guarded = _ParameterBudgetDb(userDb);
+      final service = DailyReviewService(
+        bankPathResolver: (_) async => bankDbPath,
+      );
+      final plan = ReviewPlan(
+        id: 'large',
+        name: 'large',
+        bankId: 'fixture_bank',
+        sourceTypes: const ['all'],
+        coveredSubjects: ['sub_1', ...List.generate(1004, (i) => 's$i')],
+        dailyNewTarget: 1005,
+        dailyReviewLimit: 0,
+      );
+      final session = await service.buildDailySession(
+        customPlan: plan,
+        executor: guarded,
+      );
+      expect(session.newQueue.length, 1005);
+      expect(session.newQueue.every((q) => q.question != null), isTrue);
+      expect(guarded.maxArgs, lessThanOrEqualTo(502));
+      expect(
+        await userDb.rawQuery(
+          "SELECT name FROM sqlite_temp_master WHERE name LIKE 'review_%'",
+        ),
+        isEmpty,
+      );
+    });
     test('已学前缀不遮挡后续新题，抽题位置跨会话轮转', () async {
       final repo = SpacedReviewRepository();
       final prefix = await bankDb.query('Question', columns: ['id'], limit: 6);
@@ -418,6 +540,19 @@ void main() {
           'cut_question': '0',
         });
 
+        await bankDb.update(
+          'Question',
+          {'chapter_parent_id': 'sub_active'},
+          where: 'id IN (?,?)',
+          whereArgs: ['q_7', 'q_8'],
+        );
+        await bankDb.update(
+          'Question',
+          {'chapter_parent_id': 'sub_finished'},
+          where: 'id=?',
+          whereArgs: ['q_9'],
+        );
+
         // 计划：仅抽选错题与收藏，且仅覆盖 sub_active
         final plan = ReviewPlan(
           id: 'plan_filter',
@@ -613,4 +748,82 @@ void main() {
       },
     );
   });
+}
+
+// 真实 SQLite 执行器加旧宿主变量预算，避免现代 FFI 掩盖 Android 限制。
+class _ParameterBudgetDb implements DatabaseExecutor {
+  final Database db;
+  int maxArgs = 0;
+  _ParameterBudgetDb(this.db);
+  void check(List<Object?>? args) {
+    final n = args?.length ?? 0;
+    if (n > maxArgs) maxArgs = n;
+    if (n > 999) throw StateError('too many SQL variables');
+  }
+
+  @override
+  Future<List<Map<String, Object?>>> rawQuery(
+    String sql, [
+    List<Object?>? arguments,
+  ]) {
+    check(arguments);
+    return db.rawQuery(sql, arguments);
+  }
+
+  @override
+  Future<void> execute(String sql, [List<Object?>? arguments]) {
+    check(arguments);
+    return db.execute(sql, arguments);
+  }
+
+  @override
+  Future<int> rawInsert(String sql, [List<Object?>? arguments]) {
+    check(arguments);
+    return db.rawInsert(sql, arguments);
+  }
+
+  @override
+  Future<int> insert(
+    String table,
+    Map<String, Object?> values, {
+    String? nullColumnHack,
+    ConflictAlgorithm? conflictAlgorithm,
+  }) => db.insert(
+    table,
+    values,
+    nullColumnHack: nullColumnHack,
+    conflictAlgorithm: conflictAlgorithm,
+  );
+  @override
+  Future<List<Map<String, Object?>>> query(
+    String table, {
+    bool? distinct,
+    List<String>? columns,
+    String? where,
+    List<Object?>? whereArgs,
+    String? groupBy,
+    String? having,
+    String? orderBy,
+    int? limit,
+    int? offset,
+  }) {
+    check(whereArgs);
+    return db.query(
+      table,
+      distinct: distinct,
+      columns: columns,
+      where: where,
+      whereArgs: whereArgs,
+      groupBy: groupBy,
+      having: having,
+      orderBy: orderBy,
+      limit: limit,
+      offset: offset,
+    );
+  }
+
+  @override
+  Batch batch() => db.batch();
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
