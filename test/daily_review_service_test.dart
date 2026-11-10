@@ -102,6 +102,100 @@ void main() {
   });
 
   group('DailyReviewService Integration Tests', () {
+    test('已学前缀不遮挡后续新题，抽题位置跨会话轮转', () async {
+      final repo = SpacedReviewRepository();
+      final prefix = await bankDb.query('Question', columns: ['id'], limit: 6);
+      for (final row in prefix) {
+        await repo.saveItem(
+          SpacedReviewItem(
+            itemId: row['id'] as String,
+            state: ReviewState.review,
+            reps: 1,
+          ),
+          userDb,
+        );
+      }
+      const plan = ReviewPlan(
+        id: 'fair',
+        name: 'fair',
+        bankId: 'fixture_bank',
+        sourceTypes: ['all'],
+        dailyNewTarget: 1,
+        dailyReviewLimit: 0,
+      );
+      final service = DailyReviewService(
+        bankPathResolver: (_) async => bankDbPath,
+      );
+      final first = await service.buildDailySession(
+        customPlan: plan,
+        executor: userDb,
+      );
+      final second = await service.buildDailySession(
+        customPlan: plan,
+        executor: userDb,
+      );
+      expect(first.newQueue.length, 1);
+      expect(second.newQueue.length, 1);
+      expect(
+        first.newQueue.single.questionId,
+        isNot(second.newQueue.single.questionId),
+      );
+      expect(
+        prefix.map((r) => r['id']),
+        isNot(contains(first.newQueue.single.questionId)),
+      );
+    });
+    test('过滤超过500项未覆盖到期题后仍续页找到合法题目', () async {
+      final repo = SpacedReviewRepository();
+      final now = DateTime(2026, 11, 11, 12);
+      for (var i = 0; i < 501; i++) {
+        final id = 'outside_$i';
+        await userDb.insert('Question', {
+          'id': id,
+          'chapter_parent_id': 'outside',
+        });
+        await repo.saveItem(
+          SpacedReviewItem(
+            itemId: id,
+            planId: 'p',
+            state: ReviewState.review,
+            dueDate: 1,
+          ),
+          userDb,
+        );
+      }
+      await userDb.insert('Question', {
+        'id': 'q_4',
+        'chapter_parent_id': 'sub_1',
+      });
+      await repo.saveItem(
+        const SpacedReviewItem(
+          itemId: 'q_4',
+          planId: 'p',
+          state: ReviewState.review,
+          dueDate: 2,
+        ),
+        userDb,
+      );
+      const plan = ReviewPlan(
+        id: 'p',
+        name: 'p',
+        bankId: 'fixture_bank',
+        sourceTypes: ['all'],
+        coveredSubjects: ['sub_1'],
+        dailyNewTarget: 0,
+        dailyReviewLimit: 1,
+      );
+      final service = DailyReviewService(
+        bankPathResolver: (_) async => bankDbPath,
+      );
+      final session = await service.buildDailySession(
+        customPlan: plan,
+        now: now,
+        executor: userDb,
+      );
+      expect(session.dueQueue.map((i) => i.questionId), ['q_4']);
+    });
     test(
       'buildDailySession filters cut questions from both due and new pools',
       () async {

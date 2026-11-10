@@ -247,6 +247,7 @@ class SpacedReviewRepository {
     int limit = 50,
     DateTime? now,
     DatabaseExecutor? executor,
+    SpacedReviewItem? after,
   }) async {
     final db = await _getExecutor(executor);
     final current = (now ?? DateTime.now()).millisecondsSinceEpoch;
@@ -267,11 +268,24 @@ class SpacedReviewRepository {
       whereArgs.add(planId);
     }
 
+    if (after != null) {
+      whereParts.add(
+        '(due_date>? OR (due_date=? AND reps>?) OR (due_date=? AND reps=? AND item_id>?))',
+      );
+      whereArgs.addAll([
+        after.dueDate,
+        after.dueDate,
+        after.reps,
+        after.dueDate,
+        after.reps,
+        after.itemId,
+      ]);
+    }
     final rows = await db.query(
       'SpacedReviewItem',
       where: whereParts.join(' AND '),
       whereArgs: whereArgs,
-      orderBy: 'due_date ASC, reps ASC',
+      orderBy: 'due_date ASC, reps ASC, item_id ASC',
       limit: limit,
     );
     return rows.map((r) => SpacedReviewItem.fromMap(r)).toList();

@@ -1,3 +1,4 @@
+import '../db/user_database_coordinator.dart';
 import '../db/data_transfer.dart';
 import '../models/answer_statistics.dart';
 import 'dart:io';
@@ -694,12 +695,37 @@ class DailyReviewService {
     required DateTime now,
     DatabaseExecutor? executor,
   }) async {
-    final rawDueItems = await _spacedRepo.getDueItems(
-      planId: plan.id,
-      limit: limit * 3, // 预留余量
-      now: now,
-      executor: executor,
-    );
+    final result = <DailyReviewQueueItem>[];
+    SpacedReviewItem? cursor;
+    while (result.length < limit) {
+      final page = await _spacedRepo.getDueItems(
+        planId: plan.id,
+        limit: 500,
+        now: now,
+        executor: executor,
+        after: cursor,
+      );
+      if (page.isEmpty) break;
+      cursor = page.last;
+      result.addAll(
+        await _filterDuePage(
+          plan: plan,
+          limit: limit - result.length,
+          rawDueItems: page,
+          executor: executor,
+        ),
+      );
+      if (page.length < 500) break;
+    }
+    return result;
+  }
+
+  Future<List<DailyReviewQueueItem>> _filterDuePage({
+    required ReviewPlan plan,
+    required int limit,
+    required List<SpacedReviewItem> rawDueItems,
+    DatabaseExecutor? executor,
+  }) async {
     if (rawDueItems.isEmpty) return [];
 
     final userDb = executor ?? await _userDbHelper.database;
@@ -1185,33 +1211,62 @@ class DailyReviewService {
     DatabaseExecutor? executor,
   }) async {
     final bankDb = await _getBankDatabase(plan);
-    if (bankDb == null) return [];
-
-    try {
-      final whereParts = <String>[];
-      final whereArgs = <dynamic>[];
-      if (coveredSubjects.isNotEmpty) {
-        whereParts.add(
-          "chapter_parent_id IN (${List.filled(coveredSubjects.length, '?').join(',')})",
+    if (bankDb == null || count <= 0) return [];
+    final db = executor ?? await _userDbHelper.database;
+    final bankId = await _resolveBankId(plan) ?? bankDb.path;
+    return UserDatabaseCoordinator.instance.run(() async {
+      await db.execute('ATTACH DATABASE ? AS review_draw_bank', [bankDb.path]);
+      try {
+        final cursorRows = await db.query(
+          'ReviewDrawCursor',
+          where: 'plan_id=? AND bank_id=?',
+          whereArgs: [plan.id, bankId],
         );
-        whereArgs.addAll(coveredSubjects);
-      }
+        final cursor = cursorRows.isEmpty
+            ? ''
+            : cursorRows.single['last_id'] as String;
+        final hasRelations = (await db.rawQuery(
+          "SELECT name FROM review_draw_bank.sqlite_master WHERE name='IdentityQuestion'",
+        )).isNotEmpty;
+        final coverage = coveredSubjects.isEmpty
+            ? ''
+            : hasRelations
+            ? 'AND EXISTS(SELECT 1 FROM review_draw_bank.IdentityQuestion iq WHERE iq.question_id=q.id AND iq.subject_id IN (${List.filled(coveredSubjects.length, '?').join(',')}))'
+            : 'AND q.chapter_parent_id IN (${List.filled(coveredSubjects.length, '?').join(',')})';
+        Future<List<String>> load(String after, int take) async {
+          final rows = await db.rawQuery(
+            '''
+            SELECT q.id FROM review_draw_bank.Question q
+            LEFT JOIN main.Question uq ON uq.id=q.id
+            LEFT JOIN main.SpacedReviewItem sr ON sr.item_id=q.id
+            WHERE COALESCE(uq.cut_question,'0') NOT IN ('1','cutted') AND COALESCE(uq.status,0)!=3
+              AND COALESCE(sr.state,0)=0 AND q.id>? $coverage
+            ORDER BY q.id LIMIT ?
+          ''',
+            [after, ...coveredSubjects, take],
+          );
+          return rows.map((r) => r['id'] as String).toList();
+        }
 
-      final rows = await bankDb.query(
-        'Question',
-        columns: ['id'],
-        where: whereParts.isEmpty ? null : whereParts.join(' AND '),
-        whereArgs: whereArgs.isEmpty ? null : whereArgs,
-        limit: count * 3,
-      );
-      return rows
-          .map((r) => r['id']?.toString() ?? '')
-          .where((id) => id.isNotEmpty)
-          .toList();
-    } catch (e) {
-      debugPrint('[DailyReviewService] Error querying bank new questions: $e');
-      return [];
-    }
+        final ids = await load(cursor, count);
+        if (ids.length < count && cursor.isNotEmpty) {
+          final first = await load('', count - ids.length);
+          for (final id in first) {
+            if (!ids.contains(id)) ids.add(id);
+          }
+        }
+        if (ids.isNotEmpty) {
+          await db.insert('ReviewDrawCursor', {
+            'plan_id': plan.id,
+            'bank_id': bankId,
+            'last_id': ids.last,
+          }, conflictAlgorithm: ConflictAlgorithm.replace);
+        }
+        return ids;
+      } finally {
+        await db.execute('DETACH DATABASE review_draw_bank');
+      }
+    });
   }
 
   /// 批量加载题目实体（严格通过 QuestionBankDatabaseManager 单例连接池复用，杜绝 macOS 6922 锁异常）
