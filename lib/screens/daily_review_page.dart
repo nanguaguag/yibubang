@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../common/adaptive_route.dart';
 import '../common/app_shapes.dart';
 import '../models/chapter.dart';
+import '../db/database_helper.dart';
 import '../models/daily_review_session.dart';
 import '../models/note.dart';
 import '../models/question.dart';
@@ -44,6 +45,8 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
   SpacedRepetitionEngine _engine = const SpacedRepetitionEngine();
 
   bool _loading = true;
+  bool _submitting = false;
+  String _reviewEventId = generateSimpleId();
   String? _errorMessage;
 
   final List<DailyReviewQueueItem> _queue = [];
@@ -146,9 +149,11 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
     _selectedOptions.clear();
     _currentNotes = [];
     _questionStartTime = DateTime.now();
+    _reviewEventId = generateSimpleId();
 
     final item = _currentItem;
-    final isDirectNoteReview = (item?.isFromNote ?? false) && !_reviewNoteWithQuestion;
+    final isDirectNoteReview =
+        (item?.isFromNote ?? false) && !_reviewNoteWithQuestion;
     if (isDirectNoteReview) {
       _isAnswerSubmitted = true;
       _isAnswerRevealed = true;
@@ -188,7 +193,8 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
   void _openOriginalQuestion(DailyReviewQueueItem item) {
     final q = item.question;
     if (q == null) return;
-    final uq = item.userQuestion ??
+    final uq =
+        item.userQuestion ??
         UserQuestion(
           id: q.id,
           chapterId: q.chapterId ?? '',
@@ -225,40 +231,53 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
   /// 提交并进入下一题
   Future<void> _onRatingSelected(ReviewRating rating) async {
     final item = _currentItem;
-    if (item == null) return;
+    if (item == null || _submitting) return;
+    setState(() => _submitting = true);
+    try {
+      final elapsed = DateTime.now().difference(_questionStartTime).inSeconds;
 
-    final elapsed = DateTime.now().difference(_questionStartTime).inSeconds;
+      // 1. 调用 Service 记录算法演进与流水
+      await _service.submitReviewResult(
+        questionId: item.questionId,
+        rating: rating,
+        durationSeconds: elapsed,
+        userAnswer: _selectedOption,
+        bankId: item.bankId,
+        eventId: _reviewEventId,
+      );
 
-    // 1. 调用 Service 记录算法演进与流水
-    await _service.submitReviewResult(
-      questionId: item.questionId,
-      rating: rating,
-      durationSeconds: elapsed,
-      userAnswer: _selectedOption,
-      bankId: item.bankId,
-    );
+      if (!mounted) return;
 
-    // 2. 统计本次会话新学/复习完成数
-    if (item.isNew) {
-      _sessionNewCount++;
-    } else {
-      _sessionReviewCount++;
-    }
+      // 2. 统计本次会话新学/复习完成数
+      if (item.isNew) {
+        _sessionNewCount++;
+      } else {
+        _sessionReviewCount++;
+      }
 
-    // 3. 百词斩/Anki 精髓：选择 Again（重来）的题目，加入当前轮次末尾再次复习，直至彻底巩固
-    if (rating == ReviewRating.again) {
-      _queue.add(item.copyWith(isNew: false));
-    }
+      // 3. 百词斩/Anki 精髓：选择 Again（重来）的题目，加入当前轮次末尾再次复习，直至彻底巩固
+      if (rating == ReviewRating.again) {
+        _queue.add(item.copyWith(isNew: false));
+      }
 
-    // 4. 步进到下一题或结题
-    if (_currentIndex + 1 < _queue.length) {
-      setState(() {
-        _currentIndex++;
-        _resetQuestionState();
-      });
-    } else {
-      // 今日全部刷完：弹出成就结算弹窗
-      _onSessionCompleted();
+      // 4. 步进到下一题或结题
+      if (_currentIndex + 1 < _queue.length) {
+        setState(() {
+          _currentIndex++;
+          _resetQuestionState();
+        });
+      } else {
+        // 今日全部刷完：弹出成就结算弹窗
+        _onSessionCompleted();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('复习保存失败，请重试：$e')));
+      }
+    } finally {
+      if (mounted) setState(() => _submitting = false);
     }
   }
 
@@ -282,16 +301,18 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
   /// 斩题/斩卡处理：直接标记为已斩且已完全掌握，跳过后续复习
   Future<void> _handleCutQuestion() async {
     final item = _currentItem;
-    if (item == null) return;
+    if (item == null || _submitting) return;
     final isFlashcard = item.itemType == ReviewItemType.flashcard;
 
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(isFlashcard ? '熟练斩卡' : '熟练斩题'),
-        content: Text(isFlashcard
-            ? '确定将本闪卡标记为已斩吗？\n斩卡后该闪卡将自动归档为完全掌握，移出每日复习计划。'
-            : '确定将本题标记为已斩吗？\n斩题后该题将自动归档为完全掌握，移出每日复习计划。'),
+        content: Text(
+          isFlashcard
+              ? '确定将本闪卡标记为已斩吗？\n斩卡后该闪卡将自动归档为完全掌握，移出每日复习计划。'
+              : '确定将本题标记为已斩吗？\n斩题后该题将自动归档为完全掌握，移出每日复习计划。',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
@@ -305,28 +326,40 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
       ),
     );
 
-    if (confirmed != true) return;
+    if (confirmed != true || !mounted || _submitting) return;
 
-    // 标记为斩题并直接归档为 mastered
-    await _service.cutQuestion(
-      questionId: item.questionId,
-      bankId: item.bankId ?? '',
-      planId: item.reviewItem?.planId,
-    );
+    setState(() => _submitting = true);
+    try {
+      // 标记为斩题并直接归档为 mastered
+      await _service.cutQuestion(
+        questionId: item.questionId,
+        bankId: item.bankId ?? '',
+        planId: item.reviewItem?.planId,
+      );
 
-    if (item.isNew) {
-      _sessionNewCount++;
-    } else {
-      _sessionReviewCount++;
-    }
+      if (!mounted) return;
+      if (item.isNew) {
+        _sessionNewCount++;
+      } else {
+        _sessionReviewCount++;
+      }
 
-    if (_currentIndex + 1 < _queue.length) {
-      setState(() {
-        _currentIndex++;
-        _resetQuestionState();
-      });
-    } else {
-      _onSessionCompleted();
+      if (_currentIndex + 1 < _queue.length) {
+        setState(() {
+          _currentIndex++;
+          _resetQuestionState();
+        });
+      } else {
+        _onSessionCompleted();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('斩题保存失败，请重试：$e')));
+      }
+    } finally {
+      if (mounted) setState(() => _submitting = false);
     }
   }
 
@@ -344,7 +377,7 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
             IconButton(
               tooltip: isFlashcard ? '熟练斩卡' : '熟练斩题',
               icon: const Icon(Icons.content_cut_rounded),
-              onPressed: _handleCutQuestion,
+              onPressed: _submitting ? null : _handleCutQuestion,
             ),
         ],
       ),
@@ -422,8 +455,15 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
                   _buildQuestionCard(context, item, question, theme, scheme),
                   const SizedBox(height: 16),
 
-                  if (question != null && !question.isSubjective && question.option != null) ...[
-                    _buildChoiceOptions(question, theme, scheme, readOnlyHighlightCorrect: true),
+                  if (question != null &&
+                      !question.isSubjective &&
+                      question.option != null) ...[
+                    _buildChoiceOptions(
+                      question,
+                      theme,
+                      scheme,
+                      readOnlyHighlightCorrect: true,
+                    ),
                     const SizedBox(height: 16),
                   ],
 
@@ -438,10 +478,16 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
                       question.option != null)
                     _buildChoiceOptions(question, theme, scheme)
                   else
-                    _buildSubjectiveOrFlashcardContent(item, question, theme, scheme),
+                    _buildSubjectiveOrFlashcardContent(
+                      item,
+                      question,
+                      theme,
+                      scheme,
+                    ),
 
                   // 个人速记笔记展开区（作答后或翻转后优先呈现，唤醒浓缩知识点）
-                  if ((_isAnswerSubmitted || _isAnswerRevealed) && _currentNotes.isNotEmpty) ...[
+                  if ((_isAnswerSubmitted || _isAnswerRevealed) &&
+                      _currentNotes.isNotEmpty) ...[
                     const SizedBox(height: 16),
                     _buildNotesCard(context, theme, scheme),
                   ],
@@ -502,8 +548,8 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
                   color: _isCramMode
                       ? Colors.deepOrange.withValues(alpha: 0.15)
                       : (isNew
-                          ? Colors.teal.withValues(alpha: 0.15)
-                          : Colors.amber.withValues(alpha: 0.18)),
+                            ? Colors.teal.withValues(alpha: 0.15)
+                            : Colors.amber.withValues(alpha: 0.18)),
                   borderRadius: BorderRadius.circular(AppShapes.full),
                 ),
                 child: Row(
@@ -516,19 +562,21 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
                       size: 14,
                       color: _isCramMode
                           ? Colors.deepOrange.shade700
-                          : (isNew ? Colors.teal.shade700 : Colors.amber.shade900),
+                          : (isNew
+                                ? Colors.teal.shade700
+                                : Colors.amber.shade900),
                     ),
                     const SizedBox(width: 4),
                     Text(
-                      _isCramMode
-                          ? '提前巩固'
-                          : (isNew ? '今日新学' : '艾宾浩斯复习'),
+                      _isCramMode ? '提前巩固' : (isNew ? '今日新学' : '艾宾浩斯复习'),
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.bold,
                         color: _isCramMode
                             ? Colors.deepOrange.shade700
-                            : (isNew ? Colors.teal.shade700 : Colors.amber.shade900),
+                            : (isNew
+                                  ? Colors.teal.shade700
+                                  : Colors.amber.shade900),
                       ),
                     ),
                   ],
@@ -537,7 +585,10 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
               if (item?.itemType == ReviewItemType.flashcard) ...[
                 const SizedBox(width: 6),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.purple.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(AppShapes.full),
@@ -545,7 +596,11 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.style_rounded, size: 14, color: Colors.purple.shade700),
+                      Icon(
+                        Icons.style_rounded,
+                        size: 14,
+                        color: Colors.purple.shade700,
+                      ),
                       const SizedBox(width: 4),
                       Text(
                         '自制闪卡',
@@ -558,10 +613,14 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
                     ],
                   ),
                 ),
-              ] else if (item?.isFromNote == true || _currentNotes.isNotEmpty) ...[
+              ] else if (item?.isFromNote == true ||
+                  _currentNotes.isNotEmpty) ...[
                 const SizedBox(width: 6),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.blue.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(AppShapes.full),
@@ -569,7 +628,11 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.edit_note_rounded, size: 14, color: Colors.blue.shade700),
+                      Icon(
+                        Icons.edit_note_rounded,
+                        size: 14,
+                        color: Colors.blue.shade700,
+                      ),
                       const SizedBox(width: 4),
                       Text(
                         '笔记',
@@ -616,9 +679,7 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
     ThemeData theme,
     ColorScheme scheme,
   ) {
-    final title = question?.title ??
-        item.customFlashcard?.front ??
-        '（无题干内容）';
+    final title = question?.title ?? item.customFlashcard?.front ?? '（无题干内容）';
     final publicTitle = question?.publicTitle;
     final titleImg = question?.titleImg;
 
@@ -626,9 +687,7 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(AppShapes.large),
-        side: BorderSide(
-          color: scheme.outlineVariant.withValues(alpha: 0.4),
-        ),
+        side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.4)),
       ),
       color: scheme.surfaceContainerLow,
       child: Padding(
@@ -652,11 +711,18 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
                     borderRadius: BorderRadius.circular(AppShapes.full),
                     onTap: () => _openOriginalQuestion(item),
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.open_in_new_rounded, size: 14, color: scheme.primary),
+                          Icon(
+                            Icons.open_in_new_rounded,
+                            size: 14,
+                            color: scheme.primary,
+                          ),
                           const SizedBox(width: 4),
                           Text(
                             '原题详情',
@@ -723,7 +789,11 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
   }
 
   /// 笔记加载中或降级占位卡片
-  Widget _buildNotesLoadingOrFallbackCard(BuildContext context, ThemeData theme, ColorScheme scheme) {
+  Widget _buildNotesLoadingOrFallbackCard(
+    BuildContext context,
+    ThemeData theme,
+    ColorScheme scheme,
+  ) {
     return Card(
       elevation: 0,
       shape: RoundedRectangleBorder(
@@ -788,7 +858,11 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
               borderSide = const BorderSide(color: Colors.green, width: 1.5);
               badgeColor = Colors.green;
               badgeTextColor = Colors.white;
-              statusTrailing = const Icon(Icons.check_circle, color: Colors.green, size: 20);
+              statusTrailing = const Icon(
+                Icons.check_circle,
+                color: Colors.green,
+                size: 20,
+              );
             }
           } else if (_isAnswerSubmitted) {
             if (isCorrectAnswer && isSelected) {
@@ -797,7 +871,11 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
               borderSide = const BorderSide(color: Colors.green, width: 1.5);
               badgeColor = Colors.green;
               badgeTextColor = Colors.white;
-              statusTrailing = const Icon(Icons.check_circle, color: Colors.green, size: 20);
+              statusTrailing = const Icon(
+                Icons.check_circle,
+                color: Colors.green,
+                size: 20,
+              );
             } else if (isCorrectAnswer && !isSelected) {
               // 2. 漏选：红框警示，标注“漏选”
               tileColor = Colors.red.withValues(alpha: 0.08);
@@ -816,7 +894,11 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
                     ),
                   ),
                   const SizedBox(width: 4),
-                  Icon(Icons.check_circle_outline, color: Colors.red.shade700, size: 20),
+                  Icon(
+                    Icons.check_circle_outline,
+                    color: Colors.red.shade700,
+                    size: 20,
+                  ),
                 ],
               );
             } else if (!isCorrectAnswer && isSelected) {
@@ -846,7 +928,11 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
             borderSide = BorderSide(color: scheme.primary, width: 1.5);
             badgeColor = scheme.primary;
             badgeTextColor = scheme.onPrimary;
-            statusTrailing = Icon(Icons.check_box_rounded, color: scheme.primary, size: 20);
+            statusTrailing = Icon(
+              Icons.check_box_rounded,
+              color: scheme.primary,
+              size: 20,
+            );
           } else if (isMulti && !isSelected) {
             statusTrailing = Icon(
               Icons.check_box_outline_blank_rounded,
@@ -883,7 +969,10 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
                       }
                     },
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
                 child: Row(
                   children: [
                     Container(
@@ -922,7 +1011,10 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
         }),
 
         // 多选题专属提交按钮（作答前展示，直读模式不展示）
-        if (!readOnlyHighlightCorrect && isMulti && !_isAnswerSubmitted && !_isAnswerRevealed) ...[
+        if (!readOnlyHighlightCorrect &&
+            isMulti &&
+            !_isAnswerSubmitted &&
+            !_isAnswerRevealed) ...[
           const SizedBox(height: 6),
           FilledButton(
             style: FilledButton.styleFrom(
@@ -982,25 +1074,26 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
       );
     }
 
-    final answerText = question?.answer ??
-        item.customFlashcard?.back ??
-        '（暂无参考答案）';
+    final answerText =
+        question?.answer ?? item.customFlashcard?.back ?? '（暂无参考答案）';
 
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: scheme.secondaryContainer.withValues(alpha: 0.35),
         borderRadius: BorderRadius.circular(AppShapes.large),
-        border: Border.all(
-          color: scheme.secondary.withValues(alpha: 0.4),
-        ),
+        border: Border.all(color: scheme.secondary.withValues(alpha: 0.4)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(Icons.check_circle_outline, color: scheme.secondary, size: 20),
+              Icon(
+                Icons.check_circle_outline,
+                color: scheme.secondary,
+                size: 20,
+              ),
               const SizedBox(width: 8),
               Text(
                 '参考答案',
@@ -1044,16 +1137,18 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
       decoration: BoxDecoration(
         color: scheme.surfaceContainerHighest.withValues(alpha: 0.45),
         borderRadius: BorderRadius.circular(AppShapes.large),
-        border: Border.all(
-          color: scheme.outlineVariant.withValues(alpha: 0.4),
-        ),
+        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.4)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(Icons.lightbulb_outline_rounded, color: Colors.amber.shade800, size: 20),
+              Icon(
+                Icons.lightbulb_outline_rounded,
+                color: Colors.amber.shade800,
+                size: 20,
+              ),
               const SizedBox(width: 8),
               Text(
                 '题目解析',
@@ -1123,8 +1218,8 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
     ThemeData theme,
     ColorScheme scheme,
   ) {
-    final reviewItem = item.reviewItem ??
-        SpacedReviewItem(itemId: item.questionId);
+    final reviewItem =
+        item.reviewItem ?? SpacedReviewItem(itemId: item.questionId);
     final intervals = _engine.previewNextIntervals(reviewItem);
 
     return Container(
@@ -1195,7 +1290,7 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
         borderRadius: BorderRadius.circular(AppShapes.medium),
         child: InkWell(
           borderRadius: BorderRadius.circular(AppShapes.medium),
-          onTap: () => _onRatingSelected(rating),
+          onTap: _submitting ? null : () => _onRatingSelected(rating),
           child: Container(
             padding: const EdgeInsets.symmetric(vertical: 10),
             decoration: BoxDecoration(
@@ -1233,7 +1328,11 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
   }
 
   /// 专属笔记展示卡片（作答后展示用户记录的知识点精华）
-  Widget _buildNotesCard(BuildContext context, ThemeData theme, ColorScheme scheme) {
+  Widget _buildNotesCard(
+    BuildContext context,
+    ThemeData theme,
+    ColorScheme scheme,
+  ) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1248,7 +1347,11 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
         children: [
           Row(
             children: [
-              Icon(Icons.edit_note_rounded, color: Colors.amber.shade900, size: 22),
+              Icon(
+                Icons.edit_note_rounded,
+                color: Colors.amber.shade900,
+                size: 22,
+              ),
               const SizedBox(width: 8),
               Text(
                 '我的笔记 (${_currentNotes.length})',
@@ -1283,40 +1386,51 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
                   ),
                   if (note.images.isNotEmpty) ...[
                     const SizedBox(height: 8),
-                    Builder(builder: (context) {
-                      final imageUrls = note.images.map((e) => e.bImg).where((e) => e.isNotEmpty).toList();
-                      return Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: note.images.map((img) {
-                          final thumb = img.sImg.isNotEmpty ? img.sImg : img.bImg;
-                          return GestureDetector(
-                            onTap: () {
-                              if (imageUrls.isNotEmpty) {
-                                Navigator.push(
-                                  context,
-                                  adaptivePageRoute(
-                                    builder: (_) => FullScreenImageView(
-                                      imageUrls: imageUrls,
-                                      initialIndex: imageUrls.indexOf(img.bImg).clamp(0, imageUrls.length - 1),
+                    Builder(
+                      builder: (context) {
+                        final imageUrls = note.images
+                            .map((e) => e.bImg)
+                            .where((e) => e.isNotEmpty)
+                            .toList();
+                        return Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: note.images.map((img) {
+                            final thumb = img.sImg.isNotEmpty
+                                ? img.sImg
+                                : img.bImg;
+                            return GestureDetector(
+                              onTap: () {
+                                if (imageUrls.isNotEmpty) {
+                                  Navigator.push(
+                                    context,
+                                    adaptivePageRoute(
+                                      builder: (_) => FullScreenImageView(
+                                        imageUrls: imageUrls,
+                                        initialIndex: imageUrls
+                                            .indexOf(img.bImg)
+                                            .clamp(0, imageUrls.length - 1),
+                                      ),
                                     ),
-                                  ),
-                                );
-                              }
-                            },
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(AppShapes.small),
-                              child: AppNetworkImage(
-                                imageUrl: thumb,
-                                width: 80,
-                                height: 80,
-                                fit: BoxFit.cover,
+                                  );
+                                }
+                              },
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(
+                                  AppShapes.small,
+                                ),
+                                child: AppNetworkImage(
+                                  imageUrl: thumb,
+                                  width: 80,
+                                  height: 80,
+                                  fit: BoxFit.cover,
+                                ),
                               ),
-                            ),
-                          );
-                        }).toList(),
-                      );
-                    }),
+                            );
+                          }).toList(),
+                        );
+                      },
+                    ),
                   ],
                 ],
               ),
@@ -1328,7 +1442,11 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
   }
 
   /// 队列为空或已学完提示
-  Widget _buildEmptyState(BuildContext context, ThemeData theme, ColorScheme scheme) {
+  Widget _buildEmptyState(
+    BuildContext context,
+    ThemeData theme,
+    ColorScheme scheme,
+  ) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -1341,7 +1459,11 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
                 color: scheme.primaryContainer.withValues(alpha: 0.5),
                 shape: BoxShape.circle,
               ),
-              child: Icon(Icons.done_all_rounded, size: 56, color: scheme.primary),
+              child: Icon(
+                Icons.done_all_rounded,
+                size: 56,
+                color: scheme.primary,
+              ),
             ),
             const SizedBox(height: 20),
             Text(
