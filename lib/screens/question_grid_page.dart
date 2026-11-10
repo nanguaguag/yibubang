@@ -1,8 +1,12 @@
 import 'dart:async';
+import 'dart:math' as math;
 import '../common/adaptive_route.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'question_detail_page.dart';
+import 'question_detail/chapter_cross_indicator.dart';
 
 import '../common/app_strings.dart';
 import '../models/chapter.dart';
@@ -39,6 +43,22 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
   double _savedScrollOffset = 0.0;
   Map<String, int> _chapterQuestionNumbers = {};
 
+  // 跨章节滑动切换状态
+  late Chapter _currentChapter;
+  Chapter? _prevChapter;
+  Chapter? _nextChapter;
+  bool _isSwitchingChapter = false;
+  bool _canTriggerChapter = false;
+  bool _isTriggeringNext = false;
+  bool _hasTriggeredHaptic = false;
+  Chapter? _targetChapterToTrigger;
+  static const double _overscrollThreshold = 55.0;
+
+  final ValueNotifier<ChapterCrossOverscrollState> _overscrollNotifier =
+      ValueNotifier<ChapterCrossOverscrollState>(const ChapterCrossOverscrollState());
+  final ValueNotifier<String?> _switchBannerNotifier = ValueNotifier<String?>(null);
+  Timer? _switchBannerTimer;
+
   // 筛选选项
   int cutType = 0;
   int questionType = 0;
@@ -57,12 +77,14 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
   @override
   void initState() {
     super.initState();
+    _currentChapter = widget.chapter;
     // 初始化 Future 在 initState 中，这样可以访问 widget
-    allQuestions = getQuestionsFromChapter(widget.chapter);
+    allQuestions = getQuestionsFromChapter(_currentChapter);
     allUserQuestions = getUserQuestions(allQuestions);
-    _chapterStats = _loadChapterStats();
+    _chapterStats = _loadChapterStats(_currentChapter);
     _loadSettings();
     _jump2Question();
+    _updatePrevNextChapters();
     CloudSyncService.instance.addListener(_onCloudSyncUpdate);
   }
 
@@ -72,12 +94,167 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
     }
   }
 
-  Future<PeriodStats> _loadChapterStats() async {
+  Future<void> _updatePrevNextChapters() async {
+    try {
+      final siblings = await getSiblingChapters(_currentChapter);
+      if (!mounted) return;
+      final idx = siblings.indexWhere((c) => c.id == _currentChapter.id);
+      setState(() {
+        _prevChapter = (idx > 0) ? siblings[idx - 1] : null;
+        _nextChapter = (idx >= 0 && idx < siblings.length - 1) ? siblings[idx + 1] : null;
+      });
+    } catch (e) {
+      debugPrint('[QuestionGridPage] 获取相邻章节失败: $e');
+    }
+  }
+
+  void _handleTriggerRelease() {
+    if (_canTriggerChapter && _targetChapterToTrigger != null && !_isSwitchingChapter) {
+      final target = _targetChapterToTrigger!;
+      final toNext = _isTriggeringNext;
+      _canTriggerChapter = false;
+      _targetChapterToTrigger = null;
+      _overscrollNotifier.value = const ChapterCrossOverscrollState();
+      _hasTriggeredHaptic = false;
+      _switchToChapter(target, isNext: toNext);
+    }
+  }
+
+  void _handlePointerCancel(PointerCancelEvent event) {
+    _canTriggerChapter = false;
+    _targetChapterToTrigger = null;
+    _overscrollNotifier.value = const ChapterCrossOverscrollState();
+    _hasTriggeredHaptic = false;
+  }
+
+  bool _handleScrollNotification(ScrollNotification notification) {
+    if (notification is UserScrollNotification) {
+      if (notification.direction == ScrollDirection.idle) {
+        // 用户手势或 macOS 触控板停顿/释放（idle）时触发
+        _handleTriggerRelease();
+      }
+    }
+
+    if (notification is ScrollUpdateNotification) {
+      final metrics = notification.metrics;
+      if (metrics.axis == Axis.vertical) {
+        if (metrics.pixels < 0) {
+          // 下拉（顶部边界）：进入上一章
+          final dist = -metrics.pixels;
+          final ready = dist >= _overscrollThreshold;
+          _overscrollNotifier.value = ChapterCrossOverscrollState(
+            distance: dist,
+            isNext: false,
+            targetChapter: _prevChapter,
+          );
+          _targetChapterToTrigger = _prevChapter;
+          _isTriggeringNext = false;
+          if (ready && _prevChapter != null) {
+            _canTriggerChapter = true;
+            if (!_hasTriggeredHaptic) {
+              _hasTriggeredHaptic = true;
+              HapticFeedback.mediumImpact();
+            }
+          }
+        } else if (metrics.pixels > metrics.maxScrollExtent) {
+          // 上拉（底部边界）：进入下一章
+          final dist = metrics.pixels - metrics.maxScrollExtent;
+          final ready = dist >= _overscrollThreshold;
+          _overscrollNotifier.value = ChapterCrossOverscrollState(
+            distance: dist,
+            isNext: true,
+            targetChapter: _nextChapter,
+          );
+          _targetChapterToTrigger = _nextChapter;
+          _isTriggeringNext = true;
+          if (ready && _nextChapter != null) {
+            _canTriggerChapter = true;
+            if (!_hasTriggeredHaptic) {
+              _hasTriggeredHaptic = true;
+              HapticFeedback.mediumImpact();
+            }
+          }
+        } else {
+          if (_overscrollNotifier.value.distance > 0) {
+            _overscrollNotifier.value = const ChapterCrossOverscrollState();
+          }
+          // 用户主动滑回深层内容区域时取消触发态
+          if (metrics.pixels > 30.0 && metrics.pixels < metrics.maxScrollExtent - 30.0) {
+            _canTriggerChapter = false;
+            _targetChapterToTrigger = null;
+            _hasTriggeredHaptic = false;
+          }
+        }
+      }
+    } else if (notification is ScrollEndNotification) {
+      _handleTriggerRelease();
+    }
+    return false;
+  }
+
+  Future<void> _switchToChapter(Chapter targetChapter, {required bool isNext}) async {
+    if (_isSwitchingChapter) return;
+    _isSwitchingChapter = true;
+
+    if (mode == 2) {
+      final confirmed = await _confirmLeaveTest();
+      if (confirmed != true) {
+        _isSwitchingChapter = false;
+        return;
+      }
+    }
+
+    final questionsFuture = getQuestionsFromChapter(targetChapter);
+    final userQuestionsFuture = getUserQuestions(questionsFuture);
+    final statsFuture = _loadChapterStats(targetChapter);
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('lastChapterId', targetChapter.id);
+      await prefs.setString('lastSubjectId', targetChapter.subjectId);
+      await prefs.setInt('lastQIndex', 0);
+    } catch (_) {}
+
+    if (!mounted) {
+      _isSwitchingChapter = false;
+      return;
+    }
+
+    setState(() {
+      _currentChapter = targetChapter;
+      allQuestions = questionsFuture;
+      allUserQuestions = userQuestionsFuture;
+      _chapterStats = statsFuture;
+      _savedScrollOffset = 0.0;
+    });
+
+    if (_scrollController.hasClients) {
+      _scrollController.jumpTo(0.0);
+    }
+
+    await _updatePrevNextChapters();
+    _isSwitchingChapter = false;
+
+    _showChapterSwitchBadge(targetChapter);
+  }
+
+  void _showChapterSwitchBadge(Chapter chapter) {
+    _switchBannerTimer?.cancel();
+    _switchBannerNotifier.value = '已进入：${chapter.name}';
+    _switchBannerTimer = Timer(const Duration(milliseconds: 2200), () {
+      if (mounted) {
+        _switchBannerNotifier.value = null;
+      }
+    });
+  }
+
+  Future<PeriodStats> _loadChapterStats([Chapter? chapter]) async {
+    final target = chapter ?? _currentChapter;
     try {
       final bankId = await activeBankId();
       return await getChapterPeriodStats(
-        subjectId: widget.chapter.subjectId,
-        chapterId: widget.chapter.id,
+        subjectId: target.subjectId,
+        chapterId: target.id,
         bankId: bankId,
         startMs: 0,
         endMs: DateTime.now().millisecondsSinceEpoch,
@@ -95,18 +272,22 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
   @override
   void dispose() {
     CloudSyncService.instance.removeListener(_onCloudSyncUpdate);
+    _switchBannerTimer?.cancel();
+    _overscrollNotifier.dispose();
+    _switchBannerNotifier.dispose();
     _scrollController.dispose();
     super.dispose();
   }
 
-  void _refreshPage() async {
-    final questions = getQuestionsFromChapter(widget.chapter);
+  void _refreshPage([Chapter? chapter]) async {
+    final target = chapter ?? _currentChapter;
+    final questions = getQuestionsFromChapter(target);
     final userQuestions = getUserQuestions(questions);
 
     setState(() {
       allQuestions = questions;
       allUserQuestions = userQuestions;
-      _chapterStats = _loadChapterStats();
+      _chapterStats = _loadChapterStats(target);
     });
 
     await questions;
@@ -189,17 +370,23 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
       // lastQIndex 是上次的页码。题库更新后题量可能变化，或该记录可能来自
       // 其它章节，这里做边界保护，避免 PageController(initialPage: 越界) 崩溃。
       final int targetIndex = lastQIndex.clamp(0, questions.length - 1).toInt();
-      await Navigator.push(
+      final result = await Navigator.push(
         context,
         adaptivePageRoute(
           builder: (context) => QuestionDetailPage(
-            chapter: widget.chapter,
+            chapter: _currentChapter,
             questions: questions,
             userQuestions: userQuestions,
             questionIndex: targetIndex,
           ),
         ),
       );
+      if (result is Chapter && result.id != _currentChapter.id) {
+        _currentChapter = result;
+        _savedScrollOffset = 0.0;
+        _refreshPage(_currentChapter);
+        _updatePrevNextChapters();
+      }
     }
   }
 
@@ -290,7 +477,7 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
                       uq,
                       q,
                       prevCorrect: prevCorrect,
-                      chapter: widget.chapter,
+                      chapter: _currentChapter,
                     );
                   }
                 }
@@ -307,7 +494,7 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
                     ? (questions.first.nativeAppId ?? questions.first.appId)
                     : null;
                 unawaited(YkbSyncService.instance.syncRedoChapter(
-                  chapter: widget.chapter,
+                  chapter: _currentChapter,
                   appId: appId,
                 ));
                 if (CloudSyncService.instance.isConfigured &&
@@ -373,7 +560,7 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
                       uq,
                       q,
                       prevCorrect: false,
-                      chapter: widget.chapter,
+                      chapter: _currentChapter,
                     );
                   }
                 }
@@ -558,12 +745,15 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
     double crossSpacing,
     double buttonSize,
   ) {
+    final int safeCount = math.max(1, crossAxisCount);
+    final double safeSpacing = safeCount > 1 ? math.max(0.0, crossSpacing) : 0.0;
     return GridView.builder(
       controller: _scrollController,
+      physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: crossAxisCount,
+        crossAxisCount: safeCount,
         childAspectRatio: 1.0, // 设置 item 宽高比例,
-        crossAxisSpacing: crossSpacing, // 横向间距
+        crossAxisSpacing: safeSpacing, // 横向间距
         mainAxisSpacing: 16, // 纵向间距
       ),
       itemCount: questions.length,
@@ -596,11 +786,11 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
         return ElevatedButton(
           onPressed: () async {
             _savedScrollOffset = _scrollController.offset;
-            await Navigator.push(
+            final result = await Navigator.push(
               context,
               adaptivePageRoute(
                 builder: (context) => QuestionDetailPage(
-                  chapter: widget.chapter,
+                  chapter: _currentChapter,
                   questions: questions,
                   userQuestions: userQuestions,
                   questionIndex: index,
@@ -608,8 +798,16 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
                 ),
               ),
             );
-            await _loadSettings();
-            _refreshPage();
+            if (result is Chapter && result.id != _currentChapter.id) {
+              _currentChapter = result;
+              _savedScrollOffset = 0.0;
+              _chapterStats = _loadChapterStats(_currentChapter);
+              _refreshPage(_currentChapter);
+              _updatePrevNextChapters();
+            } else {
+              await _loadSettings();
+              _refreshPage();
+            }
           },
           style: cutted
               ? ElevatedButton.styleFrom(
@@ -642,201 +840,299 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        actions: <Widget>[
-          PopupMenuButton<String>(
-            icon: Icon(Icons.restart_alt),
-            onSelected: (String value) {
-              if (value == 'redoAll') {
-                clearUserAnswers();
-              } else if (value == 'redoWrong') {
-                clearWrongAnswers();
-              }
-            },
-            itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-              const PopupMenuItem<String>(
-                value: 'redoAll',
-                child: Text('全部重做'),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        Navigator.of(context).pop(_currentChapter);
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          leading: BackButton(
+            onPressed: () => Navigator.of(context).pop(_currentChapter),
+          ),
+          actions: <Widget>[
+            PopupMenuButton<String>(
+              icon: Icon(Icons.restart_alt),
+              onSelected: (String value) {
+                if (value == 'redoAll') {
+                  clearUserAnswers();
+                } else if (value == 'redoWrong') {
+                  clearWrongAnswers();
+                }
+              },
+              itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                const PopupMenuItem<String>(
+                  value: 'redoAll',
+                  child: Text('全部重做'),
+                ),
+                const PopupMenuItem<String>(
+                  value: 'redoWrong',
+                  child: Text('重做错题'),
+                ),
+              ],
+            ),
+            Builder(
+              builder: (context) => Padding(
+                padding: EdgeInsets.only(right: 5),
+                child: IconButton(
+                  icon: Icon(Icons.tune), // 自定义 Drawer 图标
+                  onPressed: () {
+                    Scaffold.of(context).openEndDrawer();
+                  },
+                ),
               ),
-              const PopupMenuItem<String>(
-                value: 'redoWrong',
-                child: Text('重做错题'),
-              ),
+            ),
+          ],
+          title: Wrap(
+            children: [
+              Text(_currentChapter.name),
             ],
           ),
-          Builder(
-            builder: (context) => Padding(
-              padding: EdgeInsets.only(right: 5),
-              child: IconButton(
-                icon: Icon(Icons.tune), // 自定义 Drawer 图标
-                onPressed: () {
-                  Scaffold.of(context).openEndDrawer();
-                },
+        ),
+        endDrawer: FractionallySizedBox(
+          widthFactor: 0.72, // 宽度占父容器的72%
+          child: Drawer(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.zero, // 设为0，去掉圆角
+            ),
+            child: SafeArea(
+              child: ListView(
+                padding: EdgeInsets.zero,
+                children: <Widget>[
+                  // 头部
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 4, 8),
+                    child: Row(
+                      children: [
+                        //Icon(
+                        //  Icons.tune,
+                        //  size: 22,
+                        //  color: Theme.of(context).colorScheme.primary,
+                        //),
+                        //const SizedBox(width: 8),
+                        //const Text(
+                        //  '内容与筛选',
+                        //  style: TextStyle(
+                        //    fontSize: 20,
+                        //    fontWeight: FontWeight.w700,
+                        //  ),
+                        //),
+                        //const Spacer(),
+                        //IconButton(
+                        //  icon: const Icon(Icons.close),
+                        //  onPressed: () {
+                        //    Navigator.pop(context); // 关闭侧边栏
+                        //  },
+                        //),
+                      ],
+                    ),
+                  ),
+                  //const Divider(height: 1),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
+                    child: _buildChapterStatsCard(),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                    child: Text(
+                      '筛选',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: _buildFilterSection(
+                      '斩题',
+                      cutTypes,
+                      cutTypes[cutType],
+                      (value) {
+                        setState(() {
+                          cutType = cutTypes.indexOf(value);
+                        });
+                        saveSettings();
+                      },
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: _buildFilterSection(
+                      '题型',
+                      questionTypes,
+                      questionTypes[questionType],
+                      (value) {
+                        setState(() {
+                          questionType = questionTypes.indexOf(value);
+                        });
+                        saveSettings();
+                      },
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: _buildFilterSection(
+                      '分类',
+                      categories,
+                      categories[category],
+                      (value) {
+                        setState(() {
+                          category = categories.indexOf(value);
+                        });
+                        saveSettings();
+                      },
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: _buildFilterSection(
+                      '模式',
+                      modesList,
+                      modesList[mode],
+                      (value) {
+                        _onModeChanged(modesList.indexOf(value));
+                      },
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
-        ],
-        title: Wrap(
-          children: [
-            Text(widget.chapter.name),
-          ],
         ),
-      ),
-      endDrawer: FractionallySizedBox(
-        widthFactor: 0.72, // 宽度占父容器的72%
-        child: Drawer(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.zero, // 设为0，去掉圆角
-          ),
-          child: SafeArea(
-            child: ListView(
-              padding: EdgeInsets.zero,
-              children: <Widget>[
-                // 头部
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 4, 8),
-                  child: Row(
-                    children: [
-                      //Icon(
-                      //  Icons.tune,
-                      //  size: 22,
-                      //  color: Theme.of(context).colorScheme.primary,
-                      //),
-                      //const SizedBox(width: 8),
-                      //const Text(
-                      //  '内容与筛选',
-                      //  style: TextStyle(
-                      //    fontSize: 20,
-                      //    fontWeight: FontWeight.w700,
-                      //  ),
-                      //),
-                      //const Spacer(),
-                      //IconButton(
-                      //  icon: const Icon(Icons.close),
-                      //  onPressed: () {
-                      //    Navigator.pop(context); // 关闭侧边栏
-                      //  },
-                      //),
-                    ],
-                  ),
-                ),
-                //const Divider(height: 1),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
-                  child: _buildChapterStatsCard(),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                  child: Text(
-                    '筛选',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      color: Theme.of(context).colorScheme.primary,
+        body: Stack(
+          children: [
+            Column(
+              children: [
+                Expanded(
+                  child: Listener(
+                    onPointerUp: (_) => _handleTriggerRelease(),
+                    onPointerPanZoomEnd: (_) => _handleTriggerRelease(),
+                    onPointerCancel: _handlePointerCancel,
+                    behavior: HitTestBehavior.translucent,
+                    child: NotificationListener<ScrollNotification>(
+                      onNotification: _handleScrollNotification,
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: FutureBuilder<MapEntry<List<Question>, List<UserQuestion>>>(
+                          future: _filter(allQuestions, allUserQuestions),
+                          builder: (context, snapshot) {
+                            if (snapshot.connectionState == ConnectionState.waiting) {
+                              return _buildLoadingIndicator();
+                            } else if (snapshot.hasError) {
+                              return _buildErrorMessage(snapshot.error);
+                            } else if (!snapshot.hasData || snapshot.data!.key.isEmpty) {
+                              return _buildEmptyMessage('在当前筛选条件下\n本章节中还没有题目哦~');
+                            } else {
+                              return LayoutBuilder(
+                                builder: (context, constraints) {
+                                  // 每个按钮的固定宽度和高度
+                                  const double btnSize = 52.0;
+                                  final double width = constraints.maxWidth;
+                                  final int count = math.max(1, ((width + 24) / (btnSize + 24)).floor());
+                                  final double crossSpacing = count > 1
+                                      ? math.max(0.0, (width - count * btnSize) / (count - 1))
+                                      : 0.0;
+                                  return _buildQuestionGrid(
+                                    snapshot.data!.key,
+                                    snapshot.data!.value,
+                                    count,
+                                    crossSpacing,
+                                    btnSize,
+                                  );
+                                },
+                              );
+                            }
+                          },
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: _buildFilterSection(
-                    '斩题',
-                    cutTypes,
-                    cutTypes[cutType],
-                    (value) {
-                      setState(() {
-                        cutType = cutTypes.indexOf(value);
-                      });
-                      saveSettings();
-                    },
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: _buildFilterSection(
-                    '题型',
-                    questionTypes,
-                    questionTypes[questionType],
-                    (value) {
-                      setState(() {
-                        questionType = questionTypes.indexOf(value);
-                      });
-                      saveSettings();
-                    },
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: _buildFilterSection(
-                    '分类',
-                    categories,
-                    categories[category],
-                    (value) {
-                      setState(() {
-                        category = categories.indexOf(value);
-                      });
-                      saveSettings();
-                    },
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: _buildFilterSection(
-                    '模式',
-                    modesList,
-                    modesList[mode],
-                    (value) {
-                      _onModeChanged(modesList.indexOf(value));
-                    },
                   ),
                 ),
               ],
             ),
-          ),
+
+            // 跨章节滑动纯图标动效指示器（垂直轴向上下滑）
+            ValueListenableBuilder<ChapterCrossOverscrollState>(
+              valueListenable: _overscrollNotifier,
+              builder: (context, state, _) {
+                return ChapterCrossIndicator(
+                  axis: Axis.vertical,
+                  isNext: state.isNext,
+                  overscrollDistance: state.distance,
+                  threshold: _overscrollThreshold,
+                  targetChapter: state.targetChapter,
+                );
+              },
+            ),
+
+            // 章节切换成功顶部悬浮通知
+            _buildFloatingSwitchBadge(),
+          ],
         ),
       ),
-      body: Column(
-        children: [
-          // 题目列表
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child:
-                  FutureBuilder<MapEntry<List<Question>, List<UserQuestion>>>(
-                future: _filter(allQuestions, allUserQuestions),
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return _buildLoadingIndicator();
-                  } else if (snapshot.hasError) {
-                    return _buildErrorMessage(snapshot.error);
-                  } else if (!snapshot.hasData || snapshot.data!.key.isEmpty) {
-                    return _buildEmptyMessage('在当前筛选条件下\n本章节中还没有题目哦~');
-                  } else {
-                    return LayoutBuilder(
-                      builder: (context, constraints) {
-                        // 每个按钮的固定宽度和高度
-                        const double btnSize = 52.0;
-                        double width = constraints.maxWidth;
-                        // 计算每行可以显示的按钮数量 (24: 横向间距最小值)
-                        final int count =
-                            ((width + 24) / (btnSize + 24)).floor();
-                        double crossSpacing =
-                            (width - count * btnSize) / (count - 1);
-                        return _buildQuestionGrid(
-                          snapshot.data!.key,
-                          snapshot.data!.value,
-                          count,
-                          crossSpacing,
-                          btnSize,
-                        );
-                      },
-                    );
-                  }
-                },
+    );
+  }
+
+  /// 章节切换顶部浮现小徽章
+  Widget _buildFloatingSwitchBadge() {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
+    return Positioned(
+      top: 16,
+      left: 20,
+      right: 20,
+      child: Center(
+        child: ValueListenableBuilder<String?>(
+          valueListenable: _switchBannerNotifier,
+          builder: (context, bannerText, _) {
+            return AnimatedSwitcher(
+              duration: const Duration(milliseconds: 250),
+              transitionBuilder: (child, anim) => FadeTransition(
+                opacity: anim,
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(0.0, -0.4),
+                    end: Offset.zero,
+                  ).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutBack)),
+                  child: child,
+                ),
               ),
-            ),
-          ),
-        ],
+              child: bannerText == null
+                  ? const SizedBox.shrink()
+                  : Material(
+                      elevation: 4,
+                      shadowColor: Colors.black26,
+                      borderRadius: BorderRadius.circular(24),
+                      color: scheme.primaryContainer,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.auto_stories_rounded, size: 18, color: scheme.primary),
+                            const SizedBox(width: 8),
+                            Flexible(
+                              child: Text(
+                                bannerText,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.labelMedium?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: scheme.onPrimaryContainer,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+            );
+          },
+        ),
       ),
     );
   }

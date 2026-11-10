@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -29,18 +30,8 @@ class MyCustomScrollBehavior extends MaterialScrollBehavior {
   }
 }
 
-/// 跨章节边缘滑动状态
-class _OverscrollState {
-  final bool isNext;
-  final double distance;
-  final Chapter? targetChapter;
-
-  const _OverscrollState({
-    this.isNext = true,
-    this.distance = 0.0,
-    this.targetChapter,
-  });
-}
+/// 跨章节边缘滑动状态别名
+typedef _OverscrollState = ChapterCrossOverscrollState;
 
 /// 题目详情页面（刷题核心主页面）
 ///
@@ -192,8 +183,8 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     }
   }
 
-  /// 监听屏幕抬手事件（在松手的瞬间立即触发切章，杜绝弹性回弹将距离归零导致失效）
-  void _handlePointerUp(PointerUpEvent event) {
+  /// 监听屏幕抬手或触控板释放事件（在松手的瞬间立即触发切章）
+  void _handleTriggerRelease() {
     if (_canTriggerChapter && _targetChapterToTrigger != null && !_isSwitchingChapter) {
       final target = _targetChapterToTrigger!;
       final toFirst = _isTriggeringNext;
@@ -217,6 +208,10 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     if (notification.metrics.axis != Axis.horizontal) return false;
     if (_isSwitchingChapter) return false;
 
+    if (notification is UserScrollNotification && notification.direction == ScrollDirection.idle) {
+      _handleTriggerRelease();
+    }
+
     if (notification is ScrollUpdateNotification) {
       final currentPage = _controller.currentPage;
       final pixels = notification.metrics.pixels;
@@ -238,9 +233,6 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
             _hasTriggeredHaptic = true;
             HapticFeedback.mediumImpact();
           }
-        } else if (dist < _overscrollThreshold * 0.65) {
-          _canTriggerChapter = false;
-          _hasTriggeredHaptic = false;
         }
       }
       // 处于最后一题且向左拖动（超出右侧边界）
@@ -259,33 +251,14 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
             _hasTriggeredHaptic = true;
             HapticFeedback.mediumImpact();
           }
-        } else if (dist < _overscrollThreshold * 0.65) {
-          _canTriggerChapter = false;
-          _hasTriggeredHaptic = false;
         }
       }
       // 在正常范围内
       else if (_overscrollNotifier.value.distance > 0) {
         _overscrollNotifier.value = const _OverscrollState();
-        _canTriggerChapter = false;
-        _hasTriggeredHaptic = false;
       }
     } else if (notification is ScrollEndNotification) {
-      // 触控板/滚轮松手兜底处理
-      if (_canTriggerChapter && _targetChapterToTrigger != null && !_isSwitchingChapter) {
-        final target = _targetChapterToTrigger!;
-        final toFirst = _isTriggeringNext;
-        _canTriggerChapter = false;
-        _targetChapterToTrigger = null;
-        _overscrollNotifier.value = const _OverscrollState();
-        _hasTriggeredHaptic = false;
-        _switchToChapter(target, toFirstQuestion: toFirst);
-      } else {
-        _canTriggerChapter = false;
-        _targetChapterToTrigger = null;
-        _overscrollNotifier.value = const _OverscrollState();
-        _hasTriggeredHaptic = false;
-      }
+      _handleTriggerRelease();
     }
     return false;
   }
@@ -447,7 +420,8 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
                     children: [
                       Listener(
                         behavior: HitTestBehavior.translucent,
-                        onPointerUp: _handlePointerUp,
+                        onPointerUp: (_) => _handleTriggerRelease(),
+                        onPointerPanZoomEnd: (_) => _handleTriggerRelease(),
                         onPointerCancel: _handlePointerCancel,
                         child: NotificationListener<ScrollNotification>(
                           onNotification: _handleScrollNotification,

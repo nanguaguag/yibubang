@@ -1,15 +1,20 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'package:yibubang/models/chapter.dart';
 import 'package:yibubang/models/question.dart';
 import 'package:yibubang/screens/question_detail/chapter_cross_indicator.dart';
 import 'package:yibubang/screens/question_detail_page.dart';
+import 'package:yibubang/screens/question_grid_page.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  sqfliteFfiInit();
+  databaseFactory = databaseFactoryFfi;
 
   group('Chapter Sorting & Sibling Model Tests', () {
     test('sortChaptersById accurately sorts numeric and mixed chapter IDs', () {
@@ -141,6 +146,98 @@ void main() {
 
       expect(find.byIcon(Icons.do_not_disturb_on_rounded), findsOneWidget);
     });
+
+    testWidgets('supports vertical axis indicator when pulling down (previous chapter)', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Stack(
+              children: [
+                ChapterCrossIndicator(
+                  axis: Axis.vertical,
+                  isNext: false,
+                  overscrollDistance: 35.0,
+                  threshold: 60.0,
+                  targetChapter: chapter2,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.byIcon(Icons.arrow_upward_rounded), findsOneWidget);
+    });
+
+    testWidgets('transforms to double up chevron when vertical pulling down passes threshold', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Stack(
+              children: [
+                ChapterCrossIndicator(
+                  axis: Axis.vertical,
+                  isNext: false,
+                  overscrollDistance: 75.0,
+                  threshold: 60.0,
+                  targetChapter: chapter2,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.byIcon(Icons.keyboard_double_arrow_up_rounded), findsOneWidget);
+    });
+
+    testWidgets('supports vertical axis indicator when pulling up (next chapter)', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Stack(
+              children: [
+                ChapterCrossIndicator(
+                  axis: Axis.vertical,
+                  isNext: true,
+                  overscrollDistance: 35.0,
+                  threshold: 60.0,
+                  targetChapter: chapter2,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.byIcon(Icons.arrow_downward_rounded), findsOneWidget);
+    });
+
+    testWidgets('transforms to double down chevron when vertical pulling up passes threshold', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Stack(
+              children: [
+                ChapterCrossIndicator(
+                  axis: Axis.vertical,
+                  isNext: true,
+                  overscrollDistance: 75.0,
+                  threshold: 60.0,
+                  targetChapter: chapter2,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.byIcon(Icons.keyboard_double_arrow_down_rounded), findsOneWidget);
+    });
   });
 
   group('QuestionDetailPage Cross-Chapter Navigation Tests', () {
@@ -230,6 +327,88 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
       await tester.pumpAndSettle();
       expect(find.textContaining('第一章第一题'), findsOneWidget);
+    });
+  });
+
+  group('QuestionGridPage Vertical Cross-Chapter Navigation Tests', () {
+    setUp(() {
+      SharedPreferences.setMockInitialValues({
+        'mode': 0,
+        'cutType': 0,
+        'questionType': 0,
+        'category': 0,
+      });
+    });
+
+    final chapterA = Chapter(
+      id: '1',
+      name: '第一章 绪论',
+      subjectId: 'sub_physiology',
+      correct: 0,
+      incorrect: 0,
+      total: 5,
+    );
+
+    testWidgets('renders QuestionGridPage with chapter name and cross-chapter indicator', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: QuestionGridPage(
+            chapter: chapterA,
+          ),
+        ),
+      );
+
+      await tester.pump();
+
+      // 验证章节名展示在 AppBar
+      expect(find.text('第一章 绪论'), findsOneWidget);
+
+      // 验证垂直滑动指示器挂载在页面中
+      final indicatorFinder = find.byType(ChapterCrossIndicator);
+      expect(indicatorFinder, findsOneWidget);
+
+      final ChapterCrossIndicator indicator = tester.widget(indicatorFinder);
+      expect(indicator.axis, equals(Axis.vertical));
+    });
+
+    testWidgets('handles narrow/zero width constraints without asserting on crossAxisCount > 0', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: SizedBox(
+            width: 0,
+            height: 100,
+            child: QuestionGridPage(
+              chapter: chapterA,
+            ),
+          ),
+        ),
+      );
+
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('supports macOS trackpad PointerPanZoomEnd and release handling', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: QuestionGridPage(
+            chapter: chapterA,
+          ),
+        ),
+      );
+
+      await tester.pump();
+      // 验证页面 Listener 正确接收 PointerPanZoomEnd 事件并不发生崩溃
+      final listenerFinder = find.byType(Listener);
+      expect(listenerFinder, findsWidgets);
+
+      final TestGesture gesture = await tester.createGesture(kind: PointerDeviceKind.trackpad);
+      await gesture.panZoomStart(const Offset(200, 200));
+      await gesture.panZoomUpdate(const Offset(200, 200), pan: const Offset(0, 100));
+      await tester.pump();
+      await gesture.panZoomEnd();
+      await tester.pump();
+      expect(tester.takeException(), isNull);
     });
   });
 }
