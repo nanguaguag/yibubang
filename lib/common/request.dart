@@ -53,9 +53,7 @@ Future<Map<String, dynamic>> basicReq(
       response = await http.post(uri, headers: headers, body: params);
     } else if (method == "GET") {
       uri = uri.replace(
-        queryParameters: params.map(
-          (k, v) => MapEntry(k, v?.toString() ?? ''),
-        ),
+        queryParameters: params.map((k, v) => MapEntry(k, v?.toString() ?? '')),
       );
       response = await http.get(uri, headers: headers);
     } else {
@@ -76,25 +74,35 @@ Future<Map<String, dynamic>> basicReq(
     debugPrint('[API-RESP] <<< $method $url [${response.statusCode}]');
   }
 
-  if (response.body.trim().isEmpty) {
-    debugPrint('[API-RESP] <<< $method $url returned empty response body (HTTP ${response.statusCode})');
-    return {
-      'code': response.statusCode.toString(),
-      'message': 'HTTP ${response.statusCode}: Empty response body',
-      'data': null,
-    };
+  // HTTP 状态和业务码分离；传输成功不代表业务已确认落库。
+  Map<String, dynamic> failure(String code, String message) => {
+    'code': code,
+    'http_status': response.statusCode,
+    'message': message,
+    'raw_response': response.body,
+    'data': null,
+  };
+  if (response.statusCode != 200) {
+    return failure(
+      'http_error',
+      'HTTP ${response.statusCode}: ${response.body}',
+    );
   }
-
+  if (response.body.trim().isEmpty) {
+    return failure('protocol_error', 'HTTP 200: Empty response body');
+  }
   Map<String, dynamic> resp;
   try {
-    resp = json.decode(response.body) as Map<String, dynamic>;
+    final value = json.decode(response.body);
+    if (value is! Map<String, dynamic> ||
+        (value['code'] is! String && value['code'] is! int) ||
+        value['code'].toString().isEmpty) {
+      return failure('protocol_error', '响应缺少有效业务码');
+    }
+    resp = value;
   } catch (e) {
-    debugPrint('[API-RESP] JSON decode error: $e, raw response body: ${response.body}');
-    return {
-      'code': response.statusCode.toString(),
-      'message': response.body,
-      'data': null,
-    };
+    debugPrint('[API-RESP] JSON decode error: $e');
+    return failure('protocol_error', '响应不是有效 JSON');
   }
 
   if (resp['code'] == '309' || resp['code'] == 309) {
@@ -129,9 +137,11 @@ Future<Map<String, dynamic>> login(
   if (loginResp['code'].toString() == '200') {
     final data = loginResp['data'];
     if (data is! Map ||
-        ['token', 'secret', 'user_id'].any(
-          (key) => data[key] == null || data[key].toString().isEmpty,
-        )) {
+        [
+          'token',
+          'secret',
+          'user_id',
+        ].any((key) => data[key] == null || data[key].toString().isEmpty)) {
       return {'code': 'login_invalid_response', 'message': '登录响应缺少必要的鉴权信息'};
     }
     final prefs = await SharedPreferences.getInstance();

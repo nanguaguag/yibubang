@@ -702,7 +702,7 @@ class NoteService {
       method: 'POST',
     );
     debugPrint('[NoteService] pushNote result: $resp');
-    final code = resp['code']?.toString() ?? '200';
+    final code = resp['code']?.toString() ?? 'protocol_error';
     final rawResp = const JsonEncoder.withIndent('  ').convert(resp);
     SyncResponseCache.instance.record(
       queueId: item.id,
@@ -843,7 +843,7 @@ class NoteService {
       'is_svip': '0',
     }, method: 'POST');
 
-    final code = resp['code']?.toString() ?? '200';
+    final code = resp['code']?.toString() ?? 'protocol_error';
     final rawResp = const JsonEncoder.withIndent('  ').convert(resp);
     SyncResponseCache.instance.record(
       queueId: item.id,

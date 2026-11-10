@@ -444,11 +444,11 @@ class YkbSyncService {
         Map<String, dynamic>.from(item.payload),
       );
     } else {
-      return true;
+      throw StateError('不支持的同步任务类型: ${item.type}');
     }
 
     debugPrint('[YkbSyncService] ${item.type} 同步响应: $resp');
-    responseCode = resp['code']?.toString() ?? '200';
+    responseCode = resp['code']?.toString() ?? 'protocol_error';
     final rawResp = const JsonEncoder.withIndent('  ').convert(resp);
     SyncResponseCache.instance.record(
       queueId: item.id,
