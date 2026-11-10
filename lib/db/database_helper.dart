@@ -1,3 +1,4 @@
+import 'cloud_outbox.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart';
@@ -281,7 +282,7 @@ class UserDBHelper {
     String path = join(await getDatabasesPath(), 'user_data.sqlite');
     return await openDatabase(
       path,
-      version: 15,
+      version: 16,
       onConfigure: (db) async {
         // 用户库为高频写库：WAL 提升并发写性能，同时保证导出前关闭连接即可完整落盘。
         // 注意：Android 原生 SQLiteDatabase.execSQL 禁止执行有返回值的 PRAGMA（如 journal_mode），
@@ -350,8 +351,8 @@ class UserDBHelper {
   }
 
   @visibleForTesting
-  Future<void> upgradeForTesting(Database db, int oldVersion) =>
-      _onUpgrade(db, oldVersion, 15);
+  Future<void> upgradeForTesting(Database db, int oldVersion, {int newVersion = 15}) =>
+      _onUpgrade(db, oldVersion, newVersion);
 
   @visibleForTesting
   Future<void> createSpacedRepetitionTablesForTesting(DatabaseExecutor db) =>
@@ -494,6 +495,9 @@ class UserDBHelper {
       }
       if (oldVersion < 15) {
         await _upgradeReviewPlansV15(txn);
+      }
+      if (oldVersion < 16 && newVersion >= 16) {
+        await CloudOutbox.install(txn);
       }
       await _createMigrationStateTable(txn);
     });
@@ -986,6 +990,7 @@ class UserDBHelper {
     await _createBankContentStateTable(db);
     await _createMigrationStateTable(db);
     await _createSpacedRepetitionTables(db);
+    await CloudOutbox.install(db);
 
     // 给 Question 表按 chapter_id 建表
     await db.execute('''

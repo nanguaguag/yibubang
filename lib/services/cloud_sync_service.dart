@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
 
 import '../db/data_transfer.dart';
+import '../db/cloud_outbox.dart';
 import '../db/database_helper.dart';
 
 /// 云服务健康检查状态
@@ -87,7 +88,8 @@ class CloudSyncService extends ChangeNotifier {
   static const String _keyLastSyncTime = 'cloud_sync_last_sync_time';
   static const String _keyAutoSync = 'cloud_sync_auto_sync';
   static const String _keyCachedPairCode = 'cloud_sync_cached_pair_code';
-  static const String _keyCachedPairExpiresAt = 'cloud_sync_cached_pair_expires_at';
+  static const String _keyCachedPairExpiresAt =
+      'cloud_sync_cached_pair_expires_at';
 
   bool _initialized = false;
   bool _isSyncing = false;
@@ -221,11 +223,7 @@ class CloudSyncService extends ChangeNotifier {
       throw StateError('当前设备尚未绑定云同步，无法生成配对码');
     }
 
-    final res = await _request(
-      '/api/pair/create',
-      method: 'POST',
-      auth: true,
-    );
+    final res = await _request('/api/pair/create', method: 'POST', auth: true);
 
     final data = res['data'] as Map<String, dynamic>;
     final info = PairingCodeInfo(
@@ -285,10 +283,7 @@ class CloudSyncService extends ChangeNotifier {
       final res = await _request(
         '/api/pair/claim',
         method: 'POST',
-        body: {
-          'code': code.trim(),
-          'device_name': dName,
-        },
+        body: {'code': code.trim(), 'device_name': dName},
       );
 
       final data = res['data'] as Map<String, dynamic>;
@@ -365,113 +360,60 @@ class CloudSyncService extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       final effectiveSyncTime = force ? 0 : _lastSyncTime;
 
-      // 1. 提取本地待 Push 数据
-      // 题目：若 effectiveSyncTime == 0，推送所有有操作记录的题目（含已做、已重做 status=0、已收藏、已斩）
-      final pushQuestions = await userDb.query(
-        'Question',
-        columns: [
-          'id',
-          'chapter_id',
-          'chapter_parent_id',
-          'cut_question',
-          'user_answer',
-          'status',
-          'collection',
-          'updated_at',
-        ],
-        where: effectiveSyncTime > 0
-            ? 'updated_at > ?'
-            : 'updated_at > 0 OR status != 0 OR collection != 0 OR cut_question = "1" OR (user_answer IS NOT NULL AND user_answer != "")',
-        whereArgs: effectiveSyncTime > 0 ? [effectiveSyncTime] : null,
-      );
-
-      // 流水：查询待推送流水（初次或强制时推送全部有效流水）
-      final pushActivities = await userDb.query(
-        'Activities',
-        where: effectiveSyncTime > 0
-            ? 'timestamp > ?'
-            : "is_right IN ('0', '1')",
-        whereArgs: effectiveSyncTime > 0 ? [effectiveSyncTime] : null,
-      );
-
-      // 2. 分批切片推送机制（每批最多 500 道题 + 500 条流水）
-      // 避免单次提交万级超大包导致 Cloudflare Worker 触发 30s 运行时限熔断 (HTTP 500)
-      const int batchChunkSize = 500;
-      final totalQuestions = pushQuestions.length;
-      final totalActivities = pushActivities.length;
+      // 上传只使用事务内变更序号；服务端时间只用于展示/旧拉取协议。
+      final owner = _userId!;
+      await CloudOutbox.bind(userDb, owner);
+      final entries = await CloudOutbox.snapshot(userDb, owner);
+      final totalQuestions = entries
+          .where((e) => e['kind'] == 'question')
+          .length;
+      final totalActivities = entries.length - totalQuestions;
+      const batchChunkSize = 500;
       final totalBatches = max(
         1,
-        max(
-          (totalQuestions + batchChunkSize - 1) ~/ batchChunkSize,
-          (totalActivities + batchChunkSize - 1) ~/ batchChunkSize,
-        ),
+        (entries.length + batchChunkSize - 1) ~/ batchChunkSize,
       );
-
-      debugPrint(
-        '[cloud-sync] 开始同步: 待推送题目 $totalQuestions 道, 流水 $totalActivities 条 (共切分为 $totalBatches 个批次)',
-      );
-
       int serverTime = 0;
       final allPullActivities = <Map<String, dynamic>>[];
       final allPullQuestions = <Map<String, dynamic>>[];
-
-      for (var batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
-        final qStart = batchIndex * batchChunkSize;
-        final qChunk = qStart < totalQuestions
-            ? pushQuestions.sublist(
-                qStart,
-                min(qStart + batchChunkSize, totalQuestions),
-              )
-            : const <Map<String, dynamic>>[];
-
-        final aStart = batchIndex * batchChunkSize;
-        final aChunk = aStart < totalActivities
-            ? pushActivities.sublist(
-                aStart,
-                min(aStart + batchChunkSize, totalActivities),
-              )
-            : const <Map<String, dynamic>>[];
-
-        debugPrint(
-          '[cloud-sync] 正在同步批次 [${batchIndex + 1}/$totalBatches]: 本批题目 ${qChunk.length} 道, 流水 ${aChunk.length} 条...',
-        );
-
-        // 仅在首个批次拉取云端历史变更；后续批次传当前时间，避免重复全量拉取
-        final reqSyncTime = batchIndex == 0
-            ? effectiveSyncTime
-            : (serverTime > 0
-                ? serverTime
-                : DateTime.now().millisecondsSinceEpoch);
-
+      for (var i = 0; i < totalBatches; i++) {
+        final chunk = entries
+            .skip(i * batchChunkSize)
+            .take(batchChunkSize)
+            .toList();
+        final mutations = <Map<String, Object?>>[];
+        for (final entry in chunk) {
+          mutations.add(await CloudOutbox.mutation(userDb, entry));
+        }
         final res = await _request(
           '/api/sync',
           method: 'POST',
           auth: true,
           timeout: const Duration(seconds: 45),
           body: {
-            'last_sync_time': reqSyncTime,
-            'force': force && batchIndex == 0,
-            'push_activities': aChunk,
-            'push_questions': qChunk,
+            'protocol': 2,
+            'last_sync_time': i == 0 ? effectiveSyncTime : serverTime,
+            'mutations': mutations,
           },
         );
-
         final data = res['data'] as Map<String, dynamic>;
+        if (data['protocol'] != 2 || data['accepted_seqs'] is! List) {
+          throw const FormatException('云同步服务需升级至协议 v2，待上传数据已保留');
+        }
         serverTime = (data['server_time'] as num).toInt();
-
-        // 收集 pull 数据（去重）
-        final pullActivities =
-            (data['pull_activities'] as List?)?.cast<Map<String, dynamic>>() ??
-                [];
-        final pullQuestions =
-            (data['pull_questions'] as List?)?.cast<Map<String, dynamic>>() ??
-                [];
-
-        allPullActivities.addAll(pullActivities);
-        allPullQuestions.addAll(pullQuestions);
-
-        debugPrint(
-          '[cloud-sync] 批次 [${batchIndex + 1}/$totalBatches] 同步成功 (累计已推题目: ${min(qStart + qChunk.length, totalQuestions)}/$totalQuestions, 流水: ${min(aStart + aChunk.length, totalActivities)}/$totalActivities)',
+        await userDb.transaction(
+          (tx) => CloudOutbox.acknowledge(
+            tx,
+            owner,
+            chunk.map((e) => e['seq'] as int).toList(),
+            data['accepted_seqs'] as List,
+          ),
+        );
+        allPullActivities.addAll(
+          (data['pull_activities'] as List? ?? []).cast<Map<String, dynamic>>(),
+        );
+        allPullQuestions.addAll(
+          (data['pull_questions'] as List? ?? []).cast<Map<String, dynamic>>(),
         );
       }
 
@@ -494,60 +436,13 @@ class CloudSyncService extends ChangeNotifier {
             }
           }
 
-          // 3.2 合并题目：LWW (Last-Write-Wins) 时间戳仲裁
-          for (final q in allPullQuestions) {
-            final qId = q['id']?.toString();
-            if (qId == null || qId.isEmpty) continue;
-
-            final status = (q['status'] as num?)?.toInt() ?? 0;
-            final collection = (q['collection'] as num?)?.toInt() ?? 0;
-            final cut = q['cut_question']?.toString() ?? '0';
-            final answer = q['user_answer']?.toString() ?? '';
-            final updatedAt = (q['updated_at'] as num?)?.toInt() ?? 0;
-
-            // 3.2 兼容低版本 SQLite (< 3.24 无 UPSERT)：
-            // 步骤 1：若本地不存在该题，则通过 INSERT OR IGNORE 占位写入；
-            // 步骤 2：若已存在，当云端 updated_at >= 本地 updated_at 时执行覆盖更新；
-            // 否则保留本地较新的记录。
-            batch.rawInsert('''
-              INSERT OR IGNORE INTO Question (id, chapter_id, chapter_parent_id, cut_question, user_answer, status, collection, updated_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ''', [
-              qId,
-              q['chapter_id'],
-              q['chapter_parent_id'],
-              cut,
-              answer,
-              status,
-              collection,
-              updatedAt,
-            ]);
-
-            batch.rawUpdate('''
-              UPDATE Question
-              SET
-                chapter_id = ?,
-                chapter_parent_id = ?,
-                cut_question = ?,
-                user_answer = ?,
-                status = ?,
-                collection = ?,
-                updated_at = ?
-              WHERE id = ? AND ? >= updated_at
-            ''', [
-              q['chapter_id'],
-              q['chapter_parent_id'],
-              cut,
-              answer,
-              status,
-              collection,
-              updatedAt,
-              qId,
-              updatedAt,
-            ]);
-          }
-
+          // 按字段合并，保护上传期间新产生的本地变更；不依赖设备时钟。
+          await txn.update('CloudSyncContext', {'applying': 1}, where: 'id=1');
           await batch.commit(noResult: true);
+          for (final q in allPullQuestions) {
+            await CloudOutbox.mergeQuestion(txn, q);
+          }
+          await txn.update('CloudSyncContext', {'applying': 0}, where: 'id=1');
         });
 
         // 4. 重算受影响题库及当前激活题库的章节对错数统计（确保重做后对错计数归零）
@@ -575,7 +470,9 @@ class CloudSyncService extends ChangeNotifier {
         pushedQuestions: totalQuestions,
         pulledActivities: allPullActivities.length,
         pulledQuestions: allPullQuestions.length,
-        syncTime: DateTime.fromMillisecondsSinceEpoch(serverTime > 0 ? serverTime : DateTime.now().millisecondsSinceEpoch),
+        syncTime: DateTime.fromMillisecondsSinceEpoch(
+          serverTime > 0 ? serverTime : DateTime.now().millisecondsSinceEpoch,
+        ),
       );
 
       debugPrint('[cloud-sync] $result');
@@ -655,7 +552,9 @@ class CloudSyncService extends ChangeNotifier {
       final sw = Stopwatch()..start();
       final uri = Uri.parse('$base$path');
       try {
-        debugPrint('[cloud-sync] 发起请求: $method $uri (超时设置: ${timeout.inSeconds}s)');
+        debugPrint(
+          '[cloud-sync] 发起请求: $method $uri (超时设置: ${timeout.inSeconds}s)',
+        );
         final headers = <String, String>{
           'Content-Type': 'application/json; charset=utf-8',
         };
@@ -675,16 +574,16 @@ class CloudSyncService extends ChangeNotifier {
                 )
                 .timeout(timeout);
           } else {
-            res = await client
-                .get(uri, headers: headers)
-                .timeout(timeout);
+            res = await client.get(uri, headers: headers).timeout(timeout);
           }
         } finally {
           client.close();
         }
 
         sw.stop();
-        debugPrint('[cloud-sync] 请求完成: $method $uri [${res.statusCode}] 耗时 ${sw.elapsedMilliseconds}ms');
+        debugPrint(
+          '[cloud-sync] 请求完成: $method $uri [${res.statusCode}] 耗时 ${sw.elapsedMilliseconds}ms',
+        );
 
         if (res.statusCode >= 200 && res.statusCode < 300) {
           final decoded = jsonDecode(utf8.decode(res.bodyBytes));
@@ -694,7 +593,9 @@ class CloudSyncService extends ChangeNotifier {
           throw const FormatException('服务端返回的非有效 JSON 格式');
         } else {
           final rawBody = utf8.decode(res.bodyBytes);
-          debugPrint('[cloud-sync] 服务端响应非 2xx: HTTP ${res.statusCode}, 原始内容: $rawBody');
+          debugPrint(
+            '[cloud-sync] 服务端响应非 2xx: HTTP ${res.statusCode}, 原始内容: $rawBody',
+          );
           try {
             final errJson = jsonDecode(rawBody);
             final msg = errJson['message'] ?? errJson['error'] ?? rawBody;
@@ -708,22 +609,30 @@ class CloudSyncService extends ChangeNotifier {
         sw.stop();
         // 关键：服务端明确返回了 HTTP 状态码（如 401 鉴权失败、500 服务端报错等）
         // 此时表明主节点网络连通正常，重试备用节点（同一个服务）毫无意义且会导致国内长时间挂起超时
-        debugPrint('[cloud-sync] 服务端响应错误 ($uri, 耗时 ${sw.elapsedMilliseconds}ms): $e');
+        debugPrint(
+          '[cloud-sync] 服务端响应错误 ($uri, 耗时 ${sw.elapsedMilliseconds}ms): $e',
+        );
         rethrow;
       } on SocketException catch (e) {
         sw.stop();
         lastEx = e;
-        debugPrint('[cloud-sync] 网络连接异常 ($uri, 耗时 ${sw.elapsedMilliseconds}ms): $e');
+        debugPrint(
+          '[cloud-sync] 网络连接异常 ($uri, 耗时 ${sw.elapsedMilliseconds}ms): $e',
+        );
         continue;
       } on TimeoutException catch (e) {
         sw.stop();
         lastEx = e;
-        debugPrint('[cloud-sync] 请求超时 ($uri, 耗时 ${sw.elapsedMilliseconds}ms): $e');
+        debugPrint(
+          '[cloud-sync] 请求超时 ($uri, 耗时 ${sw.elapsedMilliseconds}ms): $e',
+        );
         continue;
       } catch (e) {
         sw.stop();
         lastEx = e is Exception ? e : Exception(e.toString());
-        debugPrint('[cloud-sync] 未知异常 ($uri, 耗时 ${sw.elapsedMilliseconds}ms): $e');
+        debugPrint(
+          '[cloud-sync] 未知异常 ($uri, 耗时 ${sw.elapsedMilliseconds}ms): $e',
+        );
         continue;
       }
     }

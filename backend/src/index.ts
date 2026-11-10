@@ -1,3 +1,4 @@
+import { pushMutations } from './sync_v2';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 
@@ -305,11 +306,17 @@ app.post('/api/sync', async (c) => {
   }
 
   const body = await c.req.json().catch(() => ({}));
+  if (body.protocol !== 2) {
+    return c.json({ code: 426, message: 'Please upgrade the client to sync protocol v2' }, 426);
+  }
   const lastSyncTime = Number(body.last_sync_time) || 0;
   const pushActivities = Array.isArray(body.push_activities) ? body.push_activities : [];
   const pushQuestions = Array.isArray(body.push_questions) ? body.push_questions : [];
 
   const now = Date.now();
+  const accepted = body.protocol === 2
+    ? await pushMutations(db, auth.userId, auth.deviceId, body.mutations, now)
+    : null;
   const statements: D1PreparedStatement[] = [];
 
   // 1. 处理 push_activities (Append-Only，以 INSERT OR IGNORE 去重)
@@ -428,6 +435,7 @@ app.post('/api/sync', async (c) => {
     code: 0,
     message: 'Synced successfully',
     data: {
+      ...(accepted !== null ? { protocol: 2, accepted_seqs: accepted } : {}),
       server_time: now,
       pull_activities: pullActivitiesResult.results || [],
       pull_questions: pullQuestionsResult.results || [],

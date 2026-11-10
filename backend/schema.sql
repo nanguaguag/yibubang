@@ -65,3 +65,13 @@ CREATE TABLE IF NOT EXISTS sync_questions (
     PRIMARY KEY (user_id, question_id)
 );
 CREATE INDEX IF NOT EXISTS idx_sync_questions_updated ON sync_questions(user_id, updated_at);
+
+-- 协议 v2：保留每次字段变更，按服务端提交顺序仲裁，不使用设备墙钟。
+CREATE TABLE IF NOT EXISTS sync_mutations (
+    revision INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL, device_id TEXT NOT NULL, stream TEXT NOT NULL,
+    client_seq INTEGER NOT NULL, kind TEXT NOT NULL, entity_id TEXT NOT NULL,
+    payload TEXT NOT NULL, applied INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(device_id, stream, client_seq)
+);
+CREATE INDEX IF NOT EXISTS idx_sync_mutations_user ON sync_mutations(user_id, revision);
