@@ -109,3 +109,19 @@ test('历史斩题状态3仍可同步，放回题库只改变cut和条件状态'
   assert.equal(sqlite.prepare('SELECT status FROM sync_questions').get().status,0);
   sqlite.close();
 });
+
+test('流水删除分页传递，旧设备与重复事件无法复活，账户隔离', async () => {
+  const {db,sqlite}=fixture();
+  const activity=(seq,kind='activity')=>({seq,stream:'b'.repeat(32),kind,id:'a',payload:kind==='activity'?{timestamp:1,is_right:'1'}:{}});
+  await pushMutations(db,'u','d',[activity(1)],1);
+  const first=await pullChanges(db,'u',0);
+  await pushMutations(db,'u','d',[activity(2,'activity_delete')],2);
+  const page=await pullChanges(db,'u',first.next_cursor);
+  assert.deepEqual(page.pull_deleted_activities,['a']);
+  await pushMutations(db,'u','old',[activity(1)],3);
+  await pushMutations(db,'u','d',[activity(1),activity(2,'activity_delete')],4);
+  assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM sync_activities WHERE user_id=?').get('u').n,0);
+  await pushMutations(db,'other','other',[activity(1)],5);
+  assert.equal((await pullChanges(db,'other',0)).pull_activities.length,1);
+  sqlite.close();
+});

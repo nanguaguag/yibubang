@@ -6,6 +6,7 @@ import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:yibubang/db/cloud_outbox.dart';
+import 'package:yibubang/db/data_transfer.dart';
 import 'package:yibubang/db/database_helper.dart';
 import 'package:yibubang/services/cloud_sync_service.dart';
 
@@ -57,6 +58,132 @@ void main() {
     200,
   );
 
+  test('保留笔记清空状态、复习与官方义务，旧云页不复活答案流水', () async {
+    await db.insert('Question', {
+      'id': 'clear',
+      'status': 2,
+      'user_answer': 'B',
+      'collection': 1,
+      'cut_question': '1',
+    });
+    await db.insert('Notes', {
+      'id': 'n',
+      'question_id': 'clear',
+      'content': '保留',
+      'imgs': '[]',
+      'timestamp': 1,
+    });
+    await db.insert('Activities', {
+      'id': 'a',
+      'title': 'NewAnswer',
+      'description': '',
+      'timestamp': 1,
+      'is_right': '0',
+    });
+    await db.insert('SpacedReviewItem', {
+      'item_id': 'clear',
+      'item_type': 'question',
+      'state': 2,
+      'due_date': 1,
+    });
+    await db.insert('YkbSyncQueue', {
+      'id': 'ykb',
+      'type': 'answer',
+      'payload': '{}',
+      'created_at': 1,
+    });
+    await CloudOutbox.bind(db, 'u');
+    await clearAllRecords();
+    final q = (await db.query('Question')).single;
+    expect(
+      [q['status'], q['user_answer'], q['collection'], q['cut_question']],
+      [0, '', 0, '0'],
+    );
+    expect((await db.query('Notes')).single['content'], '保留');
+    expect(await db.query('SpacedReviewItem'), isEmpty);
+    expect(await db.query('YkbSyncQueue'), isEmpty);
+    expect(await db.rawQuery('PRAGMA foreign_key_check'), isEmpty);
+    final pending = await CloudOutbox.snapshot(db, 'u');
+    expect(pending.where((r) => r['kind'] == 'question').single['mask'], 63);
+    expect(pending.where((r) => r['kind'] == 'activity'), isEmpty);
+    expect(
+      (await CloudOutbox.mutation(
+        db,
+        pending.firstWhere((r) => r['kind'] == 'activity_delete'),
+      ))['payload'],
+      isEmpty,
+    );
+    await CloudOutbox.mergePage(db, 'u', {
+      'next_cursor': 1,
+      'high_watermark': 1,
+      'has_more': false,
+      'pull_questions': [
+        {
+          'id': 'clear',
+          'status': 2,
+          'user_answer': 'B',
+          'collection': 1,
+          'cut_question': '1',
+        },
+      ],
+      'pull_activities': [
+        {
+          'id': 'a',
+          'title': 'NewAnswer',
+          'description': '',
+          'timestamp': 1,
+          'is_right': '0',
+        },
+      ],
+    }, 0);
+    expect((await db.query('Question')).single['status'], 0);
+    expect(await db.query('Activities'), isEmpty);
+  });
+  test('远端流水删除页原子落库并阻止后续历史页及导入重放', () async {
+    await db.insert('Activities', {
+      'id': 'deleted',
+      'title': 'NewAnswer',
+      'description': '',
+      'timestamp': 1,
+      'is_right': '1',
+    });
+    await CloudOutbox.mergePage(db, 'u', {
+      'next_cursor': 1,
+      'high_watermark': 1,
+      'has_more': false,
+      'pull_deleted_activities': ['deleted'],
+      'pull_questions': [],
+      'pull_activities': [],
+    }, 0);
+    await db.insert('Activities', {
+      'id': 'deleted',
+      'title': 'NewAnswer',
+      'description': '',
+      'timestamp': 1,
+      'is_right': '1',
+    });
+    expect(await db.query('Activities'), isEmpty);
+    expect(await db.query('CloudOutbox'), isEmpty);
+    await expectLater(
+      CloudOutbox.mergePage(db, 'u', {
+        'next_cursor': 2,
+        'high_watermark': 2,
+        'has_more': false,
+        'pull_deleted_activities': ['another', null],
+        'pull_questions': [],
+        'pull_activities': [],
+      }, 1),
+      throwsFormatException,
+    );
+    expect(
+      await db.query(
+        'CloudDeletedActivities',
+        where: 'id=?',
+        whereArgs: ['another'],
+      ),
+      isEmpty,
+    );
+  });
   test('同步期间变更、慢时钟与补录流水都按序号上传', () async {
     await db.insert('Question', {
       'id': 'q',

@@ -9,7 +9,7 @@ export async function pushMutations(db: D1Database, user: string, device: string
     if (!mutation || !Number.isSafeInteger(mutation.seq) || mutation.seq <= 0 ||
         typeof mutation.stream !== 'string' || !/^[a-f0-9]{32}$/.test(mutation.stream) ||
         typeof mutation.id !== 'string' || !mutation.id ||
-        !['question', 'activity'].includes(mutation.kind) ||
+        !['question', 'activity', 'activity_delete'].includes(mutation.kind) ||
         !mutation.payload || typeof mutation.payload !== 'object') throw new Error('Invalid mutation');
     const q = mutation.payload;
     const key = [device, mutation.stream, mutation.seq];
@@ -37,6 +37,9 @@ export async function pushMutations(db: D1Database, user: string, device: string
       statements.push(db.prepare(`INSERT OR IGNORE INTO sync_questions(user_id,question_id${fields.length ? ','+fields.join(',') : ''},updated_at) VALUES(?,?${fields.map(()=>',?').join('')},?)`).bind(user, mutation.id, ...fields.map(f=>q[f]), now));
       if (fields.length) statements.push(db.prepare(`UPDATE sync_questions SET ${fields.map(f => `${f}=?`).join(',')}, updated_at=? WHERE user_id=? AND question_id=? AND ${active} AND (${fields.map(f=>`${f} IS NOT ?`).join(' OR ')})`)
         .bind(...fields.map(f => q[f]), now, user, mutation.id, ...key, ...fields.map(f=>q[f])));
+    } else if (mutation.kind === 'activity_delete') {
+      statements.push(db.prepare(`INSERT OR IGNORE INTO sync_deleted_activities(user_id,id) SELECT ?,? WHERE ${active}`).bind(user,mutation.id,...key));
+      statements.push(db.prepare(`DELETE FROM sync_activities WHERE user_id=? AND id=? AND ${active}`).bind(user,mutation.id,...key));
     } else {
       statements.push(db.prepare(`INSERT OR IGNORE INTO sync_activities(user_id,id,timestamp,bank_id,question_id,identity_id,subject_id,chapter_id,is_right,duration,title,description,created_at)
         SELECT ?,?,?,?,?,?,?,?,?,?,?,?,? WHERE ${active}`).bind(user, mutation.id, Number(q.timestamp) || 0,
@@ -65,6 +68,7 @@ export async function pullChanges(db: D1Database, user: string, cursor: number, 
   const questions = await db.prepare(`SELECT DISTINCT q.question_id AS id,q.chapter_id,q.chapter_parent_id,q.cut_question,q.user_answer,q.status,q.collection,q.updated_at
     FROM sync_changes c JOIN sync_questions q ON q.user_id=c.user_id AND q.question_id=c.entity_id
     WHERE c.user_id=? AND c.kind='question' AND c.seq>? AND c.seq<=? ORDER BY c.seq`).bind(user,cursor,next).all();
-  return { pull_activities: activities.results, pull_questions: questions.results,
+  const deleted = await db.prepare(`SELECT DISTINCT d.id FROM sync_changes c JOIN sync_deleted_activities d ON d.user_id=c.user_id AND d.id=c.entity_id WHERE c.user_id=? AND c.kind='activity_delete' AND c.seq>? AND c.seq<=? ORDER BY c.seq`).bind(user,cursor,next).all<{id:string}>();
+  return { pull_deleted_activities: deleted.results.map(d=>d.id), pull_activities: activities.results, pull_questions: questions.results,
     next_cursor: next, high_watermark: high, has_more: rows.results.length > 500 };
 }

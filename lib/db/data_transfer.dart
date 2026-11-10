@@ -1,3 +1,4 @@
+import 'cloud_outbox.dart';
 import 'question_projection.dart';
 import 'user_database_coordinator.dart';
 import 'dart:io';
@@ -262,7 +263,28 @@ Future<void> clearAllRecords() async {
   final prefs = await SharedPreferences.getInstance();
   final userDb = await UserDBHelper().database;
   await userDb.transaction((txn) async {
-    await txn.delete('Question');
+    // Notes 仍引用 Question；保留主键，显式清空所有本机题目状态。
+    await txn.update('Question', {
+      'status': 0,
+      'user_answer': '',
+      'collection': 0,
+      'cut_question': '0',
+      'updated_at': DateTime.now().millisecondsSinceEpoch,
+    });
+    // 清理覆盖全部字段，避免局部变化掩码被远端旧快照重新补齐。
+    await txn.delete('CloudOutbox', where: "kind='question'");
+    final names = CloudOutbox.fields.keys.join(',');
+    await txn.rawInsert(
+      "INSERT INTO CloudOutbox(owner,kind,entity_id,mask,$names,updated_at) SELECT c.owner,'question',q.id,63,${CloudOutbox.fields.keys.map((f) => 'q.$f').join(',')},q.updated_at FROM Question q CROSS JOIN CloudSyncContext c WHERE c.id=1",
+    );
+    await txn.delete('SpacedReviewItem', where: "item_type!='flashcard'");
+    await txn.delete(
+      'ReviewEvents',
+      where: "item_id NOT IN (SELECT id FROM CustomFlashcards)",
+    );
+    await txn.delete('ReviewDrawCursor');
+    await txn.delete('QuestionTestTime');
+    await txn.delete('YkbSyncQueue');
     await txn.delete('Activities');
     await txn.rawUpdate(
       'UPDATE IdentitySubject SET correct = 0, incorrect = 0, selected = 0',
@@ -274,4 +296,5 @@ Future<void> clearAllRecords() async {
   await prefs.remove('lastSubjectId');
   await prefs.remove('lastChapterId');
   await prefs.remove('lastQIndex');
+  notifyAnswersChanged();
 }

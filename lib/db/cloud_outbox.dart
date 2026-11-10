@@ -31,6 +31,23 @@ class CloudOutbox {
     await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_cloud_outbox_owner ON CloudOutbox(owner, seq)',
     );
+    await db.execute(
+      'CREATE TABLE IF NOT EXISTS CloudDeletedActivities(id TEXT PRIMARY KEY)',
+    );
+    await db.execute(
+      """CREATE TRIGGER IF NOT EXISTS cloud_activity_no_resurrection BEFORE INSERT ON Activities
+      WHEN EXISTS(SELECT 1 FROM CloudDeletedActivities WHERE id=NEW.id)
+      BEGIN SELECT RAISE(IGNORE); END""",
+    );
+    await db.execute(
+      """CREATE TRIGGER IF NOT EXISTS cloud_activity_delete AFTER DELETE ON Activities
+      BEGIN
+        INSERT OR IGNORE INTO CloudDeletedActivities(id) VALUES(OLD.id);
+        DELETE FROM CloudOutbox WHERE kind='activity' AND entity_id=OLD.id;
+        INSERT INTO CloudOutbox(owner,kind,entity_id)
+          SELECT owner,'activity_delete',OLD.id FROM CloudSyncContext WHERE id=1 AND applying=0 AND OLD.is_right IN ('0','1');
+      END""",
+    );
     final names = fields.keys.join(', ');
     final values = fields.keys.map((f) => 'NEW.$f').join(', ');
     final changed = fields.entries
@@ -145,6 +162,8 @@ class CloudOutbox {
         if (mask & field.value != 0) payload[field.key] = row[field.key];
       }
       payload['updated_at'] = row['updated_at'];
+    } else if (row['kind'] == 'activity_delete') {
+      // 不可变流水ID的删除意图无需读取已删除实体。
     } else {
       final rows = await db.query(
         'Activities',
@@ -225,6 +244,20 @@ class CloudOutbox {
     }
     await db.transaction((tx) async {
       await tx.update('CloudSyncContext', {'applying': 1}, where: 'id=1');
+      for (final id in (data['pull_deleted_activities'] as List? ?? const [])) {
+        if (id is! String || id.isEmpty) {
+          throw const FormatException('云端流水删除缺少id');
+        }
+        await tx.insert('CloudDeletedActivities', {
+          'id': id,
+        }, conflictAlgorithm: ConflictAlgorithm.ignore);
+        await tx.delete(
+          'CloudOutbox',
+          where: "kind='activity' AND entity_id=?",
+          whereArgs: [id],
+        );
+        await tx.delete('Activities', where: 'id=?', whereArgs: [id]);
+      }
       for (final value in data['pull_activities'] as List) {
         await tx.insert(
           'Activities',

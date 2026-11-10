@@ -97,3 +97,12 @@ INSERT INTO sync_changes(user_id,kind,entity_id)
 INSERT INTO sync_changes(user_id,kind,entity_id)
  SELECT user_id,'activity',id FROM sync_activities a
  WHERE NOT EXISTS (SELECT 1 FROM sync_changes c WHERE c.user_id=a.user_id AND c.kind='activity' AND c.entity_id=a.id);
+
+-- 流水ID不可变：删除墓碑永久阻止旧客户端和旧备份重放。
+CREATE TABLE IF NOT EXISTS sync_deleted_activities(user_id TEXT NOT NULL,id TEXT NOT NULL,PRIMARY KEY(user_id,id));
+CREATE TRIGGER IF NOT EXISTS sync_activity_tombstone AFTER INSERT ON sync_deleted_activities BEGIN
+ INSERT INTO sync_changes(user_id,kind,entity_id) VALUES(NEW.user_id,'activity_delete',NEW.id);
+END;
+CREATE TRIGGER IF NOT EXISTS sync_activity_no_resurrection BEFORE INSERT ON sync_activities
+ WHEN EXISTS(SELECT 1 FROM sync_deleted_activities WHERE user_id=NEW.user_id AND id=NEW.id)
+ BEGIN SELECT RAISE(IGNORE); END;

@@ -345,7 +345,9 @@ class _SettingsPageState extends State<SettingsPage> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('清空全部做题记录'),
-        content: const Text('将删除所有题目的作答状态、收藏、斩题记录以及刷题流水，且无法恢复。确定继续吗？'),
+        content: const Text(
+          '将清空本机题目的作答、收藏、斩题、复习状态及流水，保留笔记和自制闪卡。清理会同步至医不帮已配对设备；未下载的远端记录与医考帮官方记录保留。确定继续吗？',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
@@ -572,7 +574,10 @@ class _SettingsPageState extends State<SettingsPage> {
                     onTap: () {
                       pushAdaptiveModalPage(
                         context,
-                        desktopConstraints: const BoxConstraints(maxWidth: 580, maxHeight: 680),
+                        desktopConstraints: const BoxConstraints(
+                          maxWidth: 580,
+                          maxHeight: 680,
+                        ),
                         builder: (context) => const SetThemeColorPage(),
                       );
                     },
@@ -585,7 +590,10 @@ class _SettingsPageState extends State<SettingsPage> {
                     onTap: () {
                       pushAdaptiveModalPage(
                         context,
-                        desktopConstraints: const BoxConstraints(maxWidth: 580, maxHeight: 600),
+                        desktopConstraints: const BoxConstraints(
+                          maxWidth: 580,
+                          maxHeight: 600,
+                        ),
                         builder: (context) => const SetDurationPage(),
                       );
                     },
@@ -700,7 +708,9 @@ class _SettingsPageState extends State<SettingsPage> {
               IconTile(
                 icon: Icons.psychology_outlined,
                 label: '记忆复习调度算法',
-                value: spacedAlgorithm == 'fsrs_lite' ? '轻量化 FSRS (DSR)' : '经典 SM-2',
+                value: spacedAlgorithm == 'fsrs_lite'
+                    ? '轻量化 FSRS (DSR)'
+                    : '经典 SM-2',
                 trailing: const Icon(Icons.chevron_right),
                 onTap: _showSpacedAlgorithmDialog,
               ),
@@ -941,7 +951,10 @@ class _SettingsPageState extends State<SettingsPage> {
                   onTap: () {
                     pushAdaptiveModalPage(
                       context,
-                      desktopConstraints: const BoxConstraints(maxWidth: 780, maxHeight: 850),
+                      desktopConstraints: const BoxConstraints(
+                        maxWidth: 780,
+                        maxHeight: 850,
+                      ),
                       builder: (context) => const DeveloperPage(),
                     );
                   },
@@ -1064,7 +1077,9 @@ class _SettingsPageState extends State<SettingsPage> {
                     // ignore: deprecated_member_use
                     RadioListTile<String>(
                       title: const Text('经典 SM-2 算法'),
-                      subtitle: const Text('SuperMemo 经典启发式算法，规律稳定，根据简易度因子(EF)动态调整复习间隔。'),
+                      subtitle: const Text(
+                        'SuperMemo 经典启发式算法，规律稳定，根据简易度因子(EF)动态调整复习间隔。',
+                      ),
                       value: 'sm2',
                       // ignore: deprecated_member_use
                       groupValue: current,
@@ -1077,7 +1092,9 @@ class _SettingsPageState extends State<SettingsPage> {
                     // ignore: deprecated_member_use
                     RadioListTile<String>(
                       title: const Text('轻量化 FSRS 算法 (DSR模型)'),
-                      subtitle: const Text('现代科学记忆模型，基于记忆稳定性与难度双维度推演，杜绝遗忘陷阱，复习效率更优。'),
+                      subtitle: const Text(
+                        '现代科学记忆模型，基于记忆稳定性与难度双维度推演，杜绝遗忘陷阱，复习效率更优。',
+                      ),
                       value: 'fsrs_lite',
                       // ignore: deprecated_member_use
                       groupValue: current,
@@ -1090,12 +1107,17 @@ class _SettingsPageState extends State<SettingsPage> {
                     Container(
                       padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
-                        color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
+                        color: scheme.surfaceContainerHighest.withValues(
+                          alpha: 0.4,
+                        ),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
                         '提示：轻量化 FSRS 采用成熟神经记忆参数集，无需在手机本地运行耗电拟合，切换后新复习题目即刻生效。',
-                        style: TextStyle(fontSize: 11.5, color: scheme.onSurfaceVariant),
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          color: scheme.onSurfaceVariant,
+                        ),
                       ),
                     ),
                   ],
