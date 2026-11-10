@@ -305,6 +305,14 @@ class UserDBHelper {
       onUpgrade: _onUpgrade,
       onOpen: (db) async {
         try {
+          final verRes = await db.rawQuery('SELECT sqlite_version() AS version');
+          if (verRes.isNotEmpty) {
+            debugPrint('[UserDBHelper] SQLite 引擎版本: ${verRes.first["version"]}');
+          }
+        } catch (e) {
+          debugPrint('[UserDBHelper] 获取 SQLite 版本失败: $e');
+        }
+        try {
           await _upgradeReviewPlansV15(db);
         } catch (e) {
           debugPrint('[UserDBHelper] onOpen 检查 ReviewPlans 失败: $e');

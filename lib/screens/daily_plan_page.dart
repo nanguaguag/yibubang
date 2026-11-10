@@ -219,7 +219,7 @@ class _DailyPlanPageState extends State<DailyPlanPage> with WidgetsBindingObserv
                 Icon(Icons.layers_outlined, size: 18, color: scheme.primary),
                 const SizedBox(width: 8),
                 Text(
-                  '记忆精粹卡片池',
+                  '卡片池',
                   style: theme.textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.bold,
                     color: scheme.onSurface,

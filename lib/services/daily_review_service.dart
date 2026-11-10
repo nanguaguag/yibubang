@@ -152,15 +152,19 @@ class DailyReviewService {
     final isFlashcard = item.itemType == ReviewItemType.flashcard;
 
     if (!isFlashcard) {
-      // 2. 更新用户库为已斩
+      // 2. 更新用户库为已斩（兼容 SQLite < 3.24）
+      final nowMs = currentTime.millisecondsSinceEpoch;
       await userDb.rawInsert('''
-        INSERT INTO Question (id, cut_question, status, updated_at)
+        INSERT OR IGNORE INTO Question (id, cut_question, status, updated_at)
         VALUES (?, '1', 1, ?)
-        ON CONFLICT(id) DO UPDATE SET
-          cut_question = '1',
-          status = 1,
-          updated_at = excluded.updated_at
-      ''', [questionId, currentTime.millisecondsSinceEpoch]);
+      ''', [questionId, nowMs]);
+      await userDb.rawUpdate('''
+        UPDATE Question
+        SET cut_question = '1',
+            status = 1,
+            updated_at = ?
+        WHERE id = ?
+      ''', [nowMs, questionId]);
     }
 
     // 3. 记录刷题流水到 Activities
@@ -213,30 +217,48 @@ class DailyReviewService {
     final currentStatus = rating != ReviewRating.again ? 1 : 2;
 
     // 仅针对题库题目（非自制闪卡）更新 user_data.Question，纯背卡片自评不污染原题作答记录
+    // 兼容低版本 SQLite (< 3.24 无 UPSERT)
     if (!isFlashcard) {
+      final nowMs = currentTime.millisecondsSinceEpoch;
       if (userAnswer != null && userAnswer.isNotEmpty) {
         await userDb.rawInsert('''
-          INSERT INTO Question (id, user_answer, status, cut_question, updated_at)
+          INSERT OR IGNORE INTO Question (id, user_answer, status, cut_question, updated_at)
           VALUES (?, ?, ?, '0', ?)
-          ON CONFLICT(id) DO UPDATE SET
-            user_answer = excluded.user_answer,
-            status = excluded.status,
-            updated_at = excluded.updated_at
         ''', [
           questionId,
           userAnswer,
           currentStatus,
-          currentTime.millisecondsSinceEpoch,
+          nowMs,
+        ]);
+        await userDb.rawUpdate('''
+          UPDATE Question
+          SET user_answer = ?,
+              status = ?,
+              cut_question = '0',
+              updated_at = ?
+          WHERE id = ?
+        ''', [
+          userAnswer,
+          currentStatus,
+          nowMs,
+          questionId,
         ]);
       } else {
         await userDb.rawInsert('''
-          INSERT INTO Question (id, cut_question, updated_at)
+          INSERT OR IGNORE INTO Question (id, cut_question, updated_at)
           VALUES (?, '0', ?)
-          ON CONFLICT(id) DO UPDATE SET
-            updated_at = excluded.updated_at
         ''', [
           questionId,
-          currentTime.millisecondsSinceEpoch,
+          nowMs,
+        ]);
+        await userDb.rawUpdate('''
+          UPDATE Question
+          SET cut_question = '0',
+              updated_at = ?
+          WHERE id = ?
+        ''', [
+          nowMs,
+          questionId,
         ]);
       }
     }

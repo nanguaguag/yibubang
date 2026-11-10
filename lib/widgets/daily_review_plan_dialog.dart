@@ -357,17 +357,18 @@ class _DailyReviewPlanDialogState extends State<DailyReviewPlanDialog> {
             );
           }).toList(),
         ),
-        const SizedBox(height: 24),
-        FilledButton(
-          style: FilledButton.styleFrom(
-            minimumSize: const Size.fromHeight(48),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(AppShapes.medium),
-            ),
-          ),
-          onPressed: _loading ? null : _handleSave,
-          child: const Text('保存计划', style: TextStyle(fontWeight: FontWeight.bold)),
-        ),
+        //const SizedBox(height: 24),
+        //FilledButton(
+        //  style: FilledButton.styleFrom(
+        //    minimumSize: const Size.fromHeight(48),
+        //    shape: RoundedRectangleBorder(
+        //      borderRadius: BorderRadius.circular(AppShapes.medium),
+        //    ),
+        //  ),
+        //  onPressed: _loading ? null : _handleSave,
+        //  child: const Text('保存计划', style: TextStyle(fontWeight: FontWeight.bold)),
+        //),
+        //const SizedBox(height: 24),
       ],
     );
 

@@ -684,7 +684,7 @@ class QuestionBankRepository {
         // leaf identities. Preserve choices when the old ownership disappeared.
         await txn.rawInsert(
           '''
-          INSERT INTO IdentitySubject
+          INSERT OR IGNORE INTO IdentitySubject
             (bank_id, identity_id, subject_id, correct, incorrect, selected)
           SELECT ?, x.identity_id, x.subject_id, 0, 0,
             COALESCE((SELECT MAX(old.selected) FROM IdentitySubject old
@@ -693,7 +693,6 @@ class QuestionBankRepository {
                   WHERE kept.identity_id = old.identity_id
                     AND kept.subject_id = old.subject_id)), 0)
           FROM install_bank.IdentitySubject x WHERE 1
-          ON CONFLICT(bank_id, identity_id, subject_id) DO NOTHING
         ''',
           [bankId, bankId],
         );

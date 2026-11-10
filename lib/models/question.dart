@@ -557,17 +557,22 @@ Future<void> updateQuestion(
 
     final shouldUpdateSubject = updatedSubjects.add('$identityId|$subjectId');
     if (shouldUpdateSubject && (deltaCorrect != 0 || deltaIncorrect != 0)) {
-      // 2.1 新增作答：UPSERT（用 delta 变量更清晰）
+      // 2.1 新增作答：确保行存在后原子累加（兼容 SQLite < 3.24）
       batch.rawInsert('''
-        INSERT INTO IdentitySubject(bank_id, identity_id, subject_id, correct, incorrect, selected)
-        VALUES(?, ?, ?, ?, ?, COALESCE((SELECT selected FROM IdentitySubject WHERE bank_id=? AND identity_id=? AND subject_id=?), 0))
-        ON CONFLICT(bank_id, identity_id, subject_id) DO UPDATE SET
-          correct   = correct + excluded.correct,
-          incorrect = incorrect + excluded.incorrect;
+        INSERT OR IGNORE INTO IdentitySubject(bank_id, identity_id, subject_id, correct, incorrect, selected)
+        VALUES(?, ?, ?, 0, 0, 0);
       ''', [
         resolvedBankId,
         identityId,
         subjectId,
+      ]);
+      batch.rawUpdate('''
+        UPDATE IdentitySubject
+        SET
+          correct   = correct + ?,
+          incorrect = incorrect + ?
+        WHERE bank_id = ? AND identity_id = ? AND subject_id = ?;
+      ''', [
         deltaCorrect,
         deltaIncorrect,
         resolvedBankId,
@@ -594,22 +599,30 @@ Future<void> updateQuestion(
       ]);
     }
 
-    // 2.2 IdentityChapter 的 UPSERT
+    // 2.2 IdentityChapter 的原子累加（兼容 SQLite < 3.24）
     if (deltaCorrect != 0 || deltaIncorrect != 0) {
-      // 新增作答：UPSERT（插入或累加）
       batch.rawInsert('''
-        INSERT INTO IdentityChapter(bank_id, identity_id, subject_id, chapter_id, correct, incorrect)
-        VALUES(?, ?, ?, ?, ?, ?)
-        ON CONFLICT(bank_id, identity_id, subject_id, chapter_id) DO UPDATE SET
-          correct   = correct + excluded.correct,
-          incorrect = incorrect + excluded.incorrect;
+        INSERT OR IGNORE INTO IdentityChapter(bank_id, identity_id, subject_id, chapter_id, correct, incorrect)
+        VALUES(?, ?, ?, ?, 0, 0);
       ''', [
         resolvedBankId,
         identityId,
         subjectId,
         chapterId,
+      ]);
+      batch.rawUpdate('''
+        UPDATE IdentityChapter
+        SET
+          correct   = correct + ?,
+          incorrect = incorrect + ?
+        WHERE bank_id = ? AND identity_id = ? AND subject_id = ? AND chapter_id = ?;
+      ''', [
         deltaCorrect,
         deltaIncorrect,
+        resolvedBankId,
+        identityId,
+        subjectId,
+        chapterId,
       ]);
     } else if (uq.status == 0) {
       // 撤回作答：只 UPDATE，且截断到 >=0，避免负数

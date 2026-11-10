@@ -196,14 +196,9 @@ class QuestionBankFileService {
                 return quoted(name);
               })
               .join(',');
-          final assignments = columns
-              .where((name) => name != 'id')
-              .map((name) => '${quoted(name)} = excluded.${quoted(name)}')
-              .join(',');
           await txn.execute('''
-            INSERT INTO $table ($fields)
+            INSERT OR REPLACE INTO $table ($fields)
             SELECT $values FROM incoming.$table WHERE 1
-            ON CONFLICT(id) DO ${assignments.isEmpty ? 'NOTHING' : 'UPDATE SET $assignments'}
           ''');
         }
         for (final table in ['IdentitySubject', 'IdentityChapter']) {

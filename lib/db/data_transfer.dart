@@ -74,8 +74,9 @@ Future<void> rebuildAttachedQuestionCount(
   // IdentityQuestion 是题库中唯一的 identity/课程/章节关系真相。
   // 不使用 SharedPreferences.identityId 过滤，以覆盖题库中的完整
   // Identity 子树，并保持显式 bankId 的统计边界。
+  // 采用 INSERT OR REPLACE 兼容低版本 SQLite (< 3.24)
   await txn.rawInsert('''
-    INSERT INTO IdentityChapter
+    INSERT OR REPLACE INTO IdentityChapter
       (bank_id, identity_id, subject_id, chapter_id, correct, incorrect)
     SELECT ?, iq.identity_id, iq.subject_id, iq.chapter_id,
       SUM(CASE WHEN uq.status = 1 THEN 1 ELSE 0 END),
@@ -83,14 +84,11 @@ Future<void> rebuildAttachedQuestionCount(
     FROM Question AS uq
     JOIN $alias.IdentityQuestion AS iq ON uq.id = iq.question_id
     WHERE uq.status IN (1, 2)
-    GROUP BY iq.identity_id, iq.subject_id, iq.chapter_id
-    ON CONFLICT(bank_id, identity_id, subject_id, chapter_id) DO UPDATE SET
-      correct = excluded.correct,
-      incorrect = excluded.incorrect;
+    GROUP BY iq.identity_id, iq.subject_id, iq.chapter_id;
   ''', [targetBankId]);
 
   await txn.rawInsert('''
-    INSERT INTO IdentitySubject
+    INSERT OR REPLACE INTO IdentitySubject
       (bank_id, identity_id, subject_id, correct, incorrect, selected)
     SELECT ?, sq.identity_id, sq.subject_id,
       SUM(CASE WHEN sq.status = 1 THEN 1 ELSE 0 END),
@@ -105,10 +103,7 @@ Future<void> rebuildAttachedQuestionCount(
       JOIN $alias.IdentityQuestion AS iq ON uq.id = iq.question_id
       WHERE uq.status IN (1, 2)
     ) AS sq
-    GROUP BY sq.identity_id, sq.subject_id
-    ON CONFLICT(bank_id, identity_id, subject_id) DO UPDATE SET
-      correct = excluded.correct,
-      incorrect = excluded.incorrect;
+    GROUP BY sq.identity_id, sq.subject_id;
   ''', [targetBankId, targetBankId]);
 }
 

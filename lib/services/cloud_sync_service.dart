@@ -446,27 +446,13 @@ class CloudSyncService extends ChangeNotifier {
             final answer = q['user_answer']?.toString() ?? '';
             final updatedAt = (q['updated_at'] as num?)?.toInt() ?? 0;
 
+            // 3.2 兼容低版本 SQLite (< 3.24 无 UPSERT)：
+            // 步骤 1：若本地不存在该题，则通过 INSERT OR IGNORE 占位写入；
+            // 步骤 2：若已存在，当云端 updated_at >= 本地 updated_at 时执行覆盖更新；
+            // 否则保留本地较新的记录。
             batch.rawInsert('''
-              INSERT INTO Question (id, chapter_id, chapter_parent_id, cut_question, user_answer, status, collection, updated_at)
+              INSERT OR IGNORE INTO Question (id, chapter_id, chapter_parent_id, cut_question, user_answer, status, collection, updated_at)
               VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-              ON CONFLICT(id) DO UPDATE SET
-                status = CASE 
-                  WHEN excluded.updated_at >= Question.updated_at THEN excluded.status
-                  ELSE Question.status 
-                END,
-                user_answer = CASE 
-                  WHEN excluded.updated_at >= Question.updated_at THEN excluded.user_answer
-                  ELSE Question.user_answer 
-                END,
-                collection = CASE 
-                  WHEN excluded.updated_at >= Question.updated_at THEN excluded.collection
-                  ELSE Question.collection 
-                END,
-                cut_question = CASE 
-                  WHEN excluded.updated_at >= Question.updated_at THEN excluded.cut_question
-                  ELSE Question.cut_question 
-                END,
-                updated_at = MAX(Question.updated_at, excluded.updated_at);
             ''', [
               qId,
               q['chapter_id'],
@@ -475,6 +461,29 @@ class CloudSyncService extends ChangeNotifier {
               answer,
               status,
               collection,
+              updatedAt,
+            ]);
+
+            batch.rawUpdate('''
+              UPDATE Question
+              SET
+                chapter_id = ?,
+                chapter_parent_id = ?,
+                cut_question = ?,
+                user_answer = ?,
+                status = ?,
+                collection = ?,
+                updated_at = ?
+              WHERE id = ? AND ? >= updated_at
+            ''', [
+              q['chapter_id'],
+              q['chapter_parent_id'],
+              cut,
+              answer,
+              status,
+              collection,
+              updatedAt,
+              qId,
               updatedAt,
             ]);
           }
