@@ -345,8 +345,10 @@ class UserDBHelper {
           await _repairNotesForeignKey(db);
         } catch (e) {
           debugPrint('[UserDBHelper] onOpen 自愈 Notes 表外键失败: $e');
+          rethrow; // 原表仍保留，拒绝带损坏外键继续启动写入。
         }
         await NoteSyncStore.install(db);
+        await _repairCoreIndexes(db);
       },
     );
   }
@@ -631,10 +633,10 @@ class UserDBHelper {
       await db.execute(
         'ALTER TABLE CustomFlashcards ADD COLUMN question_id TEXT',
       );
-      await db.execute(
-        'CREATE INDEX IF NOT EXISTS idx_custom_flashcards_qid ON CustomFlashcards(question_id)',
-      );
     }
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_custom_flashcards_qid ON CustomFlashcards(question_id)',
+    );
   }
 
   /// 自愈修复 Notes 表历史外键误指向 questions(id) 的问题
@@ -649,9 +651,12 @@ class UserDBHelper {
       caseSensitive: false,
     ).hasMatch(sql)) {
       debugPrint('[UserDBHelper] 检测到 Notes 表外键指向不存在的 questions 表，自动迁移修复...');
-      await db.execute('PRAGMA foreign_keys = OFF');
-      await db.transaction((txn) async {
-        await txn.execute('''
+      final original =
+          Sqflite.firstIntValue(await db.rawQuery('PRAGMA foreign_keys')) ?? 0;
+      await db.rawQuery('PRAGMA foreign_keys = OFF');
+      try {
+        await db.transaction((txn) async {
+          await txn.execute('''
           CREATE TABLE Notes_new (
             id TEXT PRIMARY KEY,
             remote_id TEXT,
@@ -661,45 +666,54 @@ class UserDBHelper {
             timestamp INTEGER NOT NULL,
             updated_at INTEGER NOT NULL DEFAULT 0,
             sync_status INTEGER NOT NULL DEFAULT 0,
+            revision INTEGER NOT NULL DEFAULT 0,
             FOREIGN KEY (question_id) REFERENCES Question(id)
           )
         ''');
-        final oldColumns = await _columns(txn, 'Notes');
-        final selectCols = [
-          'id',
-          if (oldColumns.contains('remote_id'))
-            'remote_id'
-          else
-            'NULL AS remote_id',
-          'question_id',
-          'content',
-          'imgs',
-          'timestamp',
-          if (oldColumns.contains('updated_at'))
-            'updated_at'
-          else
-            '0 AS updated_at',
-          if (oldColumns.contains('sync_status'))
-            'sync_status'
-          else
-            '0 AS sync_status',
-        ];
-        // 保证旧笔记对应的题目在 Question 表中存在，防止外键检查报错
-        await txn.execute('''
+          final oldColumns = await _columns(txn, 'Notes');
+          final selectCols = [
+            'id',
+            if (oldColumns.contains('remote_id'))
+              'remote_id'
+            else
+              'NULL AS remote_id',
+            'question_id',
+            'content',
+            'imgs',
+            'timestamp',
+            if (oldColumns.contains('updated_at'))
+              'updated_at'
+            else
+              '0 AS updated_at',
+            if (oldColumns.contains('sync_status'))
+              'sync_status'
+            else
+              '0 AS sync_status',
+            if (oldColumns.contains('revision'))
+              'revision'
+            else
+              '0 AS revision',
+          ];
+          // 保证旧笔记对应的题目在 Question 表中存在，防止外键检查报错
+          await txn.execute('''
           INSERT OR IGNORE INTO Question (id, chapter_id, chapter_parent_id, updated_at)
           SELECT DISTINCT question_id, '', '', 0 FROM Notes WHERE question_id NOT IN (SELECT id FROM Question)
         ''');
-        await txn.execute(
-          'INSERT INTO Notes_new (id, remote_id, question_id, content, imgs, timestamp, updated_at, sync_status) '
-          'SELECT ${selectCols.join(", ")} FROM Notes',
+          await txn.execute(
+            'INSERT INTO Notes_new (id, remote_id, question_id, content, imgs, timestamp, updated_at, sync_status, revision) '
+            'SELECT ${selectCols.join(", ")} FROM Notes',
+          );
+          await txn.execute('DROP TABLE Notes');
+          await txn.execute('ALTER TABLE Notes_new RENAME TO Notes');
+          await txn.execute(
+            'CREATE INDEX IF NOT EXISTS idx_notes_question ON Notes(question_id)',
+          );
+        });
+      } finally {
+        await db.rawQuery(
+          'PRAGMA foreign_keys = ${original == 1 ? 'ON' : 'OFF'}',
         );
-        await txn.execute('DROP TABLE Notes');
-        await txn.execute('ALTER TABLE Notes_new RENAME TO Notes');
-        await txn.execute(
-          'CREATE INDEX IF NOT EXISTS idx_notes_question ON Notes(question_id)',
-        );
-      });
-      await db.execute('PRAGMA foreign_keys = ON');
+      }
       debugPrint('[UserDBHelper] Notes 表外键修复完成！');
     }
   }
@@ -708,6 +722,30 @@ class UserDBHelper {
   Future<void> repairDatabaseForTesting(Database db) async {
     await _repairCustomFlashcards(db);
     await _repairNotesForeignKey(db);
+    await _repairCoreIndexes(db);
+  }
+
+  /// 索引自愈与增列独立，版本号正确但索引丢失的库也能恢复查询路径。
+  Future<void> _repairCoreIndexes(DatabaseExecutor db) async {
+    for (final entry in const <String, String>{
+      'idx_question_updated': 'Question(updated_at)',
+      'idx_activity_bank': 'Activities(bank_id)',
+      'idx_activity_time_bank': 'Activities(bank_id,timestamp)',
+      'idx_notes_question': 'Notes(question_id)',
+    }.entries) {
+      final table = entry.value.split('(').first;
+      final columns = entry.value
+          .split('(')
+          .last
+          .replaceAll(')', '')
+          .split(',');
+      final existing = (await _columns(db, table)).toSet();
+      if (existing.containsAll(columns)) {
+        await db.execute(
+          'CREATE INDEX IF NOT EXISTS ${entry.key} ON ${entry.value}',
+        );
+      }
+    }
   }
 
   /// 医考帮题库「智能增量同步」状态表（v11）。
