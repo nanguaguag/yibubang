@@ -42,6 +42,7 @@ class DailyReviewPage extends StatefulWidget {
 
 class _DailyReviewPageState extends State<DailyReviewPage> {
   late final DailyReviewService _service;
+  late final Future<void> _serviceReady;
   SpacedRepetitionEngine _engine = const SpacedRepetitionEngine();
 
   bool _loading = true;
@@ -71,20 +72,33 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
   @override
   void initState() {
     super.initState();
-    _service = widget.service ?? DailyReviewService();
-    SpacedRepetitionEngine.loadConfigured().then((eng) {
-      if (mounted) setState(() => _engine = eng);
-    });
+    _serviceReady = _initializeService();
     SettingsPage.getReviewNoteWithQuestion().then((val) {
       if (mounted) setState(() => _reviewNoteWithQuestion = val);
     });
     SettingsPage.getFlashcard3DFlipEnabled().then((val) {
       if (mounted) setState(() => _enableFlashcard3DFlip = val);
     });
+    _startSession();
+  }
+
+  Future<void> _initializeService() async {
+    if (widget.service != null) {
+      _service = widget.service!;
+      _engine = _service.engine;
+    } else {
+      _engine = await SpacedRepetitionEngine.loadConfigured();
+      _service = DailyReviewService(engine: _engine);
+    }
+  }
+
+  Future<void> _startSession() async {
+    await _serviceReady;
+    if (!mounted) return;
     if (widget.initialSession != null) {
       _applySession(widget.initialSession!);
     } else {
-      _loadDailySession();
+      await _loadDailySession();
     }
   }
 
@@ -95,6 +109,8 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
     });
 
     try {
+      await _serviceReady;
+      if (!mounted) return;
       final summary = await _service.getTodaySummary(customPlan: widget.plan);
       _streakDays = summary.streakDays;
 
@@ -237,7 +253,7 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
       final elapsed = DateTime.now().difference(_questionStartTime).inSeconds;
 
       // 1. 调用 Service 记录算法演进与流水
-      await _service.submitReviewResult(
+      final updatedItem = await _service.submitReviewResult(
         questionId: item.questionId,
         rating: rating,
         durationSeconds: elapsed,
@@ -250,6 +266,13 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
 
       if (!mounted) return;
 
+      // 同一ID的所有副本共用最新调度状态，Again回排的预测与持久化一致。
+      for (var i = 0; i < _queue.length; i++) {
+        if (_queue[i].questionId == item.questionId) {
+          _queue[i] = _queue[i].copyWith(reviewItem: updatedItem);
+        }
+      }
+
       // 2. 统计本次会话新学/复习完成数
       if (item.isNew) {
         _sessionNewCount++;
@@ -259,7 +282,7 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
 
       // 3. 百词斩/Anki 精髓：选择 Again（重来）的题目，加入当前轮次末尾再次复习，直至彻底巩固
       if (rating == ReviewRating.again) {
-        _queue.add(item.copyWith(isNew: false));
+        _queue.add(item.copyWith(isNew: false, reviewItem: updatedItem));
       }
 
       // 4. 步进到下一题或结题
@@ -445,6 +468,7 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
                 if (item.itemType == ReviewItemType.flashcard) ...[
                   // 专属 3D 物理翻牌动效卡片
                   FlashcardFlipCard(
+                    key: ValueKey(_reviewEventId),
                     queueItem: item,
                     enable3DAnimation: _enableFlashcard3DFlip,
                     onFlipped: (isBack) {

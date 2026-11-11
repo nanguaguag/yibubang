@@ -11,6 +11,7 @@ import 'package:yibubang/db/database_helper.dart';
 import 'package:yibubang/models/spaced_review_item.dart';
 import 'package:yibubang/repositories/spaced_review_repository.dart';
 import 'package:yibubang/services/daily_review_service.dart';
+import 'package:yibubang/services/spaced_repetition_engine.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -36,6 +37,42 @@ void main() {
     await UserDBHelper().close();
     await dir.delete(recursive: true);
     await databaseFactory.setDatabasesPath(originalPath);
+  });
+  test('配置实验算法的预测与实际落库一致，参数切换不会当EF使用', () async {
+    SharedPreferences.setMockInitialValues({'spaced_algorithm': 'fsrs_lite'});
+    final engine = await SpacedRepetitionEngine.loadConfigured();
+    final configured = DailyReviewService(engine: engine);
+    final before = (await repo.getItem('q'))!;
+    final prediction = configured.engine.previewNextIntervals(
+      before,
+    )[ReviewRating.good];
+    var saved = await configured.submitReviewResult(
+      questionId: 'q',
+      rating: ReviewRating.good,
+    );
+    expect(prediction, 3);
+    expect(saved.interval, prediction);
+    expect(saved.easeFactor, 2.5);
+    expect(saved.extra?['fsrs_difficulty'], 5);
+    saved = await configured.submitReviewResult(
+      questionId: 'q',
+      rating: ReviewRating.again,
+    );
+    expect(saved.extra?['fsrs_difficulty'], 6.2);
+    saved = await service.submitReviewResult(
+      questionId: 'q',
+      rating: ReviewRating.good,
+    );
+    expect(saved.interval, 1);
+    expect(saved.easeFactor, 2.5);
+    expect(saved.extra?['algorithm'], 'sm2_v1');
+    expect(saved.extra?['fsrs_difficulty'], 6.2);
+    saved = await configured.submitReviewResult(
+      questionId: 'q',
+      rating: ReviewRating.good,
+    );
+    expect(saved.interval, 3);
+    expect(saved.easeFactor, 2.5);
   });
   test('斩题和斩卡拒绝旧评分，显式恢复后才可继续学习', () async {
     await service.cutQuestion(questionId: 'q', bankId: '');

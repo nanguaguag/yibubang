@@ -9,11 +9,61 @@ import 'package:yibubang/repositories/spaced_review_repository.dart';
 import 'package:yibubang/screens/daily_plan_page.dart';
 import 'package:yibubang/screens/daily_review_page.dart';
 import 'package:yibubang/services/daily_review_service.dart';
+import 'package:yibubang/services/spaced_repetition_engine.dart';
 import 'package:yibubang/widgets/daily_review_card.dart';
 import 'package:yibubang/widgets/daily_review_celebration_dialog.dart';
 import 'package:yibubang/widgets/daily_review_plan_dialog.dart';
 
 void main() {
+  testWidgets('注入服务与按钮共用算法，Again回排读取已保存状态', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'flashcard_3d_flip': false,
+      'spaced_algorithm': 'sm2',
+    });
+    const plan = ReviewPlan(id: 'p', name: 'p');
+    const card = CustomFlashcard(id: 'fc', front: '测试正面', back: '测试背面');
+    final session = DailyReviewSession(
+      plan: plan,
+      date: DateTime.now(),
+      dueQueue: [],
+      newQueue: const [
+        DailyReviewQueueItem(
+          questionId: 'fc',
+          itemType: ReviewItemType.flashcard,
+          isNew: true,
+          customFlashcard: card,
+        ),
+      ],
+    );
+    final fake = _FakeDailyReviewService(
+      session: session,
+      engine: const SpacedRepetitionEngine(
+        algorithmType: SpacedAlgorithmType.fsrsLite,
+      ),
+    );
+    fake.savedResult = const SpacedReviewItem(
+      itemId: 'fc',
+      itemType: ReviewItemType.flashcard,
+      reps: 2,
+      interval: 10,
+      extra: {'algorithm': 'fsrs_lite_v2', 'fsrs_difficulty': 5.0},
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DailyReviewPage(service: fake, initialSession: session),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('测试正面'));
+    await tester.pumpAndSettle();
+    expect(find.text('3天'), findsOneWidget);
+    await tester.tap(find.text('重来'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('测试正面'));
+    await tester.pumpAndSettle();
+    expect(find.text('27天'), findsOneWidget);
+    expect(fake.submissionCount, 1);
+  });
   group('DailyReviewPlanDialog Widget Tests', () {
     testWidgets('renders initial plan and allows selecting new targets', (
       tester,
@@ -345,6 +395,7 @@ void main() {
     testWidgets(
       'reviews flashcard with 3D flip card and self-eval rating bar',
       (tester) async {
+        SharedPreferences.setMockInitialValues({'flashcard_3d_flip': true});
         const plan = ReviewPlan(
           id: 'plan_flashcard',
           name: '闪卡自测计划',
@@ -571,7 +622,8 @@ class _FakeDailyReviewService extends DailyReviewService {
   String? lastSubmittedQuestionId;
   ReviewRating? lastSubmittedRating;
 
-  _FakeDailyReviewService({this.summary, this.session});
+  SpacedReviewItem? savedResult;
+  _FakeDailyReviewService({this.summary, this.session, super.engine});
 
   @override
   Future<DailyReviewSummary> getTodaySummary({
@@ -636,7 +688,8 @@ class _FakeDailyReviewService extends DailyReviewService {
     if (submissionGate != null) await submissionGate!.future;
     lastSubmittedQuestionId = questionId;
     lastSubmittedRating = rating;
-    return SpacedReviewItem(itemId: questionId, lastRating: rating);
+    return savedResult ??
+        SpacedReviewItem(itemId: questionId, lastRating: rating);
   }
 }
 

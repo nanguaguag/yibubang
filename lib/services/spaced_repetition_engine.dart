@@ -15,7 +15,7 @@ enum SpacedAlgorithmType {
       case SpacedAlgorithmType.sm2:
         return '经典 SM-2 算法';
       case SpacedAlgorithmType.fsrsLite:
-        return '轻量化 FSRS 算法 (DSR模型)';
+        return '轻量化记忆调度 (实验)';
     }
   }
 
@@ -24,7 +24,7 @@ enum SpacedAlgorithmType {
       case SpacedAlgorithmType.sm2:
         return 'SuperMemo 经典启发式算法，计算极快、规律稳定，根据难度因子(EF)动态拉伸间隔。';
       case SpacedAlgorithmType.fsrsLite:
-        return '现代科学记忆模型，基于稳定性(S)与难度(D)双维度推演，杜绝遗忘陷阱，复习效率提升约25%。';
+        return '实验性启发式调度，使用间隔与难度估算；尚未完成真实留存率验证。';
     }
   }
 
@@ -112,6 +112,14 @@ class SpacedRepetitionEngine {
     required ReviewRating rating,
     DateTime? now,
   }) {
+    final previous = item.extra?['algorithm'];
+    final current = algorithmType == SpacedAlgorithmType.fsrsLite
+        ? 'fsrs_lite_v2'
+        : 'sm2_v1';
+    // 切换策略时重新走初学间隔，保留遗忘次数/历史与各自参数，避免跨模型放大。
+    if (previous != null && previous != current) {
+      item = item.copyWith(reps: 0, interval: 0);
+    }
     if (algorithmType == SpacedAlgorithmType.fsrsLite) {
       return _evaluateFSRSLite(item: item, rating: rating, now: now);
     }
@@ -207,6 +215,7 @@ class SpacedRepetitionEngine {
       dueDate: newDueDate,
       lastReviewAt: currentTimestamp,
       lastRating: rating,
+      extra: {...?item.extra, 'algorithm': 'sm2_v1'},
     );
   }
 
@@ -224,10 +233,12 @@ class SpacedRepetitionEngine {
     int newReps = item.reps;
     int newLapses = item.lapses;
     int newInterval = item.interval;
-    // FSRS 将难度 Difficulty 映射存储在 easeFactor 维度 (范围 1.0 ~ 10.0，初始为 5.0)
-    double currentDifficulty = item.easeFactor > 10.0
-        ? 5.0
-        : math.max(1.0, item.easeFactor);
+    // 实验调度难度单独存 extra；easeFactor 始终保留 SM-2 EF。
+    double currentDifficulty =
+        ((item.extra?['fsrs_difficulty'] as num?)?.toDouble() ?? 5.0).clamp(
+          1.0,
+          10.0,
+        );
     ReviewState newState = item.state;
 
     // 初次学习 (新卡片)
@@ -315,7 +326,11 @@ class SpacedRepetitionEngine {
       reps: newReps,
       lapses: newLapses,
       interval: newInterval,
-      easeFactor: double.parse(currentDifficulty.toStringAsFixed(2)),
+      extra: {
+        ...?item.extra,
+        'algorithm': 'fsrs_lite_v2',
+        'fsrs_difficulty': double.parse(currentDifficulty.toStringAsFixed(2)),
+      },
       dueDate: newDueDate,
       lastReviewAt: currentTimestamp,
       lastRating: rating,

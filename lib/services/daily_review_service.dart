@@ -56,6 +56,8 @@ class DailyReviewService {
        _bankPathResolver = bankPathResolver,
        _bankPathsResolver = bankPathsResolver;
 
+  SpacedRepetitionEngine get engine => _engine;
+
   /// 组装今日刷题会话（到期复习队列 + 今日新题队列）
   /// [isExtraSession] 为 true 时表示用户主动“再学一组”，无视今日已完成目标限制，直接按 dailyNewTarget 抽取新卡片
   Future<DailyReviewSession> buildDailySession({
