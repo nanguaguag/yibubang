@@ -64,7 +64,7 @@ class DailyReviewService {
     DatabaseExecutor? executor,
     bool isExtraSession = false,
   }) async {
-    final currentTime = now ?? DateTime.now();
+    final currentTime = (now ?? DateTime.now()).toLocal();
     final todayStart = DateTime(
       currentTime.year,
       currentTime.month,
@@ -179,7 +179,7 @@ class DailyReviewService {
     DateTime? now,
     required DatabaseExecutor executor,
   }) async {
-    final currentTime = now ?? DateTime.now();
+    final currentTime = (now ?? DateTime.now()).toLocal();
 
     // 1. 获取或构建 SpacedReviewItem 并直接标记为 mastered
     var item = await _spacedRepo.getItem(questionId, executor);
@@ -312,7 +312,7 @@ class DailyReviewService {
     ReviewItemType? expectedItemType,
     required DatabaseExecutor executor,
   }) async {
-    final currentTime = now ?? DateTime.now();
+    final currentTime = (now ?? DateTime.now()).toLocal();
     final previous = await executor.query(
       'Activities',
       columns: ['question_id'],
@@ -502,13 +502,19 @@ class DailyReviewService {
     DateTime? now,
     DatabaseExecutor? executor,
   }) async {
-    final currentTime = now ?? DateTime.now();
+    final currentTime = (now ?? DateTime.now()).toLocal();
     final todayStart = DateTime(
       currentTime.year,
       currentTime.month,
       currentTime.day,
     ).millisecondsSinceEpoch;
-    final todayEnd = todayStart + 86400000 - 1;
+    final todayEnd =
+        DateTime(
+          currentTime.year,
+          currentTime.month,
+          currentTime.day + 1,
+        ).millisecondsSinceEpoch -
+        1;
 
     final plan =
         customPlan ?? await _spacedRepo.getOrCreateActivePlan(executor);
@@ -596,7 +602,7 @@ class DailyReviewService {
 
       final todayStr =
           '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
-      final yesterday = now.subtract(const Duration(days: 1));
+      final yesterday = DateTime(now.year, now.month, now.day - 1);
       final yesterdayStr =
           '${yesterday.year}-${yesterday.month.toString().padLeft(2, '0')}-${yesterday.day.toString().padLeft(2, '0')}';
 
@@ -622,7 +628,11 @@ class DailyReviewService {
             '${checkDate.year}-${checkDate.month.toString().padLeft(2, '0')}-${checkDate.day.toString().padLeft(2, '0')}';
         if (days.contains(dateStr)) {
           streak++;
-          checkDate = checkDate.subtract(const Duration(days: 1));
+          checkDate = DateTime(
+            checkDate.year,
+            checkDate.month,
+            checkDate.day - 1,
+          );
         } else {
           break;
         }
@@ -646,7 +656,15 @@ class DailyReviewService {
     DatabaseExecutor? executor,
   }) async {
     final userDb = executor ?? await _userDbHelper.database;
-    final end = todayEnd ?? (todayStart + 86400000 - 1);
+    final localStart = DateTime.fromMillisecondsSinceEpoch(todayStart);
+    final end =
+        todayEnd ??
+        (DateTime(
+              localStart.year,
+              localStart.month,
+              localStart.day + 1,
+            ).millisecondsSinceEpoch -
+            1);
     final rows = await userDb.rawQuery(
       '''
       SELECT COUNT(*) AS count FROM (

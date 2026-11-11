@@ -321,16 +321,20 @@ class SpacedReviewRepository {
     DatabaseExecutor? executor,
   }) async {
     final db = await _getExecutor(executor);
-    final baseDate = now ?? DateTime.now();
+    final baseDate = (now ?? DateTime.now()).toLocal();
     final forecast = <String, int>{};
 
     for (int i = 0; i < days; i++) {
       final targetDay = DateTime(
         baseDate.year,
         baseDate.month,
-        baseDate.day,
-      ).add(Duration(days: i));
-      final nextDay = targetDay.add(const Duration(days: 1));
+        baseDate.day + i,
+      );
+      final nextDay = DateTime(
+        targetDay.year,
+        targetDay.month,
+        targetDay.day + 1,
+      );
       final dayKey =
           '${targetDay.year.toString().padLeft(4, '0')}-'
           '${targetDay.month.toString().padLeft(2, '0')}-'

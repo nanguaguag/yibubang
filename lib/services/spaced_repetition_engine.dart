@@ -91,13 +91,18 @@ class SpacedRepetitionEngine {
 
   /// 对指定时间按本地自然日对齐至当天 00:00:00
   static DateTime startOfDay(DateTime dt) {
-    return DateTime(dt.year, dt.month, dt.day);
+    final local = dt.toLocal();
+    return DateTime(local.year, local.month, local.day);
   }
 
   /// 计算下次到期日（按自然日顺延，保证同一天到期的题目在当天零点统一就绪）
   static int calculateDueDate(DateTime baseDate, int intervalDays) {
     final sod = startOfDay(baseDate);
-    final due = sod.add(Duration(days: math.max(1, intervalDays)));
+    final due = DateTime(
+      sod.year,
+      sod.month,
+      sod.day + math.max(1, intervalDays),
+    );
     return due.millisecondsSinceEpoch;
   }
 
@@ -220,7 +225,9 @@ class SpacedRepetitionEngine {
     int newLapses = item.lapses;
     int newInterval = item.interval;
     // FSRS 将难度 Difficulty 映射存储在 easeFactor 维度 (范围 1.0 ~ 10.0，初始为 5.0)
-    double currentDifficulty = item.easeFactor > 10.0 ? 5.0 : math.max(1.0, item.easeFactor);
+    double currentDifficulty = item.easeFactor > 10.0
+        ? 5.0
+        : math.max(1.0, item.easeFactor);
     ReviewState newState = item.state;
 
     // 初次学习 (新卡片)
@@ -323,35 +330,44 @@ class SpacedRepetitionEngine {
     DateTime? now,
   }) {
     if (!isCorrect) {
-      return evaluateRating(
-        item: item,
-        rating: ReviewRating.again,
-        now: now,
-      );
+      return evaluateRating(item: item, rating: ReviewRating.again, now: now);
     }
 
     final ReviewRating rating;
-    if (durationSeconds > 0 && durationSeconds <= quickAnswerDurationThreshold) {
+    if (durationSeconds > 0 &&
+        durationSeconds <= quickAnswerDurationThreshold) {
       rating = ReviewRating.easy;
     } else {
       rating = ReviewRating.good;
     }
 
-    return evaluateRating(
-      item: item,
-      rating: rating,
-      now: now,
-    );
+    return evaluateRating(item: item, rating: rating, now: now);
   }
 
   /// 预估每个评分按钮将产生的下次复习间隔天数
   Map<ReviewRating, int> previewNextIntervals(SpacedReviewItem item) {
     final now = DateTime.now();
     return {
-      ReviewRating.again: evaluateRating(item: item, rating: ReviewRating.again, now: now).interval,
-      ReviewRating.hard: evaluateRating(item: item, rating: ReviewRating.hard, now: now).interval,
-      ReviewRating.good: evaluateRating(item: item, rating: ReviewRating.good, now: now).interval,
-      ReviewRating.easy: evaluateRating(item: item, rating: ReviewRating.easy, now: now).interval,
+      ReviewRating.again: evaluateRating(
+        item: item,
+        rating: ReviewRating.again,
+        now: now,
+      ).interval,
+      ReviewRating.hard: evaluateRating(
+        item: item,
+        rating: ReviewRating.hard,
+        now: now,
+      ).interval,
+      ReviewRating.good: evaluateRating(
+        item: item,
+        rating: ReviewRating.good,
+        now: now,
+      ).interval,
+      ReviewRating.easy: evaluateRating(
+        item: item,
+        rating: ReviewRating.easy,
+        now: now,
+      ).interval,
     };
   }
 }
