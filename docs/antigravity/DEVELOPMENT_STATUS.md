@@ -1,5 +1,16 @@
 # DEVELOPMENT_STATUS.md - 医不帮开发状态盘点与排期规划
 
+<!-- MEDICAL_KNOWLEDGE_BASE -->
+## 2026-11-12 可迁移医学知识库（本地构建/云导入/搜索验收完成）
+
+- 新增独立 `scripts/knowledge_base/`：五份内容SQLite只读导出，149,448唯一题/149,472块；标准JSONL、来源缓存、稳定ID、差异审计、Google增量导入、RAG证据、PDF/逐页OCR接口及未来Embedding→Qdrant适配，详细中文手册。
+- Google项目yibubang-search已建global Data Store/Standard Engine/私有GCS；pilot12/12、全量149460/149460成功、0失败，真实三题搜索3/3、自然语言CD8改写Top1；再次sync新增/修改0、删除0。
+- 真实来源散列/全产物/3医学探针PASS，Python14/14；无变化build全部缓存复用、0新增/修改/删除。167题答案内容分歧已提示待医学审核；6923题配图未OCR，53本真实PDF尚未提供，Embedding/Qdrant未真实部署。
+- 控制台入口澄清完成：Search Data Store位于gen-app-builder，与RAG Engine Corpus/Agent Retrieval Collection独立；在线GET及CD8查询再次确认已导入资源存在，README已补入口/API对照，未创建重复库。
+- 未改Flutter/依赖/题库schema；开始已有首页优化改动全部保留，不commit/push。[验证记录](../../scripts/knowledge_base/VALIDATION.md)、[操作手册](../../scripts/knowledge_base/README.md)。专项creditSKU/有效期、预算及实际账单仍需结算控制台核对。
+<!-- /MEDICAL_KNOWLEDGE_BASE -->
+
+
 <!-- HOME_STARTUP_OPTIMIZATION -->
 ## 2026-11-11 首页启动优化（完成）
 

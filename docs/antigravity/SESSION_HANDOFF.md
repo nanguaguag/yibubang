@@ -1,5 +1,17 @@
 # SESSION_HANDOFF.md - 跨会话开发交接记录
 
+<!-- MEDICAL_KNOWLEDGE_BASE -->
+## 最新交接：2026-11-12 可迁移医学知识库构建/导入/验证完成
+
+- 完成：五份只读内容库→149448题/149472块、源SHA256/完整产物/3医学探针PASS、Python14/14、缓存无变化build零delta；标准文档/块/来源版本、Google工具、RAG证据、PDF接口、未来Embedding缓存/Qdrant导出、中文手册。
+- 云端：yibubang-search/global/yibubang-medical-v1，Standard Engine yibubang-medical-search，私有bucket yibubang-search-kb-520065588983；pilot12/12 + 全量149460/149460成功0失败，最终12:04:20 UTC完成。三题搜索3/3（排名5/1/1），CD8自然语言改写Top1，后续sync上传/导入0、删除0。artifacts/cloud保留149472个成功ID/hash基线、import/search/rag/final-summary回执。
+- 未完成的扩展：53本教材PDF未提供；6923题配图未OCR；167题来源答案正文分歧已提示、未医学审核；EmbeddingAPI/Qdrant未实际调用/部署；专项creditSKU/有效期、预算和账单未从结算控制台确认。Flutter/应用后端尚未接入这个独立检索工具，yibubang://引用标识还不是现有App deep link路由。
+- Git：main@d862099；开始已有5个产品文件、首页测试和4份文档改动全部保留；本轮新增scripts/knowledge_base与知识库本段/技术债记录，不commit/push。artifacts/密钥忽略；TECHNICAL_DEBT仍受既有docs忽略规则影响。
+- 控制台复核：用户打开agent-platform/rag/corpus与agent-retrieval/collections为空，实际资源是gen-app-builder下Search Data Store；已在线GET资源/导入回执/文档并查询CD8 Top1验证。README新增入口与三产品/API对照；未新建Corpus/Collection或启用vectorsearch API。回执artifacts/cloud/resource-location-check.json。
+- 下一会话第一步：核对Git及[VALIDATION.md](../../scripts/knowledge_base/VALIDATION.md)/[README](../../scripts/knowledge_base/README.md)，按用户下一目标提供实际PDF路径或认领检索接入；新增来源修改config→build→validate→cloud sync即可。不重复创建同名资源，不用FULL导入delta，不重新导入本次已经成功的数据；保留artifacts/cloud成功基线。
+<!-- /MEDICAL_KNOWLEDGE_BASE -->
+
+
 <!-- HOME_STARTUP_OPTIMIZATION -->
 ## 最新交接：2026-11-11 首页启动最小优化完成
 

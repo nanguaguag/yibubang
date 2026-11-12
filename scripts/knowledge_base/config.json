@@ -1,0 +1,21 @@
+{
+  "format_version": 1,
+  "output": "artifacts",
+  "chunk_chars": 1800,
+  "overlap_chars": 160,
+  "sources": [
+    {"id": "legacy_combined", "type": "sqlite", "path": "../../docs/yikaobang/data/question_data.sqlite", "priority": 0},
+    {"id": "clinical_final", "type": "sqlite", "path": "../../docs/yikaobang/data/question_banks/clinical_final/clinical_final.sqlite", "priority": 10},
+    {"id": "dental_final", "type": "sqlite", "path": "../../docs/yikaobang/data/question_banks/dental_final/dental_final.sqlite", "priority": 10},
+    {"id": "nursing_final", "type": "sqlite", "path": "../../docs/yikaobang/data/question_banks/nursing_final/nursing_final.sqlite", "priority": 10},
+    {"id": "clinial_exam", "type": "sqlite", "path": "../../docs/yikaobang/data/question_banks/clinial_exam/clinial_exam.sqlite", "priority": 20}
+  ],
+  "google": {
+    "project": "yibubang-search",
+    "location": "global",
+    "data_store": "yibubang-medical-v1",
+    "engine": "yibubang-medical-search",
+    "bucket": "yibubang-search-kb-520065588983",
+    "bucket_location": "ASIA-NORTHEAST1"
+  }
+}

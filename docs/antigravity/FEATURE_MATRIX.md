@@ -1,5 +1,18 @@
 # FEATURE_MATRIX.md - 医不帮功能实现与验证状态矩阵
 
+<!-- MEDICAL_KNOWLEDGE_BASE -->
+## 2026-11-12 独立医学检索知识库工具
+
+| 功能 | 状态 | 验证边界 |
+| --- | --- | --- |
+| 本地可迁移题库知识库 | TESTED | 五份只读内容库→149448题/149472块，源散列/Google格式/3医学探针PASS，Python14/14；无变化build零delta，167题答案分歧提示，个人数据排除。 |
+| Google Data Store/Standard Search工具 | VERIFIED / TESTED | 真正配置并导入149472块0失败，三题查询3/3、自然语言CD8改写Top1，零变更sync无上传。仅验证独立工具链，Flutter/应用后端未接入。 |
+| 教材PDF与自建向量迁移 | IMPLEMENTED / 局部TESTED | pypdf/逐页JSONL、Embedding缓存/Qdrant点格式；页码及API响应夹具通过；真实53本PDF/OCR、真实EmbeddingAPI及Qdrant未验收。 |
+
+工具、费用设置与迁移说明见[知识库README](../../scripts/knowledge_base/README.md)。既有App功能状态保持。
+<!-- /MEDICAL_KNOWLEDGE_BASE -->
+
+
 <!-- HOME_STARTUP_OPTIMIZATION -->
 ## 2026-11-11 首页启动优化交付
 
