@@ -3,7 +3,7 @@
 <!-- HOME_STARTUP_OPTIMIZATION -->
 ## 2026-11-11 首页启动优化状态更新
 
-当前未提交实现见[逐项记录](audits/HOME_STARTUP_OPTIMIZATION_LOG.md)，以下状态优先于历史审计。
+已提交实现（2026-11-12，c911b06）见[逐项记录](audits/HOME_STARTUP_OPTIMIZATION_LOG.md)，以下状态优先于历史审计。
 
 | 项目 | 状态 | 证据 |
 | --- | --- | --- |
@@ -11,7 +11,7 @@
 | M01状态无差别重载 | RESOLVED / TESTED | 初始化/空同步/未落库失败不重读；已提交页及删除流水仍一次刷新，5项生产UI/HTTP/SQLite回归。 |
 | M03隐藏Tab启动工作 | RESOLVED（此切片）/ TESTED | 初次只挂当前业务页；访问后保留，导航重排/禁用/1000↔600及滑动回归5项；目录迁移校验仍原流程。 |
 
-全量314/314、后端8/8、tsc/analyze通过。M06协议发布与M13算法入口仍OPEN；400px默认测试字体下既有每日卡片标签Row溢出需另行核对真实字体，不列为本轮修复。无提交/部署。
+全量314/314、后端8/8、tsc/analyze通过。M06协议发布与M13算法入口仍OPEN；400px默认测试字体下既有每日卡片标签Row溢出需另行核对真实字体，不列为本轮修复。2026-11-12已commit c911b06；现有同步后端未在该优化任务部署。
 <!-- /HOME_STARTUP_OPTIMIZATION -->
 
 <!-- POST_A20_MAINTENANCE_AUDIT -->

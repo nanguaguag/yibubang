@@ -1,5 +1,17 @@
 # SESSION_HANDOFF.md - 跨会话开发交接记录
 
+<!-- TEXTBOOK_PLAN_REVIEW -->
+## 最新交接：2026-11-12 三项commit与53本PDF方案（禁止直接开始处理）
+
+- 用户授权commit；已分别提交c911b06首页优化、71e9241知识库工具、105c942 AI搜索。暂未push。被忽略的.local凭据、知识库artifacts、教材和构建产物未纳入提交；技术债文档依旧为本地被忽略文件。
+- 新用户约束：尽量本地、省钱、不上传整本PDF；文字搜索定位页面并在线打开图片；当前只说方案，不批量处理或上传。
+- 来源为/Volumes/My PSSD/书籍/自用53本课本（可复制）；53份PDF/16.283GiB/20669页/224–982页，元信息全部可读。11本22页只读抽检扫描图+隐藏OCR；诊断345/内科492/外科426页有HiddenHorzOCR旧组和SimSun组重叠，正文重复。妇产类似producer但正文未抽检，不冒充全书质量验收。
+- 方案已写[TEXTBOOK_PLAN.md](../../scripts/knowledge_base/TEXTBOOK_PLAN.md)：本地读已有OCR、选择层/坐标去重与医学符号质检，异常才补OCR；SQLite/JSONL主库，Google仅清洗文本，独立私有R2页图（GCS备选），PDF物理页唯一定位、版次/源版本明确，教材纯查页不调用Gemini。R2/Google价格有官方链接，页图体积仅假设未压缩测试。
+- 当前构建器只有页文本，App引用只认question_id；需后续扩展页/坐标主库、书籍字段、教材引用类型、鉴权图片接口和阅读器。没有本轮产品/schema/cloud配置变更或教材导入。
+- 下一次第一步：核对Git并读方案与用户最新反馈；用户没有要求实施前继续方案讨论。不要把文件路径提供或当前commit授权解释为教材批量OCR/渲染/上传授权，不直接运行knowledge_base build/config改源或cloud sync。
+<!-- /TEXTBOOK_PLAN_REVIEW -->
+
+
 <!-- APP_AI_SEARCH -->
 ## 最新交接：2026-11-12 App AI 搜索与Cloud Run完成
 
