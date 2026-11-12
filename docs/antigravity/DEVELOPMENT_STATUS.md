@@ -1,5 +1,17 @@
 # DEVELOPMENT_STATUS.md - 医不帮开发状态盘点与排期规划
 
+<!-- APP_AI_SEARCH -->
+## 2026-11-12 App AI 搜索（实现、独立后端部署与验收完成）
+
+- 新增Gemini星芒底栏/桌面Rail，独立Material页面，检索骨架/呼吸与阶段淡入淡出/平滑流式字输出、比较表格，追问/修改重试/停止/复制。引用按全局question_id打开只读题库原题及共享作答；未装库给提示。
+- 本地session新建/切换/删除与中断恢复，用户库schema v24→v25仅新增AiSearchSessions/AiSearchTurns。不加入现有同步，不改题库/Question主键，保留已有首页延迟挂载优化。
+- 用户明确授权独立Cloud Run配置部署：yibubang-search/东京/yibubang-ai-search，最终修订00003-cl2，100%流量；Firestore专用yibubang-ai，运行账号最小推理权限+数据库条件IAM；复用原Search Engine/Data Store，Gemini 3.8 Flash global/LOW，Google凭据仅服务端ADC。
+- Firestore事务执行北京时间100次/安装/天、6次/分钟、单并发租约，另有IP/全站搜索及注册上限、请求体/上下文/tokens上限；失败/取消/重试已受理亦计数，客户端不能改额度。
+- 最终Flutter334/334、Python11/11、analyze 0 issues；两轮真实搜索/追问PASS，最终修订首文字3.04s/2.58s、quota98→96；线上五项限额/凭据拒绝PASS且恢复测试设备计数。Android/macOS Debug构建成功；六张真实字体截图检查。
+- 未commit/push/发布Release；Windows/Linux/iOS/Android真机与国内可达性未实测。安装凭据不能替代硬件证明，专项credit抵扣新服务费用仍待账单确认；PDF尚未导入/页码阅读器未实现。详见[手册](../../ai_backend/README.md)与[验收](../../ai_backend/VALIDATION.md)。
+<!-- /APP_AI_SEARCH -->
+
+
 <!-- MEDICAL_KNOWLEDGE_BASE -->
 ## 2026-11-12 可迁移医学知识库（本地构建/云导入/搜索验收完成）
 

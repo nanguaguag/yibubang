@@ -67,6 +67,13 @@ class BottomNavConfig {
           selectedIcon: Icons.person,
           enabled: true,
         ),
+        BottomNavItem(
+          id: 'ai_search',
+          title: 'AI 搜索',
+          subtitle: '医学知识检索、解释与追问',
+          icon: Icons.auto_awesome_outlined,
+          selectedIcon: Icons.auto_awesome,
+        ),
       ];
 
   /// 从 SharedPreferences 加载配置

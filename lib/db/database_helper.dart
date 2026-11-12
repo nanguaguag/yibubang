@@ -1,4 +1,5 @@
 import 'user_database_replacement.dart';
+import 'ai_search_store.dart';
 import 'review_events.dart';
 import 'question_projection.dart';
 export 'user_database_coordinator.dart' show UserDatabaseVersion;
@@ -275,7 +276,7 @@ class UserDBHelper {
   factory UserDBHelper() => _instance;
   UserDBHelper._internal();
 
-  static const schemaVersion = 24;
+  static const schemaVersion = 25;
   static Database? _database;
 
   Future<Database> get database =>
@@ -598,6 +599,7 @@ class UserDBHelper {
       if (oldVersion < 22 && newVersion >= 22) await ReviewEvents.install(txn);
       if (oldVersion < 23 && newVersion >= 23) await ReviewEvents.install(txn);
       if (oldVersion < 24 && newVersion >= 24) await CloudOutbox.install(txn);
+      if (oldVersion < 25 && newVersion >= 25) await AiSearchStore.install(txn);
       await _createMigrationStateTable(txn);
     });
   }
@@ -1032,6 +1034,7 @@ class UserDBHelper {
   }
 
   Future<void> _onCreate(Database db, int version) async {
+    await AiSearchStore.install(db);
     debugPrint("初始化用户数据库...");
     await db.execute('''
     CREATE TABLE IF NOT EXISTS IdentitySubject (

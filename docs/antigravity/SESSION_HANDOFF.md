@@ -1,5 +1,19 @@
 # SESSION_HANDOFF.md - 跨会话开发交接记录
 
+<!-- APP_AI_SEARCH -->
+## 最新交接：2026-11-12 App AI 搜索与Cloud Run完成
+
+- **用户授权**：独立Cloud Run由代理配置并部署；本目标无commit/push/Release发布授权。
+- **完成**：7个新Flutter文件（模型/本地store/HTTP SSE client/controller/页面/星芒/Markdown引用），首页/导航/schema最小接入；本地会话与编辑追问、停止/恢复、引用原题、Material动效/表格；独立ai_backend（FastAPI策略/SSE/部署/探针/11项测试/中文手册）。
+- **线上**：project yibubang-search，Tokyo Cloud Run yibubang-ai-search/00003-cl2/100%；URL https://yibubang-ai-search-2eg4oq4jcq-an.a.run.app 已写默认客户端；Firestore yibubang-ai，runtime SA最小2项推理权限+数据库IAM条件。原Search yibubang-medical-search未重新导入，Gemini gemini-3.8-flash/global/LOW。
+- **限额**：100/安装/北京自然日、6/分钟、1并发租约180秒；IP300/天、全站2000/天、注册IP3/全站100；正文64KB、历史3、token2048，已受理失败/停止/重试计数。检索+生成总超时165秒。代理IP键与线上remoteIp哈希核对一致，以后加LB/CDN需重审。
+- **验证**：最终Flutter334/334、analyze0、Python11/11；两轮真实搜索+追问，最终修订首字3.04s/2.58s、98→96额度，401/409符合；线上日额100、分钟6、并发429、重放409/错凭据401通过，专用测试设备字段已恢复。AndroidDebug APK和macOSDebug App均成功；真实字体/图标六张截图在ai_backend/.local/screenshots。凭据/回执.local被忽略且不输出令牌。
+- **工作区**：main@d862099；开始已有首页优化5个产品文件/3测试/文档与knowledge_base完整保留，不擅自提交；本轮只AI相关新增/改动和知识库更新。KNOWN_ISSUES既有改动不归本轮。
+- **边界/未完成**：Play Integrity/App Attest、账号/边缘防护未接（安装ID可重置）；专项Search credit对生成/Run/Firestore的抵扣未验账；Windows/Linux/iOS/Android真机和国内网络未验证；Release未发布。53PDF未提供/教材页码阅读器未实现；本地会话不跨设备同步。
+- **下次第一步**：核对Git现场并读[ai_backend/README.md](../../ai_backend/README.md)/[VALIDATION.md](../../ai_backend/VALIDATION.md)，运行新构建体验AI栏，按用户实机反馈处理；不要重复创建Store或导入149448题。需要改后端时gcloud run deploy --source=ai_backend并重跑探针；不修改测试设备以外的线上计数，不把.local凭据加入版本控制。
+<!-- /APP_AI_SEARCH -->
+
+
 <!-- MEDICAL_KNOWLEDGE_BASE -->
 ## 最新交接：2026-11-12 可迁移医学知识库构建/导入/验证完成
 

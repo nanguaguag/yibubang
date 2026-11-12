@@ -10,13 +10,33 @@ void main() {
   });
 
   group('BottomNavConfig Tests', () {
-    test('default items contains 4 tabs in expected initial order', () {
+    test(
+      'existing four-tab preferences append AI without losing custom order',
+      () async {
+        final items = BottomNavConfig.getDefaultItems()..removeLast();
+        items.insert(0, items.removeAt(3));
+        items.firstWhere((i) => i.id == 'statistics').enabled = false;
+        await BottomNavConfig.saveConfig(items);
+        final loaded = await BottomNavConfig.loadConfig();
+        expect(loaded.map((i) => i.id), [
+          'profile',
+          'subjects',
+          'daily_plan',
+          'statistics',
+          'ai_search',
+        ]);
+        expect(loaded.last.enabled, isTrue);
+        expect(loaded.firstWhere((i) => i.id == 'statistics').enabled, isFalse);
+      },
+    );
+    test('default items contains 5 tabs in expected initial order', () {
       final items = BottomNavConfig.getDefaultItems();
-      expect(items.length, 4);
+      expect(items.length, 5);
       expect(items[0].id, 'subjects');
       expect(items[1].id, 'daily_plan');
       expect(items[2].id, 'statistics');
       expect(items[3].id, 'profile');
+      expect(items[4].id, 'ai_search');
       expect(items.every((i) => i.enabled), isTrue);
     });
 
@@ -30,24 +50,27 @@ void main() {
       await BottomNavConfig.saveConfig(items);
 
       final loaded = await BottomNavConfig.loadConfig();
-      expect(loaded.length, 4);
+      expect(loaded.length, 5);
       expect(loaded[0].id, 'profile');
       expect(loaded[0].enabled, isTrue);
       expect(loaded.firstWhere((i) => i.id == 'daily_plan').enabled, isFalse);
       expect(loaded.firstWhere((i) => i.id == 'subjects').enabled, isTrue);
     });
 
-    test('at least two tabs are guaranteed to remain enabled for Material NavigationBar', () async {
-      final items = BottomNavConfig.getDefaultItems();
-      for (final item in items) {
-        item.enabled = false;
-      }
-      // 尝试全关
-      await BottomNavConfig.saveConfig(items);
+    test(
+      'at least two tabs are guaranteed to remain enabled for Material NavigationBar',
+      () async {
+        final items = BottomNavConfig.getDefaultItems();
+        for (final item in items) {
+          item.enabled = false;
+        }
+        // 尝试全关
+        await BottomNavConfig.saveConfig(items);
 
-      final loaded = await BottomNavConfig.loadConfig();
-      expect(loaded.where((i) => i.enabled).length >= 2, isTrue);
-    });
+        final loaded = await BottomNavConfig.loadConfig();
+        expect(loaded.where((i) => i.enabled).length >= 2, isTrue);
+      },
+    );
 
     test('resetToDefault restores original state', () async {
       final items = BottomNavConfig.getDefaultItems();

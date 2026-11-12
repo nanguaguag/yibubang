@@ -1,0 +1,7 @@
+.venv
+__pycache__
+*.json
+test_*.py
+*.log
+
+.local

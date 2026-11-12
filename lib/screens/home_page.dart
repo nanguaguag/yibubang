@@ -11,6 +11,8 @@ import '../screens/daily_plan_page.dart';
 import '../screens/my_page.dart';
 import '../screens/statistics_page.dart';
 import '../services/app_update_service.dart';
+import '../widgets/gemini_mark.dart';
+import 'ai_search_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -158,6 +160,12 @@ class _HomePageState extends State<HomePage> {
       () => GlobalKey(debugLabel: 'tab_$id'),
     );
     switch (id) {
+      case 'ai_search':
+        return _KeepAliveTab(
+          key: key,
+          active: active,
+          child: const AiSearchPage(),
+        );
       case 'subjects':
         return _KeepAliveTab(
           key: key,
@@ -208,16 +216,24 @@ class _HomePageState extends State<HomePage> {
 
         final destinations = validItems.map((item) {
           return NavigationDestination(
-            icon: Icon(item.icon),
-            selectedIcon: Icon(item.selectedIcon),
+            icon: item.id == 'ai_search'
+                ? const GeminiMark(colorful: false)
+                : Icon(item.icon),
+            selectedIcon: item.id == 'ai_search'
+                ? const GeminiMark()
+                : Icon(item.selectedIcon),
             label: item.title,
           );
         }).toList();
 
         final railDestinations = validItems.map((item) {
           return NavigationRailDestination(
-            icon: Icon(item.icon),
-            selectedIcon: Icon(item.selectedIcon),
+            icon: item.id == 'ai_search'
+                ? const GeminiMark(colorful: false)
+                : Icon(item.icon),
+            selectedIcon: item.id == 'ai_search'
+                ? const GeminiMark()
+                : Icon(item.selectedIcon),
             label: Text(item.title),
           );
         }).toList();

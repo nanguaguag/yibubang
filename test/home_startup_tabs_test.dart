@@ -78,7 +78,7 @@ void main() {
           .widget<NavigationRail>(find.byType(NavigationRail))
           .destinations
           .length,
-      4,
+      5,
     );
     await tester.pumpWidget(const SizedBox.shrink());
   });

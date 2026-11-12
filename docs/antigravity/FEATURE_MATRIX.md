@@ -1,5 +1,20 @@
 # FEATURE_MATRIX.md - 医不帮功能实现与验证状态矩阵
 
+<!-- APP_AI_SEARCH -->
+## 2026-11-12 AI 搜索入口与独立RAG服务
+
+| 链路 | 当前交付 | 验证 |
+| --- | --- | --- |
+| 导航→独立AI页面 | 原四项后追加Gemini星芒AI项，既有设置可重排/隐藏；Material欢迎建议/输入/检索骨架/阶段动画/平滑输出、深色与比较表格 | 旧导航配置迁移与首页5项回归，320px/1.6字号、390px/1000px真实字体渲染 |
+| 输入→Search→Gemini | App安装凭据→独立Cloud Run→既有Search Engine→Gemini3.8 Flash/LOW→SSE引用与文字；无Google客户端密钥 | 两轮线上各搜索+追问，done/引用/额度下降/重放拒绝全部PASS |
+| 引用→原题 | 全局id在已安装/启用题库查找，原QuestionDetailPage携带共享用户作答；缺库提示 | 真SQLite只读题库q、原作答A与bank_id路由验收 |
+| 会话/编辑/取消 | 本地用户库v25新增两表；新建/历史/删除、后续分支替换、700ms检查点、停止及中断恢复 | 真实SQLite持久化/迁移，UTF8/SSE/取消/竞态与UI测试 |
+| 防滥用 | 服务端UTC+8每日100/安装、每分钟6、单并发；IP每日300、全站2000、新安装IP3/全站100；输入/上下文/输出上限 | Python事务/策略/失败释放11项；线上五种拒绝及测试状态恢复PASS |
+
+最终Flutter334/334、analyze0 issues，Android/macOS调试构建成功。对话只在本地持久化，当前问题与最多三轮完成历史需发给Google作回答；Firestore仅保存凭据哈希与计数。现有云同步不含会话。安装身份可重置，不宣称硬件反作弊；移动平台证明、边缘防护、教材PDF页码打开及四平台真机仍待后续。[详情](../../ai_backend/README.md)。
+<!-- /APP_AI_SEARCH -->
+
+
 <!-- MEDICAL_KNOWLEDGE_BASE -->
 ## 2026-11-12 独立医学检索知识库工具
 
