@@ -1,5 +1,36 @@
 # KNOWN_ISSUES.md - 医不帮已知缺陷、潜在风险与问题总账
 
+<!-- HOME_STARTUP_OPTIMIZATION -->
+## 2026-11-11 首页启动优化状态更新
+
+当前未提交实现见[逐项记录](audits/HOME_STARTUP_OPTIMIZATION_LOG.md)，以下状态优先于历史审计。
+
+| 项目 | 状态 | 证据 |
+| --- | --- | --- |
+| M02投影路径别名重建 | RESOLVED / TESTED | 原/真实/符号链接同指纹，热读取0写入；文件变更失效、显式重算和选课共享保留，6项新增回归。 |
+| M01状态无差别重载 | RESOLVED / TESTED | 初始化/空同步/未落库失败不重读；已提交页及删除流水仍一次刷新，5项生产UI/HTTP/SQLite回归。 |
+| M03隐藏Tab启动工作 | RESOLVED（此切片）/ TESTED | 初次只挂当前业务页；访问后保留，导航重排/禁用/1000↔600及滑动回归5项；目录迁移校验仍原流程。 |
+
+全量314/314、后端8/8、tsc/analyze通过。M06协议发布与M13算法入口仍OPEN；400px默认测试字体下既有每日卡片标签Row溢出需另行核对真实字体，不列为本轮修复。无提交/部署。
+<!-- /HOME_STARTUP_OPTIMIZATION -->
+
+<!-- POST_A20_MAINTENANCE_AUDIT -->
+## 2026-11-11 A20后新增维护发现（OPEN，未修复）
+
+以 `d862099` [后续审计](audits/POST_A20_STARTUP_SYNC_MAINTENANCE_AUDIT.md)为准，编号M用于维护方案，不覆盖A01–A20历史修复状态。
+
+| 编号 | 状态/等级 | 确定证据与边界 |
+| --- | --- | --- |
+| M01 | CONFIRMED / P2 | 仅Cloud init通知就让课程Future重载并显示圆环；生产部件探针复现，无数据变动也触发。 |
+| M02 | CONFIRMED / P1 | 投影查/存stamp路径不同，macOS别名同文件每次全量重建；十万题10次产生2000010次SQL行变更，规范路径命中3ms。用户实际路径仍待确认。 |
+| M06 | SYNC BLOCKED / P1 | 缺protocol2/accepted_seqs抛保护错误，pending保留；已知后端尚未部署，匿名health不能验证实际protocol。 |
+| M08 | CONFIRMED BOUNDARY / P2 | fixed seq范围JOIN当前实体，上界后同题更新会提前显示；后端探针复现，不等于已证实永久数据丢失。活动payload不快照为条件性维护风险。 |
+| M13 | CONFIRMED / P2 | 正常默认Card→Page传SM2服务，绕过prefs fsrs；生产卡片/临时真实用户库探针复现，A19正常入口仍PARTIAL。 |
+| M10/M12 | SOURCE CONFIRMED / P1/P2 | 搜索/课程树/章节仍有未分块IN，统计日/小时/周固定Duration残留；旧SQLite与DST现场待补验证。 |
+
+本轮新增5项现状探针通过、相关Flutter34/34/后端8/8/tsc与analyze通过；未修产品。其他FIFO/概览/备份/FTS演进与条件风险见报告。
+<!-- /POST_A20_MAINTENANCE_AUDIT -->
+
 <!-- A01_A20_REPAIR_STATUS -->
 ## 2026-11-11 A01–A20 修复进展
 

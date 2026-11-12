@@ -23,6 +23,8 @@ class _HomePageState extends State<HomePage> {
   int _selectedIndex = 0; // 默认主页为“我的课程”
   late PageController _pageController;
   Map<String, dynamic> updateData = {}; // 更新信息
+  // IndexedStack 会包装每个子页；全局键让导航重排/布局切换保留当前页面实例。
+  final Map<String, GlobalKey> _tabKeys = {};
 
   // 当前应用版本号
   late String currentVersion;
@@ -150,29 +152,33 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  Widget _buildTabWidget(String id) {
+  Widget _buildTabWidget(String id, {required bool active}) {
+    final key = _tabKeys.putIfAbsent(
+      id,
+      () => GlobalKey(debugLabel: 'tab_$id'),
+    );
     switch (id) {
       case 'subjects':
-        return const _KeepAliveTab(
-          key: ValueKey('tab_subjects'),
-          child: ChoosedSubjectsPage(),
+        return _KeepAliveTab(
+          key: key,
+          active: active,
+          child: const ChoosedSubjectsPage(),
         );
       case 'daily_plan':
-        return const _KeepAliveTab(
-          key: ValueKey('tab_daily_plan'),
-          child: DailyPlanPage(),
+        return _KeepAliveTab(
+          key: key,
+          active: active,
+          child: const DailyPlanPage(),
         );
       case 'statistics':
-        return const _KeepAliveTab(
-          key: ValueKey('tab_statistics'),
-          child: StatisticsPage(),
+        return _KeepAliveTab(
+          key: key,
+          active: active,
+          child: const StatisticsPage(),
         );
       case 'profile':
       default:
-        return const _KeepAliveTab(
-          key: ValueKey('tab_profile'),
-          child: MyPage(),
-        );
+        return _KeepAliveTab(key: key, active: active, child: const MyPage());
     }
   }
 
@@ -216,7 +222,15 @@ class _HomePageState extends State<HomePage> {
           );
         }).toList();
 
-        final tabPages = validItems.map((item) => _buildTabWidget(item.id)).toList();
+        // 宽屏 IndexedStack 会挂载全部子节点，只在首次访问时挂载业务页面。
+        // 窄屏 PageView 保持原有预加载/滑动行为，已访问页继续 KeepAlive。
+        final tabPages = [
+          for (var i = 0; i < validItems.length; i++)
+            _buildTabWidget(
+              validItems[i].id,
+              active: !isDesktop || i == clampedIndex,
+            ),
+        ];
 
         if (isDesktop) {
           return Scaffold(
@@ -231,10 +245,7 @@ class _HomePageState extends State<HomePage> {
                 ),
                 const VerticalDivider(width: 1, thickness: 1),
                 Expanded(
-                  child: IndexedStack(
-                    index: clampedIndex,
-                    children: tabPages,
-                  ),
+                  child: IndexedStack(index: clampedIndex, children: tabPages),
                 ),
               ],
             ),
@@ -260,7 +271,8 @@ class _HomePageState extends State<HomePage> {
 
 class _KeepAliveTab extends StatefulWidget {
   final Widget child;
-  const _KeepAliveTab({super.key, required this.child});
+  final bool active;
+  const _KeepAliveTab({super.key, required this.child, required this.active});
 
   @override
   State<_KeepAliveTab> createState() => _KeepAliveTabState();
@@ -268,12 +280,27 @@ class _KeepAliveTab extends StatefulWidget {
 
 class _KeepAliveTabState extends State<_KeepAliveTab>
     with AutomaticKeepAliveClientMixin {
+  late bool _initialized;
+
+  @override
+  void initState() {
+    super.initState();
+    _initialized = widget.active;
+  }
+
+  @override
+  void didUpdateWidget(covariant _KeepAliveTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 一旦访问过就保留页面，不因切到别的 Tab 重新查询/丢失状态。
+    _initialized = _initialized || widget.active;
+  }
+
   @override
   bool get wantKeepAlive => true;
 
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    return widget.child;
+    return _initialized ? widget.child : const SizedBox.shrink();
   }
 }

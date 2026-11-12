@@ -1,5 +1,32 @@
 # FEATURE_MATRIX.md - 医不帮功能实现与验证状态矩阵
 
+<!-- HOME_STARTUP_OPTIMIZATION -->
+## 2026-11-11 首页启动优化交付
+
+| 功能 | 状态 | 最小改动与验证 |
+| --- | --- | --- |
+| 题库投影热缓存 | TESTED | 查/存真实路径一致，文件变化仍重建；6项回归，十万题10次热读取2ms/0写入。 |
+| 同步后的首页/统计刷新 | TESTED | 状态与提交数据通知区分；partial失败/删除仍刷新，5项回归；原同步按钮状态通知保留。 |
+| 桌面Tab按需初始化 | TESTED | 首次只初始化当前业务页、访问后保留；导航自定义/重排/禁用/宽窄与滑动5项回归；窄屏模式保持。 |
+
+全量Flutter314/314、后端8/8/tsc/analyze通过，实机profile待验收。当前算法设置M13与线上协议M06仍按前段PARTIAL/未VERIFIED，不因启动优化改变业务结论。详见[逐项记录](audits/HOME_STARTUP_OPTIMIZATION_LOG.md)。
+<!-- /HOME_STARTUP_OPTIMIZATION -->
+
+<!-- POST_A20_MAINTENANCE_AUDIT -->
+## 2026-11-11 后续审计事实校正（未改变产品行为）
+
+基线d862099；完整证据与方案见[启动/同步/维护审计](audits/POST_A20_STARTUP_SYNC_MAINTENANCE_AUDIT.md)。历史A01–A20提交保留，以下状态优先于正文旧概述。
+
+| 功能 | 当前真实状态 | 本轮验证边界 |
+| --- | --- | --- |
+| 云同步v2 | 客户端/仓库后端TESTED；线上兼容尚未VERIFIED，当前用户同步失败 | 缺protocol/ACK保护保留outbox；未部署schema/Worker，health不声明protocol。 |
+| 间隔调度算法设置 | PARTIAL | A19直接Page构造/显式注入有效，但正常默认Plan/Card→Page传SM2绕过prefs；生产卡片探针复现。 |
+| 首页热加载/关系投影缓存 | PARTIAL | 云状态通知无差别重载；同文件路径别名stamp不一致反复全库重建已复现。 |
+| 跨时区自然日 | 复习已TESTED，统计仍PARTIAL | 复习日期A18修复保留；统计day/hour/week固定24h/7d残留，固定计划时区尚未设计。 |
+
+本轮未修产品、未重跑全量298项、未实机验收。相关34/34与新增5项现状探针不代表上述残留已修复。
+<!-- /POST_A20_MAINTENANCE_AUDIT -->
+
 <!-- A01_A20_REPAIR_STATUS -->
 ## 2026-11-11 A01–A20 修复进展
 

@@ -59,15 +59,20 @@ Future<bool> rebuildQuestionCount({String? bankId}) =>
       return true;
     });
 
+/// 查找与保存使用同一真实路径指纹，避免 SQLite 解析路径别名后缓存永久失效。
+Future<String> _projectionSourceStamp(String bankPath) async {
+  final file = File(await File(bankPath).resolveSymbolicLinks());
+  final stat = await file.stat();
+  return '${file.path}:${stat.size}:${stat.modified.microsecondsSinceEpoch}';
+}
+
 /// 首次使用/题库文件变更时按 ATTACH 重建关系及统计；后续答题由 SQL OLD/NEW 原子维护。
 Future<void> ensureQuestionCountProjection(
   String bankId, {
   required String bankPath,
 }) => UserDatabaseCoordinator.instance.run(() async {
   final db = await UserDBHelper().database;
-  final stat = await File(bankPath).stat();
-  final stamp =
-      '$bankPath:${stat.size}:${stat.modified.microsecondsSinceEpoch}';
+  final stamp = await _projectionSourceStamp(bankPath);
   final state = await db.query(
     'QuestionProjectionState',
     where: 'bank_id=? AND source_stamp=?',
@@ -97,14 +102,11 @@ Future<void> rebuildAttachedQuestionCount(
   final attached = await txn.rawQuery('PRAGMA database_list');
   final file =
       attached.firstWhere((row) => row['name'] == alias)['file'] as String;
-  final stat = file.isEmpty ? null : await File(file).stat();
   await QuestionProjection.refresh(
     txn,
     targetBankId,
     alias,
-    file.isEmpty
-        ? 'memory'
-        : '$file:${stat!.size}:${stat.modified.microsecondsSinceEpoch}',
+    file.isEmpty ? 'memory' : await _projectionSourceStamp(file),
   );
   await txn.rawUpdate(
     'UPDATE IdentitySubject SET correct = 0, incorrect = 0 WHERE bank_id = ?',

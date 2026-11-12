@@ -1,5 +1,26 @@
 # SESSION_HANDOFF.md - 跨会话开发交接记录
 
+<!-- HOME_STARTUP_OPTIMIZATION -->
+## 最新交接：2026-11-11 首页启动最小优化完成
+
+- M02查/存投影stamp统一真实路径；M01Cloud数据revision只在已提交非空拉取后递增一次（含部分失败与删除墓碑），首页/统计精确订阅，云刷新保留课程；M03宽屏KeepAlive壳首次访问才挂业务页，GlobalKey保存导航重排/当前页布局切换，窄屏PageView模式保持。
+- 全量Flutter314/314（新增6+5+5），后端8/8、tsc及analyze 0 issues；修复后审计探针3/3，十万题别名10次2ms/0次SQL行变更。日志见[逐项记录](audits/HOME_STARTUP_OPTIMIZATION_LOG.md)。不是旧SQLite或四平台真机保证。
+- Git main@d862099；5个产品文件、3个测试套件/1辅助文件与文档有未提交改动，保留上轮4份已有文档现场。未commit/push/部署；docs新报告/探针仍受忽略规则影响但本地已保存。
+- 未处理M03完整目录分阶段初始化、M04/M05统计调度重构、M06后端部署、M13默认算法入口；未测实机profile/国内网络/断电。新增宽窄测试覆盖1000↔600；400px默认Ahem字体发现旧每日卡片Row溢出，真实字体未验收，未在本目标改布局。
+- 下一步第一项：核对git diff及逐项记录，再运行用户设备冷/热启动和答题/同步并行验收；按现场数据认领后续独立问题。不要重复运行aa0a2d9旧缺陷探针作为修复门禁。当前post_a20探针已把M01/M02转为正确行为，M13保留未修现状。
+<!-- /HOME_STARTUP_OPTIMIZATION -->
+
+<!-- POST_A20_MAINTENANCE_AUDIT -->
+## 最新交接：2026-11-11 启动、同步与维护架构审计
+
+- **完成**：用户三问源码分析；[报告](audits/POST_A20_STARTUP_SYNC_MAINTENANCE_AUDIT.md)与15项M01–M15方案；[当前Flutter探针](audits/post_a20_current_state_probe_test.dart)3/3、[后端探针](audits/post_a20_backend_probe.mjs)2/2；相关Flutter34/34、后端8/8、tsc通过、analyze 0 issues。
+- **真实发现**：Cloud状态通知触发首页/统计无差别重读；投影查stamp用传入路径而写stamp用SQLite路径，macOS路径别名导致十万题10次重建1.52–1.54秒/2000010次SQL行变更，规范路径10次3ms；宽屏隐藏Tab抢用户库FIFO；正常Card→Page传默认SM2服务绕过fsrs；pull seq固定但JOIN当前实体，非固定payload快照。
+- **同步错误**：客户端未收到protocol2/accepted_seqs所以拒绝ACK，pending保留；本地v2后端尚未部署高度相关。只匿名GET主域health/root均ok且无protocol，version1.0.0也为本地写死，不能确认线上版本。未登录、未发线上sync、未部署。
+- **现场**：main@d862099；本轮开始干净；只写docs/探针，没有产品修改、commit、push。DEVELOPMENT_STATUS/SESSION_HANDOFF/KNOWN_ISSUES/FEATURE_MATRIX跟踪差异；新报告、探针与TECHNICAL_DEBT被gitignore忽略但本地已保存。
+- **未完成**：M01–M15未实施；平台/等待时长/现场日志问题暂无用户回复；后端真实版本及D1schema验收、真实计费、旧SQLite/Windows/国内网络/断电未测。A19标记正常入口残留PARTIAL，不冒充全链已修。上轮Flutter298/298为历史基线。
+- **下一步第一项**：git现场与本段核对，读取报告第1/4节；按单问题认领M02路径指纹修复，再M01精准刷新/M13默认算法factory；收集现场日志以决定启动重构深度。发布步骤先核对远端再按发布授权执行。不要把新的“断言现状缺陷”探针作为修复后必须保持的CI门禁。
+<!-- /POST_A20_MAINTENANCE_AUDIT -->
+
 <!-- A01_A20_REPAIR_STATUS -->
 ## 2026-11-11 A01–A20 修复进展
 

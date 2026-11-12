@@ -53,6 +53,7 @@ class ChoosedSubjectsPage extends StatefulWidget {
 class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
   String? _lastSubjectId;
   late Future<List<SubjectWithChapters>> subjectsWithChapters;
+  bool _retainDataWhileRefreshing = false;
   final ThemeController themeController = ThemeController.instance;
 
   @override
@@ -63,12 +64,12 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
     themeController.recoverTheme(); // 恢复主题
     subjectsWithChapters = getSubjectsWithChapters();
     _maybeAutoResume();
-    CloudSyncService.instance.addListener(_refreshData);
+    CloudSyncService.instance.dataRevision.addListener(_onCloudDataChanged);
   }
 
   @override
   void dispose() {
-    CloudSyncService.instance.removeListener(_refreshData);
+    CloudSyncService.instance.dataRevision.removeListener(_onCloudDataChanged);
     super.dispose();
   }
 
@@ -85,9 +86,13 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
     });
   }
 
-  void _refreshData() {
+  void _onCloudDataChanged() => _refreshData(retainData: true);
+
+  void _refreshData({bool retainData = false}) {
     if (!mounted) return;
     setState(() {
+      // 换库/选课等显式刷新继续等待新数据，云端更新同页时保留已显示列表。
+      _retainDataWhileRefreshing = retainData;
       subjectsWithChapters = getSubjectsWithChapters();
     });
   }
@@ -422,7 +427,8 @@ class _ChoosedSubjectsPageState extends State<ChoosedSubjectsPage> {
       body: FutureBuilder<List<SubjectWithChapters>>(
         future: subjectsWithChapters,
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
+          if (snapshot.connectionState == ConnectionState.waiting &&
+              (!_retainDataWhileRefreshing || !snapshot.hasData)) {
             return const Center(child: CircularProgressIndicator());
           } else if (snapshot.hasError) {
             return _buildErrorMessage(snapshot.error);

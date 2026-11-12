@@ -30,13 +30,13 @@ class _StatisticsPageState extends State<StatisticsPage> {
   void initState() {
     super.initState();
     _future = _load();
-    CloudSyncService.instance.addListener(_onSyncChanged);
+    CloudSyncService.instance.dataRevision.addListener(_onSyncChanged);
     answersChangedNotifier.addListener(_onAnswersChanged);
   }
 
   @override
   void dispose() {
-    CloudSyncService.instance.removeListener(_onSyncChanged);
+    CloudSyncService.instance.dataRevision.removeListener(_onSyncChanged);
     answersChangedNotifier.removeListener(_onAnswersChanged);
     super.dispose();
   }

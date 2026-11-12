@@ -1,5 +1,24 @@
 # DEVELOPMENT_STATUS.md - 医不帮开发状态盘点与排期规划
 
+<!-- HOME_STARTUP_OPTIMIZATION -->
+## 2026-11-11 首页启动优化（完成）
+
+M02投影真实路径统一、M01提交数据精准刷新、M03宽屏隐藏Tab延迟挂载完成；每项最小修改与独立回归，最终Flutter314/314、后端8/8/tsc通过、analyze 0 issues。十万题路径别名10次热读取2ms且0行写入（原1.52–1.54秒/2000010次变更）；不代表实机启动耗时。
+
+只变更5个产品文件及16项新增测试/辅助文件，schema/依赖/题库校验迁移/后台队列流程保持；开始已有4份文档改动已保留。详见[逐项记录](audits/HOME_STARTUP_OPTIMIZATION_LOG.md)。未commit/push/部署；M03目录分阶段初始化、M04/M05、协议后端发布/M13配置入口仍为独立后续项。真机启动profile和400px真实字体布局待测。
+<!-- /HOME_STARTUP_OPTIMIZATION -->
+
+<!-- POST_A20_MAINTENANCE_AUDIT -->
+## 2026-11-11 启动/协议错误与长期维护审计（完成，优化待实施）
+
+- 基线 `main@d862099`，用户库 v24；本轮分析用户反馈的首页偶发圆环、同步协议 v2 异常并写入[完整报告](audits/POST_A20_STARTUP_SYNC_MAINTENANCE_AUDIT.md)，包含15项优先级、源码位置、最小方案与验收。
+- 已复现：云服务仅初始化通知就让课程页重载并隐藏旧内容；macOS `/var` 与 `/private/var` 投影指纹不一致导致反复全库重建；正常每日计划卡片入口绕过fsrs设置；后端固定seq上界返回同题最新投影而非历史快照。
+- 协议错误是缺明确ACK时保留pending的保护，本次同步未成功；后端schema/Worker尚未部署是最强解释，匿名health无protocol信息，不能确认线上协议版本。未部署、未向线上同步接口写真实账号数据。
+- 当前现状探针Flutter3/3、后端2/2；相关Flutter34/34、后端8/8、tsc通过，最终analyze 0 issues；上轮298/298全量基线保留，本轮未重跑全量/实机。
+- 本轮仅文档与隔离探针，未修改产品代码或commit/push。新报告与探针/TECHNICAL_DEBT受docs忽略规则影响，保存在本地；已跟踪知识库有正常Git差异。
+- 下一步先取实机慢启动日志/核对实际后端发布，再独立认领M02（投影路径）、M01（刷新）、M13（配置入口）最小修复；后端部署按发布流程推进。A01–A20历史提交不改。
+<!-- /POST_A20_MAINTENANCE_AUDIT -->
+
 <!-- A01_A20_REPAIR_STATUS -->
 ## 2026-11-11 A01–A20 修复进展
 

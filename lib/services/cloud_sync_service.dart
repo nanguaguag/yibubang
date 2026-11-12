@@ -101,6 +101,10 @@ class CloudSyncService extends ChangeNotifier {
   String? _passphrase;
   int _lastSyncTime = 0;
   bool _autoSync = true;
+  final ValueNotifier<int> _dataRevision = ValueNotifier<int>(0);
+
+  /// 仅已落库的拉取数据使页面失效；连接状态及配置通知仍使用原 ChangeNotifier。
+  ValueListenable<int> get dataRevision => _dataRevision;
 
   bool get isInitialized => _initialized;
   bool get isSyncing => _isSyncing;
@@ -353,6 +357,15 @@ class CloudSyncService extends ChangeNotifier {
     _lastError = null;
     notifyListeners();
 
+    var mergedData = false;
+    void trackCommittedData(Map<String, dynamic> page) {
+      mergedData =
+          mergedData ||
+          (page['pull_questions'] as List).isNotEmpty ||
+          (page['pull_activities'] as List).isNotEmpty ||
+          (page['pull_deleted_activities'] as List? ?? const []).isNotEmpty;
+    }
+
     try {
       final userDb = await UserDBHelper().database;
       final prefs = await SharedPreferences.getInstance();
@@ -405,6 +418,7 @@ class CloudSyncService extends ChangeNotifier {
           ),
         );
         await CloudOutbox.mergePage(userDb, owner, data, cursor);
+        trackCommittedData(data);
         cursor = data['next_cursor'] as int;
         while (data['has_more'] == true) {
           final response = await _request(
@@ -421,6 +435,7 @@ class CloudSyncService extends ChangeNotifier {
           );
           final page = response['data'] as Map<String, dynamic>;
           await CloudOutbox.mergePage(userDb, owner, page, cursor);
+          trackCommittedData(page);
           cursor = page['next_cursor'] as int;
           trackPage(page);
           data['has_more'] = page['has_more'];
@@ -469,6 +484,8 @@ class CloudSyncService extends ChangeNotifier {
       return SyncResult(success: false, message: e.toString());
     } finally {
       _isSyncing = false;
+      // 后续页失败时，之前已提交的页仍需刷新；每次同步最多失效一次。
+      if (mergedData) _dataRevision.value++;
       notifyListeners();
     }
   }
