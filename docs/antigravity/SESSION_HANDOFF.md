@@ -1,6 +1,15 @@
 # 跨会话交接
 
-## 最新交接：README恢复与Flutter3.50 CI修复
+## 最新交接：Android Release工具链
+
+- 起始main@4deacbb与origin一致/干净，用户反馈Android构建失败。本轮只修Android工具链和同步文档，App业务/README/依赖声明/题库/云资源保持原状。
+- Actions43432164143使用Flutter3.50.0，Analyze/Tests成功、assembleRelease配置阶段getDefaultConfig API缺失；本地隔离树同版构建复现。Flutter插件编译依赖AGP9.1.1，最低支持同为9.1.1；项目8.11.1/Gradle8.14不能靠skip依赖检查解决。
+- android.yml及release.yml/build-android固定Flutter3.44.6，删除skip依赖验证参数；AGP8.11.1/Gradle8.14/Kotlin2.2.20/NDK28.2不升级。其他平台和Release verify仍stable，未来AGP9迁移在TECHNICAL_DEBT记录。
+- Java17 release通用80.1MB/分ABI28.5MB、30.4MB、32.1MB全部exit0，签名校验/包名com.melonhu.yibubang/2.2.3+213/原生ABI检查通过；同SDK dart analyze和CI的flutter analyze --no-fatal-infos均No issues/exit0，全量357 PASS/3联网默认skip。YAML、545本地链接、git diff --check通过。
+- 日志在ai_backend/.local/android-3.50-release-before.log、android-3.44-release-after.log、android-3.44-release-split.log、android-3.44-{dart,flutter}-analyze.log、android-3.44-full-tests.log；产物清单android-release-artifacts.json，APK仅在.local/ci-workspace/build/app/outputs/flutter-apk。隔离树复用.local/ci-workspace，不替换用户SDK或提交pub依赖/生成配置；沿用原debug签名配置，不是正式发布或真机验收。本轮修复不push/触发Release。
+- 下一次第一步git status/log核对该修复，用户push后观察Android Analyze/Tests/Build/Upload各阶段。当前远程旧4deacbb的Linux/macOS已成功；Windows有独立daily_review_service_test大fixture30秒超时（43432164278），本轮未扩大到该项，不将Android修复宣称为四平台全绿。
+
+## 前次交接：README恢复与Flutter3.50 CI修复
 
 - 起始main@082f205与origin一致/干净；该HEAD是用户合并提交，814a20d已在共享历史。用户明确选择仅恢复README，保留功能和docs；本轮用新的恢复提交，不reset/revert全部814a20d，不push或发布Release。
 - 恢复ec0fdf6原README/英文页的品牌、徽章、目录、架构和截图；补AI/教材、session/额度、1–25条数/比例、模型回退、快捷键/缓存和最新验证。根README仍完整项目介绍，docs仍维护运维/知识库/开发资料。

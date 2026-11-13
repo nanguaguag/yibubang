@@ -4,6 +4,7 @@
 
 ## 最新验证
 
+- Android工具链修复本机验收：固定Flutter3.44.6/Java17/AGP8.11.1/Gradle8.14，开启依赖检查；release通用80.1MB及3分ABI28.5MB/30.4MB/32.1MB均构建成功，包名/2.2.3+213/ABI与签名校验通过。dart analyze与CI分析No issues，全量357 PASS/3联网默认skip；日志.local/android-3.44-*，新修复尚未push或正式发布。旧4deacbb的Linux/macOS远程成功，Windows独立测试超时待处理。
 - 2026-11-13 CI同版复核：Flutter3.50.0/Dart3.14.0全量357 PASS/3联网默认skip，dart analyze与CI的flutter analyze --no-fatal-infos均exit0，0 errors/warnings、119弃用info。四平台原Actions停在Analyze；补笔记try内返回await、设置fixture避免无关自动检查网络后本机通过，远程Actions尚未重跑。最终日志在.local/ci-3.50-*-final.log。
 - 前一阶段Flutter3.44.6：全量357 PASS/3联网默认skip；最终选择/设置8 PASS；后端39 PASS，flutter analyze0；Android APK/macOS普通main Debug构建通过。本轮未重复后端/付费生成或新SDK原生构建。
 - 生产App `AI_MODEL_LIVE_TEST=1 AI_RESULT_COUNT=25 AI_TEXTBOOK_COUNT=17 flutter test --no-pub test/ai_model_live_test.dart` 2 PASS：17教材+8题、内置gemini-3.5-flash/answer_gen/v1回答成功、SQLite保存、AiSearchPage引用回调打开教材。

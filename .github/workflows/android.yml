@@ -20,6 +20,9 @@ jobs:
 
       - uses: subosito/flutter-action@v2
         with:
+          # Keep the Android toolchain compatible with AGP 8.11.1/Gradle 8.14.
+          # Flutter 3.50 requires AGP >= 9.1.1; migrate that toolchain together.
+          flutter-version: '3.44.6'
           channel: 'stable'
           cache: true
 
@@ -33,7 +36,7 @@ jobs:
         run: flutter test
 
       - name: Build release APK
-        run: flutter build apk --release --android-skip-build-dependency-validation
+        run: flutter build apk --release
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

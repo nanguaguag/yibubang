@@ -10,6 +10,10 @@ SDK复核：此前本地为Flutter3.44.6/Dart3.12.2，静态0不等同于新CI S
 
 从仓库根目录执行，先针对变更运行相关测试；新失败/风险才扩大或重复，不为文档移动重复付费生成或处理医学数据。
 
+Android构建使用Flutter3.44.6/Dart3.12.2，匹配AGP8.11.1/Gradle8.14/Kotlin2.2.20/Java17；android.yml和release.yml的build-android均固定此版本。其他平台和Release verify仍使用stable。Flutter3.50的Android插件需要AGP>=9.1.1，`--android-skip-build-dependency-validation`不能解决二进制API不匹配。修改Android构建配置须实际运行`flutter build apk --release`；Release分ABI还需`flutter build apk --release --split-per-abi`。保持依赖验证开启，APK成功与正式发布/真机验收分别记录。
+
+本轮固定SDK实际复核：上述两种构建均exit0，通用80.1MB及3分ABI APK产出，签名/版本/ABI检查通过；dart analyze与CI分析No issues/exit0，全量357 PASS/3联网默认skip。日志.local/android-3.44-*；原Flutter3.50失败复现.local/android-3.50-release-before.log。Windows远程的30秒大fixture超时是独立问题，未以关闭该测试或放宽全项目timeout处理。
+
 ```sh
 dart analyze
 flutter analyze --no-pub --no-fatal-infos

@@ -1,5 +1,13 @@
 # 当前开发状态
 
+## 2026-11-13 Android Release工具链修复
+
+起始main@4deacbb/工作区干净。该提交的Android Actions已通过Analyze/Tests，但release构建报ApplicationExtension.getDefaultConfig不存在；Flutter3.50.0要求AGP>=9.1.1，项目AGP8.11.1/Gradle8.14不兼容，本机同SDK复现原报错。
+
+Android日常与Release build-android固定Flutter3.44.6，保留现有Gradle/AGP/Kotlin配置，移除跳过依赖检查参数。隔离工作树Java17实际release通用80.1MB、armeabi-v7a28.5MB、arm64-v8a30.4MB、x86_64 32.1MB均exit0；APK签名/包名/版本/ABI检查通过。同SDK dart analyze和CI分析均No issues/exit0，全量357 PASS/3联网默认skip。YAML解析、本地545链接与diff检查通过。
+
+其他平台和Release verify继续stable。新修复尚未推送或触发Release，未改App业务代码/README或云资源；旧4deacbb的Linux/macOS已成功，Windows独立测试timeout待处理，见问题账本。
+
 ## 2026-11-13 README恢复与新版CI分析修复
 
 用户选择仅撤销814a20d对README的精简改写，保留1–25检索/选择修复与docs整理。当前父基线082f205（用户已合并/同步远端），不reset或改写共享历史；恢复ec0fdf6的品牌页/徽章/章节/截图并补最新App功能，英文同步恢复。

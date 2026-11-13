@@ -1,5 +1,7 @@
 # 当前进度与验证
 
+2026-11-13 Android CI最新修订：4deacbb的Android分析/测试已通过，但Flutter3.50与AGP8.11.1的API不匹配导致release失败，本机复现。Android日常与Release build-android固定Flutter3.44.6，依赖检查恢复开启；Java17通用和3分ABI release APK、签名/元数据、同版两种分析均通过，全量357 PASS/3 skip，见[最新交接](antigravity/SESSION_HANDOFF.md)。新修复未push；旧4deacbb的Linux/macOS已绿，Windows独立测试timeout仍待处理，不能宣称全部Actions通过。
+
 2026-11-13最新修订：按用户选择恢复根README原品牌页/章节/截图并补当前App功能，保留docs与检索/选择修复。082f205的四平台CI使用Flutter3.50.0而先前本地3.44.6；补笔记try内返回的await后，独立3.50.0/Dart3.14.0实际dart analyze与CI命令均exit0、0 errors/warnings、119个弃用info。设置测试fixture隔离无关自动检查网络后，同版全量357 PASS/3联网默认skip，两种分析再次通过。旧“静态0”是3.44.6记录，不能等同于新SDK没有info；远程Actions尚未重新运行。[最新交接](antigravity/SESSION_HANDOFF.md)。
 
 更新：2026-11-13；分支main；整理前最近提交ec0fdf6。本次提交包含检索条目设置、选择断言修复和文档整理，准确提交ID由`git log -1`查询。App版本仍是[pubspec.yaml](../pubspec.yaml)中的2.2.3+213，用户库schema25、题库schema1；没有发布新Release。

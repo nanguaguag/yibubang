@@ -13,6 +13,6 @@
 | 医学质量 | 375页公式/符号、版次ISBN、167答案分歧、6923配图文字；质量标记需GET/Search抽查，不只看成功回执 |
 | 迁移 | 实际Embedding/Qdrant接口、向量成功基线与检索质量尚未验收；更换模型必须同模型/维度文档和查询 |
 | 费用/发布 | 专项赠金适用SKU、Advanced实际计量、共享免费范围/Worker订阅；TTL/出网/附属服务；真机/国内网络/Release |
-| CI | 历史Node/action迁移提示仍独立评估，未顺手升级依赖或改发布tag |
+| CI | Android日常与Release构建固定Flutter3.44.6/AGP8.11.1/Gradle8.14；未来升级Flutter3.50须同时迁移AGP>=9.1.1、Gradle及Kotlin/原生插件并完成APK验收，不能只跳过依赖检查。历史Node/action提示仍独立评估，未改发布tag |
 
 设计依据见[后续维护审计](audits/POST_A20_STARTUP_SYNC_MAINTENANCE_AUDIT.md)，完成记录见[A01–A20](audits/A01_A20_REPAIR_LOG.md)及[启动修复](audits/HOME_STARTUP_OPTIMIZATION_LOG.md)。用户未授权这些后续改造时，只记录范围，不实施。

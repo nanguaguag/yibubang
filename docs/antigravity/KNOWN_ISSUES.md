@@ -6,6 +6,7 @@
 
 | 问题 | 状态与验证 |
 | --- | --- |
+| Flutter3.50 Android getDefaultConfig API不匹配 | 本地复现；该SDK要求AGP>=9.1.1，项目8.11.1。Android日常/Release固定Flutter3.44.6并恢复依赖检查；Java17通用及3分ABI release APK通过，分析0、全量357 PASS/3 skip；修复后远程尚未重跑 |
 | Flutter3.50 CI分析warning | syncNotesForQuestion的try内getLocalNotes返回补await；独立CI同版SDK的dart analyze/CI命令exit0，0 errors/warnings；119弃用info仍保留，不扩大迁移 |
 | 新SDK设置测试残留Timer | 开启自动检查原会发无关网络，fixture设最近检查时间，定向6 PASS、3.50全量357 PASS/3 skip；产品定时/超时逻辑未因此关闭 |
 | 段落选择lastSelectionResult断言 | 已修复；WidgetSpan引用/行内公式内部Text隔离选择，精确修前/修后事件、三击、正文可选和引用点击PASS |
@@ -22,6 +23,7 @@ A01–A20源码已修复并独立提交，见[修复日志](audits/A01_A20_REPAI
 
 ## 未解决/待核验
 
+- 4deacbb的Windows Actions43432164278：daily_review_service_test大fixture插入超30秒，355 PASS/1 fail/4 skip；数据库关闭是测试timeout后tearDown的后续报错。与Android AGP问题独立，本轮仅记录，未扩大修复。
 - 同步协议v2服务端/schema部署、真实账号、官方ID/幂等边界与D1实际rows_written；客户端完成不证明线上同步闭环。
 - 教材375页符号/公式、239稀疏页候选、36无文本页的人工质量判断、版次ISBN；167题答案分歧、6923题配图未OCR。所有页图可读不等于全部文字医学正确。
 - 最新原生实机、Android/Windows/Linux/iOS、目标地区网络及Release；模拟手势/Debug构建不作实机性能保证。
