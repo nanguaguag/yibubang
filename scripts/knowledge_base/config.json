@@ -4,11 +4,566 @@
   "chunk_chars": 1800,
   "overlap_chars": 160,
   "sources": [
-    {"id": "legacy_combined", "type": "sqlite", "path": "../../docs/yikaobang/data/question_data.sqlite", "priority": 0},
-    {"id": "clinical_final", "type": "sqlite", "path": "../../docs/yikaobang/data/question_banks/clinical_final/clinical_final.sqlite", "priority": 10},
-    {"id": "dental_final", "type": "sqlite", "path": "../../docs/yikaobang/data/question_banks/dental_final/dental_final.sqlite", "priority": 10},
-    {"id": "nursing_final", "type": "sqlite", "path": "../../docs/yikaobang/data/question_banks/nursing_final/nursing_final.sqlite", "priority": 10},
-    {"id": "clinial_exam", "type": "sqlite", "path": "../../docs/yikaobang/data/question_banks/clinial_exam/clinial_exam.sqlite", "priority": 20}
+    {
+      "id": "legacy_combined",
+      "type": "sqlite",
+      "path": "../../docs/yikaobang/data/question_data.sqlite",
+      "priority": 0
+    },
+    {
+      "id": "clinical_final",
+      "type": "sqlite",
+      "path": "../../docs/yikaobang/data/question_banks/clinical_final/clinical_final.sqlite",
+      "priority": 10
+    },
+    {
+      "id": "dental_final",
+      "type": "sqlite",
+      "path": "../../docs/yikaobang/data/question_banks/dental_final/dental_final.sqlite",
+      "priority": 10
+    },
+    {
+      "id": "nursing_final",
+      "type": "sqlite",
+      "path": "../../docs/yikaobang/data/question_banks/nursing_final/nursing_final.sqlite",
+      "priority": 10
+    },
+    {
+      "id": "clinial_exam",
+      "type": "sqlite",
+      "path": "../../docs/yikaobang/data/question_banks/clinial_exam/clinial_exam.sqlite",
+      "priority": 20
+    },
+    {
+      "id": "tb_0ce9582e6227_75e073c0a71debcc",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_0ce9582e6227/75e073c0a71debcc/pages.jsonl",
+      "title": "耳鼻咽喉头颈外科学",
+      "edition": "",
+      "book_id": "tb_0ce9582e6227",
+      "source_version": "75e073c0a71debcc",
+      "page_count": 506
+    },
+    {
+      "id": "tb_0cec4bbd9344_5d0778d98acc63a0",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_0cec4bbd9344/5d0778d98acc63a0/pages.jsonl",
+      "title": "医学免疫学",
+      "edition": "",
+      "book_id": "tb_0cec4bbd9344",
+      "source_version": "5d0778d98acc63a0",
+      "page_count": 258
+    },
+    {
+      "id": "tb_10b394aaf02e_d4eff8564234aac9",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_10b394aaf02e/d4eff8564234aac9/pages.jsonl",
+      "title": "病理学",
+      "edition": "",
+      "book_id": "tb_10b394aaf02e",
+      "source_version": "d4eff8564234aac9",
+      "page_count": 417
+    },
+    {
+      "id": "tb_12247f66b86c_0d5c51b703c8a7c1",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_12247f66b86c/0d5c51b703c8a7c1/pages.jsonl",
+      "title": "药理学",
+      "edition": "",
+      "book_id": "tb_12247f66b86c",
+      "source_version": "0d5c51b703c8a7c1",
+      "page_count": 530
+    },
+    {
+      "id": "tb_14d0520a21b0_f473fc8b255a2437",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_14d0520a21b0/f473fc8b255a2437/pages.jsonl",
+      "title": "有机化学",
+      "edition": "",
+      "book_id": "tb_14d0520a21b0",
+      "source_version": "f473fc8b255a2437",
+      "page_count": 274
+    },
+    {
+      "id": "tb_17c1dfbed33e_9213573a796d1dfa",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_17c1dfbed33e/9213573a796d1dfa/pages.jsonl",
+      "title": "医学微生物学",
+      "edition": "",
+      "book_id": "tb_17c1dfbed33e",
+      "source_version": "9213573a796d1dfa",
+      "page_count": 390
+    },
+    {
+      "id": "tb_18b282c82cfa_5940f56e2b87a83d",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_18b282c82cfa/5940f56e2b87a83d/pages.jsonl",
+      "title": "基础化学",
+      "edition": "",
+      "book_id": "tb_18b282c82cfa",
+      "source_version": "5940f56e2b87a83d",
+      "page_count": 340
+    },
+    {
+      "id": "tb_1cdd8401a378_403838ef7b54c45d",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_1cdd8401a378/403838ef7b54c45d/pages.jsonl",
+      "title": "诊断学",
+      "edition": "",
+      "book_id": "tb_1cdd8401a378",
+      "source_version": "403838ef7b54c45d",
+      "page_count": 688
+    },
+    {
+      "id": "tb_1ed3f15e76dc_5993a9a39a32b589",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_1ed3f15e76dc/5993a9a39a32b589/pages.jsonl",
+      "title": "医学影像学",
+      "edition": "",
+      "book_id": "tb_1ed3f15e76dc",
+      "source_version": "5993a9a39a32b589",
+      "page_count": 442
+    },
+    {
+      "id": "tb_21c5d302b6f7_92207ec9743c2300",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_21c5d302b6f7/92207ec9743c2300/pages.jsonl",
+      "title": "卫生法",
+      "edition": "",
+      "book_id": "tb_21c5d302b6f7",
+      "source_version": "92207ec9743c2300",
+      "page_count": 400
+    },
+    {
+      "id": "tb_388bb8c60e7b_7de1afda39ef7161",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_388bb8c60e7b/7de1afda39ef7161/pages.jsonl",
+      "title": "医学物理学",
+      "edition": "",
+      "book_id": "tb_388bb8c60e7b",
+      "source_version": "7de1afda39ef7161",
+      "page_count": 368
+    },
+    {
+      "id": "tb_3959064769a0_e35646c916ddc494",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_3959064769a0/e35646c916ddc494/pages.jsonl",
+      "title": "医学文献检索与论文写作",
+      "edition": "",
+      "book_id": "tb_3959064769a0",
+      "source_version": "e35646c916ddc494",
+      "page_count": 224
+    },
+    {
+      "id": "tb_3dcf3b398259_cb43772266a81238",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_3dcf3b398259/cb43772266a81238/pages.jsonl",
+      "title": "组织学与胚胎学",
+      "edition": "",
+      "book_id": "tb_3dcf3b398259",
+      "source_version": "cb43772266a81238",
+      "page_count": 322
+    },
+    {
+      "id": "tb_41ad86b052c6_8c9efd5c3e479cb1",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_41ad86b052c6/8c9efd5c3e479cb1/pages.jsonl",
+      "title": "全科医学概论",
+      "edition": "",
+      "book_id": "tb_41ad86b052c6",
+      "source_version": "8c9efd5c3e479cb1",
+      "page_count": 338
+    },
+    {
+      "id": "tb_479a8918a3c9_1b2e12f207e31c75",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_479a8918a3c9/1b2e12f207e31c75/pages.jsonl",
+      "title": "流行病学",
+      "edition": "",
+      "book_id": "tb_479a8918a3c9",
+      "source_version": "1b2e12f207e31c75",
+      "page_count": 224
+    },
+    {
+      "id": "tb_4c449e17a3a1_00f0f47f26020a13",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_4c449e17a3a1/00f0f47f26020a13/pages.jsonl",
+      "title": "局部解剖学",
+      "edition": "",
+      "book_id": "tb_4c449e17a3a1",
+      "source_version": "00f0f47f26020a13",
+      "page_count": 336
+    },
+    {
+      "id": "tb_5197ef6b8aff_dccbe1570476a8d6",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_5197ef6b8aff/dccbe1570476a8d6/pages.jsonl",
+      "title": "神经病学",
+      "edition": "",
+      "book_id": "tb_5197ef6b8aff",
+      "source_version": "dccbe1570476a8d6",
+      "page_count": 530
+    },
+    {
+      "id": "tb_5521c65d948a_b5697d67befc82ed",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_5521c65d948a/b5697d67befc82ed/pages.jsonl",
+      "title": "口腔科学",
+      "edition": "",
+      "book_id": "tb_5521c65d948a",
+      "source_version": "b5697d67befc82ed",
+      "page_count": 278
+    },
+    {
+      "id": "tb_55a8b9cf2695_6105135e5969eb2d",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_55a8b9cf2695/6105135e5969eb2d/pages.jsonl",
+      "title": "医学细胞生物学",
+      "edition": "",
+      "book_id": "tb_55a8b9cf2695",
+      "source_version": "6105135e5969eb2d",
+      "page_count": 464
+    },
+    {
+      "id": "tb_634edb922006_0a26f23e5ed80347",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_634edb922006/0a26f23e5ed80347/pages.jsonl",
+      "title": "医学统计学",
+      "edition": "",
+      "book_id": "tb_634edb922006",
+      "source_version": "0a26f23e5ed80347",
+      "page_count": 274
+    },
+    {
+      "id": "tb_67f94558ccb3_13333e2b3f40aaee",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_67f94558ccb3/13333e2b3f40aaee/pages.jsonl",
+      "title": "中医学",
+      "edition": "",
+      "book_id": "tb_67f94558ccb3",
+      "source_version": "13333e2b3f40aaee",
+      "page_count": 418
+    },
+    {
+      "id": "tb_69a5ada25e55_43cb9d52d47b399c",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_69a5ada25e55/43cb9d52d47b399c/pages.jsonl",
+      "title": "妇产科学",
+      "edition": "",
+      "book_id": "tb_69a5ada25e55",
+      "source_version": "43cb9d52d47b399c",
+      "page_count": 514
+    },
+    {
+      "id": "tb_7946206e46c1_b0945331e7b85141",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_7946206e46c1/b0945331e7b85141/pages.jsonl",
+      "title": "临床药理学",
+      "edition": "",
+      "book_id": "tb_7946206e46c1",
+      "source_version": "b0945331e7b85141",
+      "page_count": 546
+    },
+    {
+      "id": "tb_7970dc097a8f_51e75880d38d445b",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_7970dc097a8f/51e75880d38d445b/pages.jsonl",
+      "title": "系统解剖学",
+      "edition": "",
+      "book_id": "tb_7970dc097a8f",
+      "source_version": "51e75880d38d445b",
+      "page_count": 466
+    },
+    {
+      "id": "tb_83293cd2fb57_f114887e5d663192",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_83293cd2fb57/f114887e5d663192/pages.jsonl",
+      "title": "康复医学",
+      "edition": "",
+      "book_id": "tb_83293cd2fb57",
+      "source_version": "f114887e5d663192",
+      "page_count": 322
+    },
+    {
+      "id": "tb_8829cf7eba11_395d4454231ad1b5",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_8829cf7eba11/395d4454231ad1b5/pages.jsonl",
+      "title": "医学生物学",
+      "edition": "",
+      "book_id": "tb_8829cf7eba11",
+      "source_version": "395d4454231ad1b5",
+      "page_count": 258
+    },
+    {
+      "id": "tb_8bdad726e64a_7b2c5031beb38bc9",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_8bdad726e64a/7b2c5031beb38bc9/pages.jsonl",
+      "title": "外科学",
+      "edition": "",
+      "book_id": "tb_8bdad726e64a",
+      "source_version": "7b2c5031beb38bc9",
+      "page_count": 850
+    },
+    {
+      "id": "tb_901d3f8b3efd_2ce9e214ce896665",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_901d3f8b3efd/2ce9e214ce896665/pages.jsonl",
+      "title": "预防医学",
+      "edition": "",
+      "book_id": "tb_901d3f8b3efd",
+      "source_version": "2ce9e214ce896665",
+      "page_count": 498
+    },
+    {
+      "id": "tb_957028fab4f6_c58ab8d9f8338403",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_957028fab4f6/c58ab8d9f8338403/pages.jsonl",
+      "title": "医学遗传学",
+      "edition": "",
+      "book_id": "tb_957028fab4f6",
+      "source_version": "c58ab8d9f8338403",
+      "page_count": 274
+    },
+    {
+      "id": "tb_a2365353999f_142dc2209b451746",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_a2365353999f/142dc2209b451746/pages.jsonl",
+      "title": "卫生学",
+      "edition": "",
+      "book_id": "tb_a2365353999f",
+      "source_version": "142dc2209b451746",
+      "page_count": 450
+    },
+    {
+      "id": "tb_a3f8c2edaa49_6f82c5973d123886",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_a3f8c2edaa49/6f82c5973d123886/pages.jsonl",
+      "title": "儿科学",
+      "edition": "",
+      "book_id": "tb_a3f8c2edaa49",
+      "source_version": "6f82c5973d123886",
+      "page_count": 498
+    },
+    {
+      "id": "tb_a67879b71c93_bdc0f8aee39f0098",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_a67879b71c93/bdc0f8aee39f0098/pages.jsonl",
+      "title": "肿瘤学概论",
+      "edition": "",
+      "book_id": "tb_a67879b71c93",
+      "source_version": "bdc0f8aee39f0098",
+      "page_count": 290
+    },
+    {
+      "id": "tb_acf0aea52426_5801b5ce0a117c33",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_acf0aea52426/5801b5ce0a117c33/pages.jsonl",
+      "title": "传染病学",
+      "edition": "",
+      "book_id": "tb_acf0aea52426",
+      "source_version": "5801b5ce0a117c33",
+      "page_count": 432
+    },
+    {
+      "id": "tb_b77b893e4150_a1d790237b9880d9",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_b77b893e4150/a1d790237b9880d9/pages.jsonl",
+      "title": "眼科学",
+      "edition": "",
+      "book_id": "tb_b77b893e4150",
+      "source_version": "a1d790237b9880d9",
+      "page_count": 354
+    },
+    {
+      "id": "tb_bce6d89789d0_0eda90273c622b69",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_bce6d89789d0/0eda90273c622b69/pages.jsonl",
+      "title": "麻醉学",
+      "edition": "",
+      "book_id": "tb_bce6d89789d0",
+      "source_version": "0eda90273c622b69",
+      "page_count": 322
+    },
+    {
+      "id": "tb_c37551dc6a79_598b625bac5d1683",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_c37551dc6a79/598b625bac5d1683/pages.jsonl",
+      "title": "核医学",
+      "edition": "",
+      "book_id": "tb_c37551dc6a79",
+      "source_version": "598b625bac5d1683",
+      "page_count": 354
+    },
+    {
+      "id": "tb_c4570dfdb277_4b549438d67b2dd9",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_c4570dfdb277/4b549438d67b2dd9/pages.jsonl",
+      "title": "急诊与灾难医学",
+      "edition": "",
+      "book_id": "tb_c4570dfdb277",
+      "source_version": "4b549438d67b2dd9",
+      "page_count": 372
+    },
+    {
+      "id": "tb_ccde526efec2_82b4d5d0682e4a8e",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_ccde526efec2/82b4d5d0682e4a8e/pages.jsonl",
+      "title": "医学伦理学",
+      "edition": "",
+      "book_id": "tb_ccde526efec2",
+      "source_version": "82b4d5d0682e4a8e",
+      "page_count": 226
+    },
+    {
+      "id": "tb_d096e0c2b015_8f5fd33c6bce4998",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_d096e0c2b015/8f5fd33c6bce4998/pages.jsonl",
+      "title": "皮肤性病学",
+      "edition": "",
+      "book_id": "tb_d096e0c2b015",
+      "source_version": "8f5fd33c6bce4998",
+      "page_count": 258
+    },
+    {
+      "id": "tb_d11de3aedd4d_3c768259262f31b2",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_d11de3aedd4d/3c768259262f31b2/pages.jsonl",
+      "title": "人体寄生虫学",
+      "edition": "",
+      "book_id": "tb_d11de3aedd4d",
+      "source_version": "3c768259262f31b2",
+      "page_count": 324
+    },
+    {
+      "id": "tb_d1e06cbe683a_b88a3508e1dba0e0",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_d1e06cbe683a/b88a3508e1dba0e0/pages.jsonl",
+      "title": "生物化学与分子生物学",
+      "edition": "",
+      "book_id": "tb_d1e06cbe683a",
+      "source_version": "b88a3508e1dba0e0",
+      "page_count": 578
+    },
+    {
+      "id": "tb_d2ea9a30cf33_7edc6da09ec06162",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_d2ea9a30cf33/7edc6da09ec06162/pages.jsonl",
+      "title": "医学心理学",
+      "edition": "",
+      "book_id": "tb_d2ea9a30cf33",
+      "source_version": "7edc6da09ec06162",
+      "page_count": 274
+    },
+    {
+      "id": "tb_d34986574a0a_f02cfbee1a4b2870",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_d34986574a0a/f02cfbee1a4b2870/pages.jsonl",
+      "title": "病理生理学",
+      "edition": "",
+      "book_id": "tb_d34986574a0a",
+      "source_version": "f02cfbee1a4b2870",
+      "page_count": 326
+    },
+    {
+      "id": "tb_d51a75221631_15c8be80985fe913",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_d51a75221631/15c8be80985fe913/pages.jsonl",
+      "title": "医用高等数学",
+      "edition": "",
+      "book_id": "tb_d51a75221631",
+      "source_version": "15c8be80985fe913",
+      "page_count": 290
+    },
+    {
+      "id": "tb_db85422efd5a_cb079d1af682a98c",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_db85422efd5a/cb079d1af682a98c/pages.jsonl",
+      "title": "精神病学",
+      "edition": "",
+      "book_id": "tb_db85422efd5a",
+      "source_version": "cb079d1af682a98c",
+      "page_count": 386
+    },
+    {
+      "id": "tb_dec8485f5e97_7a2a70c161032b72",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_dec8485f5e97/7a2a70c161032b72/pages.jsonl",
+      "title": "医学导论",
+      "edition": "",
+      "book_id": "tb_dec8485f5e97",
+      "source_version": "7a2a70c161032b72",
+      "page_count": 258
+    },
+    {
+      "id": "tb_dfc059e946fd_6386ca46666f3743",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_dfc059e946fd/6386ca46666f3743/pages.jsonl",
+      "title": "临床流行病学与循证医学",
+      "edition": "",
+      "book_id": "tb_dfc059e946fd",
+      "source_version": "6386ca46666f3743",
+      "page_count": 258
+    },
+    {
+      "id": "tb_e088ee5185c4_bac91c808b2ec5d6",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_e088ee5185c4/bac91c808b2ec5d6/pages.jsonl",
+      "title": "内科学",
+      "edition": "",
+      "book_id": "tb_e088ee5185c4",
+      "source_version": "bac91c808b2ec5d6",
+      "page_count": 982
+    },
+    {
+      "id": "tb_ef7be5be3c13_d8cff9d3abe6f557",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_ef7be5be3c13/d8cff9d3abe6f557/pages.jsonl",
+      "title": "体育",
+      "edition": "",
+      "book_id": "tb_ef7be5be3c13",
+      "source_version": "d8cff9d3abe6f557",
+      "page_count": 240
+    },
+    {
+      "id": "tb_f1f3a0100524_9d6423f99687a487",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_f1f3a0100524/9d6423f99687a487/pages.jsonl",
+      "title": "生理学",
+      "edition": "",
+      "book_id": "tb_f1f3a0100524",
+      "source_version": "9d6423f99687a487",
+      "page_count": 466
+    },
+    {
+      "id": "tb_f6f05f7a722d_1408d45fcb2a9b65",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_f6f05f7a722d/1408d45fcb2a9b65/pages.jsonl",
+      "title": "医学计算机应用",
+      "edition": "",
+      "book_id": "tb_f6f05f7a722d",
+      "source_version": "1408d45fcb2a9b65",
+      "page_count": 450
+    },
+    {
+      "id": "tb_fc978dccb365_9864fd5d633504d3",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_fc978dccb365/9864fd5d633504d3/pages.jsonl",
+      "title": "医患沟通",
+      "edition": "",
+      "book_id": "tb_fc978dccb365",
+      "source_version": "9864fd5d633504d3",
+      "page_count": 290
+    },
+    {
+      "id": "tb_fd1f47039dcf_396e9692b94d2d00",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_fd1f47039dcf/396e9692b94d2d00/pages.jsonl",
+      "title": "法医学",
+      "edition": "",
+      "book_id": "tb_fd1f47039dcf",
+      "source_version": "396e9692b94d2d00",
+      "page_count": 242
+    }
   ],
   "google": {
     "project": "yibubang-search",

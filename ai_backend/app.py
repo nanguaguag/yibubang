@@ -1,4 +1,4 @@
-"""Cloud Run: device quota + Search retrieval + Gemini SSE. No cloud chat storage."""
+"""Cloud Run: device quotas + Search retrieval and built-in Answer. Local chats."""
 import asyncio
 import hashlib
 import json
@@ -16,13 +16,18 @@ import google.auth.transport.requests
 import httpx
 
 from policy import (PolicyError, authenticate, day_key, generation_body,
-                    quota_info, reserve_device, retrieval_query, secret_hash,
+                    DAILY_LIMIT, generation_options, quota_info, reserve_device, retrieval_query, secret_hash,
                     validate_identity, validate_question)
+from textbook_support import catalog, evidence as make_evidence, resolve_page, image_quota, signed_page, search_snippet
+from retrieval import retrieve, textbook_count
+from answer_models import AnswerModelCatalog
+from builtin_answer import answer_body, answer_packets, cited_answer
 
 PROJECT = os.environ.get("GOOGLE_CLOUD_PROJECT", "yibubang-search")
 ENGINE = os.environ.get("SEARCH_ENGINE", "yibubang-medical-search")
-MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.8-flash")
-MODEL_LOCATION = os.environ.get("GEMINI_LOCATION", "global")
+ANSWER_ENGINE = os.environ.get("ANSWER_ENGINE", "yibubang-medical-answer")
+MODEL = os.environ.get("ANSWER_MODEL", "stable")
+model_catalog = AnswerModelCatalog()
 GLOBAL_LIMIT = int(os.environ.get("GLOBAL_DAILY_LIMIT", "2000"))
 IP_LIMIT = int(os.environ.get("IP_DAILY_LIMIT", "300"))
 DATABASE = os.environ.get("FIRESTORE_DATABASE", "yibubang-ai")
@@ -107,11 +112,11 @@ def register_transaction(transaction, device_id, secret, ip, now):
                                  "expires_at": datetime.fromtimestamp(now, timezone.utc) + timedelta(days=3)})
 
 
-def reserve_transaction(transaction, device_id, secret, ip, request_id, now):
+def reserve_transaction(transaction, device_id, secret, ip, request_id, now, cost=1):
     ref = db.collection("ai_devices").document(device_id)
     device = ref.get(transaction=transaction).to_dict()
     authenticate(device, secret)
-    updates = reserve_device(device, now, request_id)
+    updates = reserve_device(device, now, request_id, cost)
     global_ref = db.collection("ai_request_limits").document(day_key(now) + "-global")
     ip_ref = db.collection("ai_request_limits").document(day_key(now) + "-" + ip)
     global_data = global_ref.get(transaction=transaction).to_dict() or {}
@@ -149,7 +154,10 @@ def frame(event, data):
 @app.get("/health")
 async def health():
     return {"status": "ok", "service": "yibubang-ai-search", "model": MODEL,
-            "daily_limit": 100, "protocol": 1}
+            "provider": "search_answer", "generation_mode": "configurable_answer",
+            "default_rephrase": True, "default_streaming": True,
+            "retrieval_ratio_enabled": True, "default_textbook_count": 8,
+            "daily_limit": DAILY_LIMIT, "protocol": 1}
 
 
 @app.post("/v1/devices")
@@ -169,6 +177,85 @@ async def quota(request: Request):
     return await asyncio.to_thread(read)
 
 
+async def authenticated_device(request):
+    device_id, secret = identity(request)
+    def read():
+        device = db.collection("ai_devices").document(device_id).get().to_dict()
+        authenticate(device, secret)
+    await asyncio.to_thread(read)
+    return device_id, secret
+
+
+@app.get("/v1/models")
+async def models(request: Request, refresh: bool = False):
+    await authenticated_device(request)
+    # Refreshes use a shared bounded cache, not paid generation probes.
+    return await model_catalog.get(http, refresh)
+
+
+@app.get("/v1/textbooks")
+async def books(request: Request):
+    await authenticated_device(request)
+    return {"books":catalog()}
+
+
+@app.post("/v1/textbooks/search")
+async def textbook_search(request: Request):
+    device_id, secret = identity(request)
+    try:
+        body = await request.json()
+    except ValueError:
+        raise PolicyError("请求格式无效",400)
+    if not isinstance(body,dict):
+        raise PolicyError("请求格式无效",400)
+    question, request_id, history = validate_question(body)
+    book_id = body.get("book_id", "")
+    if not isinstance(book_id,str) or (book_id and book_id not in {b["book_id"] for b in catalog()}):
+        raise PolicyError("教材不存在",400)
+    token = body.get("page_token", "")
+    if not isinstance(token,str) or len(token)>4096:
+        raise PolicyError("分页参数无效",400)
+    quota = await asyncio.to_thread(firestore.transactional(reserve_transaction),db.transaction(),
+        device_id,secret,ip_key(request),request_id,time.time())
+    try:
+        filters = 'kind: ANY("textbook")'
+        if book_id:
+            filters += ' AND book_id: ANY("'+book_id+'")'
+        url = f"https://discoveryengine.googleapis.com/v1/projects/{PROJECT}/locations/global/collections/default_collection/engines/{ENGINE}/servingConfigs/default_search:search"
+        response = await http.post(url,headers=await google_headers(),json={"query":question,
+            "pageSize":10,"languageCode":"zh-CN","filter":filters,"pageToken":token})
+        response.raise_for_status()
+        data=response.json()
+        items=make_evidence(data.get("results",[]))
+        return {"items":[{**{k:v for k,v in e.items() if k!="text"},"snippet":search_snippet(e["text"],question)} for e in items],
+            "next_page_token":data.get("nextPageToken", ""),"quota":quota}
+    except httpx.HTTPError:
+        raise PolicyError("教材检索暂时不可用，请稍后重试",503)
+    finally:
+        await asyncio.to_thread(firestore.transactional(release_transaction),db.transaction(),device_id,request_id)
+
+
+def image_transaction(transaction, device_id, secret, now):
+    ref=db.collection("ai_devices").document(device_id)
+    device=ref.get(transaction=transaction).to_dict()
+    authenticate(device,secret)
+    transaction.update(ref,image_quota(device,now))
+
+
+@app.get("/v1/textbooks/{book_id}/{version}/pages/{page}")
+async def page_image(request: Request, book_id: str, version: str, page: int, variant: str = "page"):
+    device_id, secret = identity(request)
+    book,key=resolve_page(book_id,version,page)
+    if variant not in ("page", "thumbnail"):
+        raise PolicyError("页图类型无效", 400)
+    if variant == "thumbnail":
+        key = key.replace("/pages/", "/thumbnails/")
+    await asyncio.to_thread(firestore.transactional(image_transaction),db.transaction(),device_id,secret,time.time())
+    url=await asyncio.to_thread(signed_page,key)
+    return JSONResponse({"url":url,"image_key":key,"pdf_page":page,"page_count":book["page_count"],
+        "expires_in":300},headers={"Cache-Control":"private, no-store"})
+
+
 @app.post("/v1/search")
 async def search(request: Request):
     device_id, secret = identity(request)
@@ -179,59 +266,87 @@ async def search(request: Request):
     if not isinstance(body, dict):
         raise PolicyError("请求格式无效", 400)
     question, request_id, history = validate_question(body)
+    rephrase, streaming, cost = generation_options(body)
+    textbook_limit = textbook_count(body)
+    await authenticated_device(request)
+    model = await model_catalog.validate(http, body.get("model", MODEL))
     quota = await asyncio.to_thread(firestore.transactional(reserve_transaction), db.transaction(), device_id, secret,
-                                    ip_key(request), request_id, time.time())
+                                    ip_key(request), request_id, time.time(), cost)
 
     async def produce():
         try:
-            yield frame("quota", quota)
-            yield frame("phase", {"message": "正在检索医学题库"})
+            yield frame("quota", {**quota, "cost": cost})
+            yield frame("model", {"id": model, "provider": "search_answer",
+                "mode": "stream_answer" if streaming else "answer", "rephrase": rephrase,
+                "streaming": streaming, "quota_cost": cost})
+            source_label = "题库" if textbook_limit == 0 else "教材" if textbook_limit == 12 else "题库与教材"
+            yield frame("phase", {"message": "正在检索" + source_label})
             url = f"https://discoveryengine.googleapis.com/v1/projects/{PROJECT}/locations/global/collections/default_collection/engines/{ENGINE}/servingConfigs/default_search:search"
-            response = await http.post(url, headers=await google_headers(), json={
-                "query": retrieval_query(question, history), "pageSize": 6, "languageCode": "zh-CN"})
-            response.raise_for_status()
-            evidence = []
-            for item in response.json().get("results", []):
-                fields = item.get("document", {}).get("structData", {})
-                text = fields.get("text", "")
-                if text:
-                    evidence.append({"number": len(evidence) + 1, "question_id": str(fields.get("question_id", "")),
-                        "title": fields.get("title", ""), "text": text[:4200], "source_ids": fields.get("source_ids", [])})
+            evidence, failed_sources = await retrieve(http, url, await google_headers(),
+                                                     retrieval_query(question, history), textbook_limit)
+            if failed_sources:
+                missing = "教材" if "textbook" in failed_sources else "题库"
+                yield frame("phase", {"message": missing+"检索暂时不可用，正依据其余资料整理回答"})
             yield frame("citations", {"items": [{k: v for k, v in e.items() if k != "text"} for e in evidence]})
             if not evidence:
-                yield frame("delta", {"text": "题库中暂未检索到足够的依据。试试补充疾病名称、关键症状或知识点，我会重新查找。"})
+                yield frame("delta", {"text": "题库与教材中暂未检索到足够的依据。试试补充疾病名称、关键症状或知识点，我会重新查找。"})
                 yield frame("done", {})
                 return
             yield frame("phase", {"message": "已找到相关资料，正在整理回答"})
-            host = "aiplatform.googleapis.com" if MODEL_LOCATION == "global" else MODEL_LOCATION + "-aiplatform.googleapis.com"
-            url = f"https://{host}/v1/projects/{PROJECT}/locations/{MODEL_LOCATION}/publishers/google/models/{MODEL}:streamGenerateContent?alt=sse"
-            size = 0
-            finish = None
+            method = "streamAnswer" if streaming else "answer"
+            url = f"https://discoveryengine.googleapis.com/v1/projects/{PROJECT}/locations/global/collections/default_collection/engines/{ANSWER_ENGINE}/servingConfigs/default_search:{method}"
+            payload = answer_body(retrieval_query(question, history), history, evidence, model, rephrase)
+            answer = {}
+            streamed_text = ""
             async with asyncio.timeout(150):
-                async with http.stream("POST", url, headers=await google_headers(),
-                                       json=generation_body(question, history, evidence)) as result:
-                    result.raise_for_status()
-                    async for line in result.aiter_lines():
-                        if await request.is_disconnected():
-                            return
-                        if not line.startswith("data:"):
-                            continue
-                        chunk = json.loads(line[5:])
-                        for candidate in chunk.get("candidates", []):
-                            finish = candidate.get("finishReason", finish)
-                            for part in candidate.get("content", {}).get("parts", []):
-                                if part.get("thought") or not part.get("text"):
-                                    continue
-                                text = part["text"]
-                                size += len(text)
-                                if size > 12000:
-                                    raise RuntimeError("answer_too_long")
+                if streaming:
+                    async with http.stream("POST", url, headers=await google_headers(), json=payload) as result:
+                        if result.is_error:
+                            await result.aread()
+                        result.raise_for_status()
+                        async for packet in answer_packets(result):
+                            if await request.is_disconnected():
+                                return
+                            if "error" in packet:
+                                raise ValueError("Google Answer stream failed")
+                            part = packet.get("answer", {})
+                            if part.get("state") == "SUCCEEDED":
+                                answer = part
+                                break  # Final answerText is the full answer, not another delta.
+                            if part.get("state") in ("FAILED", "SKIPPED"):
+                                raise ValueError("Google Answer did not succeed")
+                            text = part.get("answerText", "")
+                            streamed_text += text
+                            if len(streamed_text) > 12000:
+                                raise ValueError("Answer too long")
+                            if text:
                                 yield frame("delta", {"text": text})
-            if not size:
-                yield frame("error", {"message": "这次未能生成回答，请调整问题后重试"})
-            elif finish != "STOP":
-                yield frame("error", {"message": "回答未完整生成，已保留内容，可修改问题后重试"})
+                    if streamed_text and not answer.get("answerText"):
+                        answer["answerText"] = streamed_text
+                else:
+                    result = await http.post(url, headers=await google_headers(), json=payload)
+                    result.raise_for_status()
+                    answer = result.json().get("answer", {})
+            if await request.is_disconnected():
+                return
+            model_catalog.record(model, True)
+            text = cited_answer(answer, evidence)
+            print(json.dumps({"event": "builtin_answer", "model": model,
+                "provider": "search_answer", "state": answer.get("state"),
+                "rephrase_disabled": not rephrase, "streaming": streaming, "quota_cost": cost,
+                "textbook_count": textbook_limit,
+                "references": len(answer.get("references", []))}), flush=True)
+            if len(text) > 12000:
+                yield frame("error", {"message": "回答过长，请缩小问题范围后重试"})
+            elif not text or answer.get("state") != "SUCCEEDED":
+                yield frame("error", {"message": "这次未能生成有依据的回答，请调整问题后重试"})
             else:
+                if streaming and streamed_text:
+                    # References may arrive after text. Reconcile from the final
+                    # authoritative Answer using original UTF-8 offsets/URIs.
+                    yield frame("answer", {"text": text})
+                else:
+                    yield frame("delta", {"text": text, "reveal": "typing" if streaming else "lines"})
                 yield frame("done", {})
         except asyncio.CancelledError:
             raise
@@ -239,7 +354,15 @@ async def search(request: Request):
             # Log only exception type/status, never questions, answers or credentials.
             print(json.dumps({"event": "upstream_error", "type": type(exc).__name__,
                               "status": getattr(getattr(exc, "response", None), "status_code", None)}), flush=True)
-            yield frame("error", {"message": "AI 服务暂时不可用，已保留当前内容，请稍后重试"})
+            message = "AI 服务暂时不可用，已保留当前内容，请稍后重试"
+            if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 400:
+                detail = exc.response.text.lower()
+                if 'add-on' in detail:
+                    message = "内置回答尚未配置完成，请稍后重试"
+                elif 'model' in detail:
+                    model_catalog.record(model, False)
+                    message = "所选内置模型暂不支持此应用，请查询模型并选择其他版本"
+            yield frame("error", {"message": message})
 
     async def stream():
         try:

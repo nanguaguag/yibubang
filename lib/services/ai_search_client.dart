@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/ai_search.dart';
+import '../models/ai_search_options.dart';
 
 class AiSearchException implements Exception {
   final String message;
@@ -22,6 +24,12 @@ abstract class AiSearchGateway {
   );
   void cancel();
   void dispose();
+}
+
+abstract class AiModelGateway {
+  String get selectedModel;
+  Future<AiModelCatalog> models({bool refresh = false});
+  Future<void> selectModel(String model);
 }
 
 /// SSE frames may span arbitrary UTF-8/network boundaries.
@@ -47,7 +55,7 @@ Stream<AiStreamEvent> decodeAiEvents(Stream<List<int>> bytes) async* {
   if (data.isNotEmpty) throw const AiSearchException('连接提前结束，请重试');
 }
 
-class AiSearchClient implements AiSearchGateway {
+class AiSearchClient implements AiSearchGateway, AiModelGateway {
   static const endpoint = String.fromEnvironment(
     'AI_SEARCH_ENDPOINT',
     defaultValue: 'https://yibubang-ai-search-2eg4oq4jcq-an.a.run.app',
@@ -60,6 +68,8 @@ class AiSearchClient implements AiSearchGateway {
   Future<void>? _registration;
   String? _deviceId;
   String? _secret;
+  @override
+  String selectedModel = 'stable';
   AiSearchClient({
     this.baseUrl = endpoint,
     http.Client Function()? clientFactory,
@@ -68,6 +78,7 @@ class AiSearchClient implements AiSearchGateway {
   Future<void> _identity() async {
     if (_deviceId != null) return;
     final prefs = await SharedPreferences.getInstance();
+    selectedModel = prefs.getString('ai_answer_model') ?? 'stable';
     _deviceId = prefs.getString('ai_installation_id');
     _secret = prefs.getString('ai_installation_secret');
     if (_deviceId == null || _secret == null) {
@@ -118,6 +129,57 @@ class AiSearchClient implements AiSearchGateway {
     _registration = null;
     throw e;
   });
+
+  @override
+  Future<AiModelCatalog> models({bool refresh = false}) async {
+    try {
+      final json = await requestJson(
+        '/v1/models?refresh=$refresh',
+        timeout: const Duration(seconds: 6),
+      );
+      final catalog = AiModelCatalog.fromJson(json);
+      if (!catalog.models.any((m) => m.id == 'stable')) {
+        throw const FormatException('Invalid Answer model directory');
+      }
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('ai_answer_model_catalog', jsonEncode(json));
+      return catalog;
+    } catch (_) {
+      return localModels();
+    }
+  }
+
+  /// Shown immediately, even when the backend and Google are unreachable.
+  static Future<AiModelCatalog> localModels() async {
+    final prefs = await SharedPreferences.getInstance();
+    final cached = prefs.getString('ai_answer_model_catalog');
+    if (cached != null) {
+      try {
+        final json = Map<String, dynamic>.from(jsonDecode(cached));
+        final catalog = AiModelCatalog.fromJson({
+          ...json,
+          'stale': true,
+          'catalog_type': 'local_cache',
+        });
+        if (catalog.models.any((m) => m.id == 'stable')) return catalog;
+      } catch (_) {
+        /* Replace corrupt cache with the bundled directory. */
+      }
+    }
+    return AiModelCatalog.fromJson(
+      jsonDecode(
+        await rootBundle.loadString('ai_backend/answer_model_catalog.json'),
+      ),
+    );
+  }
+
+  @override
+  Future<void> selectModel(String model) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('ai_answer_model', model);
+    selectedModel = model;
+  }
+
   AiSearchException _error(int code, String body) {
     try {
       return AiSearchException(
@@ -126,6 +188,39 @@ class AiSearchClient implements AiSearchGateway {
       );
     } catch (_) {
       return AiSearchException('服务暂时不可用（$code）', code);
+    }
+  }
+
+  /// Reuses the same installation identity for retrieval and private page links.
+  Future<Map<String, dynamic>> requestJson(
+    String path, {
+    Map<String, dynamic>? body,
+    Duration timeout = const Duration(seconds: 45),
+  }) async {
+    if (_disposed) throw const AiSearchException('页面已关闭');
+    await _ready().timeout(timeout);
+    final client = clientFactory();
+    try {
+      final uri = Uri.parse('$baseUrl$path');
+      final response =
+          await (body == null
+                  ? client.get(uri, headers: _headers)
+                  : client.post(uri, headers: _headers, body: jsonEncode(body)))
+              .timeout(timeout);
+      if (response.statusCode != 200) {
+        throw _error(response.statusCode, response.body);
+      }
+      return Map<String, dynamic>.from(
+        jsonDecode(utf8.decode(response.bodyBytes)),
+      );
+    } on TimeoutException {
+      throw const AiSearchException('连接超时，请稍后重试');
+    } on http.ClientException {
+      throw const AiSearchException('连接失败，请检查网络后重试');
+    } on FormatException {
+      throw const AiSearchException('服务返回异常，请稍后重试');
+    } finally {
+      client.close();
     }
   }
 
@@ -155,6 +250,9 @@ class AiSearchClient implements AiSearchGateway {
     final cancellation = _cancellation;
     await _ready();
     if (_disposed || cancellation != _cancellation) return;
+    final prefs = await SharedPreferences.getInstance();
+    final options = AiSearchOptions.fromPreferences(prefs);
+    selectedModel = prefs.getString('ai_answer_model') ?? 'stable';
     final client = clientFactory();
     _active = client;
     try {
@@ -171,6 +269,10 @@ class AiSearchClient implements AiSearchGateway {
         'question': question,
         'request_id': requestId,
         'history': context,
+        'model': selectedModel,
+        'rephrase': options.rephrase,
+        'streaming': options.streaming,
+        'textbook_count': options.textbookCount,
       };
       var encoded = jsonEncode(payload);
       // Bound the actual UTF-8 bytes, including long Chinese follow-up history.

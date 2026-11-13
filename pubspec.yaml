@@ -51,12 +51,17 @@ dependencies:
   path: ^1.9.0
   fl_chart: ^0.70.2
   cached_network_image: ^3.4.1
+  flutter_cache_manager: ^3.4.1
   open_filex: ^5.0.0
   flutter_colorpicker: ^1.1.0
   system_theme: ^3.3.0
   sqlite3_flutter_libs: ^0.6.0+eol
+  markdown: ^7.3.1
+  flutter_math_fork: ^0.7.4
 
 dev_dependencies:
+  integration_test:
+    sdk: flutter
   flutter_test:
     sdk: flutter
 
@@ -80,6 +85,7 @@ flutter:
   uses-material-design: true
 
   assets:
+    - ai_backend/answer_model_catalog.json
     - assets/icon/
     - assets/images/
 

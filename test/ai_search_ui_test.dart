@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -146,6 +147,44 @@ void main() {
       expect(tester.takeException(), isNull);
       await screenshot(tester, 'welcome-mobile');
       await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+  testWidgets(
+    'desktop Shift+Enter sends; Enter, IME and repeat do not submit',
+    (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      await mount(tester, width: 1000);
+      final field = find.byKey(const ValueKey('ai_input'));
+      await tester.enterText(field, '机制是什么？');
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+      expect(gateway.requests, isEmpty);
+      final controller = tester.widget<TextField>(field).controller!;
+      controller.value = const TextEditingValue(
+        text: '中文组词',
+        selection: TextSelection.collapsed(offset: 4),
+        composing: TextRange(start: 0, end: 4),
+      );
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      expect(gateway.requests, isEmpty);
+      await tester.enterText(field, '机制是什么？');
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.enter);
+      await pumpUntil(tester, () => gateway.stream != null);
+      expect(gateway.requests, hasLength(1));
+      expect(ai.turns.single.question, '机制是什么？');
+      expect(controller.text, isEmpty);
+      await tester.sendKeyRepeatEvent(LogicalKeyboardKey.enter);
+      expect(gateway.requests, hasLength(1));
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.enter);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      ai.stop();
+      await pumpUntil(tester, () => !ai.busy);
+      await tester.pumpWidget(const SizedBox.shrink());
+      debugDefaultTargetPlatformOverride = null;
     },
   );
   for (final setting in [

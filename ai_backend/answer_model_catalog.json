@@ -1,0 +1,14 @@
+{
+  "provider": "search_answer",
+  "catalog_type": "bundled_snapshot",
+  "default_model": "stable",
+  "source_url": "https://docs.cloud.google.com/generative-ai-app-builder/docs/answer-generation-models",
+  "fetched_at": 1794549434,
+  "stale": true,
+  "models": [
+    {"id": "stable", "label": "自动（稳定版）", "resolved_model": "gemini-3.5-flash/answer_gen/v1", "context_window": "128K", "preview": false, "availability": "documented"},
+    {"id": "gemini-3.5-flash/answer_gen/v1", "label": "Gemini 3.5 Flash", "resolved_model": "gemini-3.5-flash/answer_gen/v1", "context_window": "128K", "preview": false, "availability": "documented"},
+    {"id": "gemini-3-flash-preview/answer_gen/v1", "label": "Gemini 3 Flash 预览版", "resolved_model": "gemini-3-flash-preview/answer_gen/v1", "context_window": "128K", "preview": true, "availability": "documented"},
+    {"id": "gemini-3.1-pro-preview/answer_gen/v1", "label": "Gemini 3.1 Pro 预览版", "resolved_model": "gemini-3.1-pro-preview/answer_gen/v1", "context_window": "128K", "preview": true, "availability": "documented"}
+  ]
+}

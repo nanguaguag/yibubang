@@ -1,5 +1,45 @@
 # KNOWN_ISSUES.md - 医不帮已知缺陷、潜在风险与问题总账
 
+<!-- AI_SEARCH_FEEDBACK -->
+## 2026-11-13 AI 搜索反馈缺陷修订
+
+- **嵌套紧凑列表粗体/冒号分行：已修复。** 原 li 同时有 strong/Text/ul 时逐个走 block 丢失 strong 样式、冒号独立段落。现连续行内节点共享 Text.rich，块节点单独渲染；机制/基因转录调节用户原文 PASS。
+- **中文括号紧邻粗体标记显示原始星号：已修复。** 原 CommonMark Unicode 标点左右边界规则不接受部分 CJK 用法。仅定向补充这些边界，不误把标签后的冒号当新粗体开头；CREB/转义/代码/未闭合回归 PASS。
+- **Android 教材双指缩放与横向翻页竞争：已修复源码并模拟手势验证。** 加轴向 PhotoView scope；临时缓存真实页图双触点放大不翻页 PASS，双击切缩放 PASS；Android 真机尚未验证。
+- **AI 设置样式不一致、说明常驻占据大段空间：已修订。** 全组采用周围设置组件，说明改 Material 弹窗；320/1000px 真字体图标视觉检查和交互持久化 PASS。
+- 新回归 test/textbook_reader_gestures_test.dart、ai_markdown_test.dart、ai_search_settings_test.dart、ai_search_ui_test.dart 与导航测试；完整 Flutter 355 PASS/3 skip、后端36 PASS，不以模拟平台代替 Android 实机。
+<!-- /AI_SEARCH_FEEDBACK -->
+
+
+<!-- ADVANCED_AI_SETTINGS -->
+## 2026-11-13 流式/回退与额度行为更新
+
+- Google流式final全文曾可能被当作delta重复：新链路将STREAMING增量与SUCCEEDED全文分开，迟到引用最终校正，截断/UTF-8/最终不重复测试及生产联网PASS。
+- 模型目录官网失败导致查询/搜索校验受阻：改为客户端缓存/公共快照、后端即时快照+后台刷新，旧资料标记为备用；冷网络未完成仍立即有目录、离线保存测试PASS。备用版本可能被Google退役，搜索会明确报模型不可用，不能承诺无限生命周期。
+- 配额显示旧100硬编码改为服务端limit；日200/1-2-3权重事务与实际扣额验证通过，旧计数保留。测试资源缓存跨fake/real异步zone曾挂起，测试清理rootBundle缓存后全量348 PASS；产品没有因此关闭超时或网络检查。
+<!-- /ADVANCED_AI_SETTINGS -->
+
+<!-- BUILTIN_ANSWER_MODELS -->
+## 2026-11-13 内置回答边界复核
+
+- 内置模型目录超过24小时后，失败刷新60秒节流曾允许下一请求返回过期目录；已修复为每次返回前检查硬上限，两次连续拒绝回归PASS，线上00014-dlq/100%。
+- 原外接Gemini token入口已迁移为Search基础Answer，运行预测权限移除；不代表本笔赠金适用SKU与Advanced附加计量已确认。LLM应用开关为真实API要求，请求高级行为禁用；费用仍以SKU账单核对，不凭赠金CSV/余额作免扣费证明。
+<!-- /BUILTIN_ANSWER_MODELS -->
+
+<!-- SEARCH_IMPROVEMENTS -->
+## 2026-11-13 AI回答与检索缺陷修复
+
+| 问题 | 状态 | 证据 |
+| --- | --- | --- |
+| Markdown引用块/公式不解析 | RESOLVED / TESTED | CommonMark/GFM AST+原生LaTeX，引用块/内联独立公式/流式不闭合和非法公式回退测试PASS。 |
+| [3, 4, 5, 6]等组合引用纯文本 | RESOLVED / TESTED | 每个真实编号单独可点击；代码不转换/无证据编号不导航，组合点击3/4/5/6测试PASS。 |
+| 混合6条题目挤出教材 | RESOLVED / VERIFIED | 独立教材/题库并行检索，最多8教材+4题；真实慢阻肺12来源包含两类，教材在先。 |
+| 新主题继承无关旧问题关键词 | RESOLVED / VERIFIED | 只明确省略追问补前问；新会话与肝硬化后慢阻肺检索证据完全相同，两次均回答气流定义。 |
+| 页图workers.dev访问/重复回源 | IMPROVED / TESTED | textbooks.melonhu.com+鉴权后边缘稳定key缓存，小图21510bytes/首2.07s/HIT0.46s；大陆网络效果尚未测。 |
+
+Flutter340全量/14相关、后端21、Worker及analyze0通过；最新Cloud Run00011-mm9/100%，20669缩略图全量SHA/上传匹配。原生App缩略图核验首次被macOS新签名确认弹窗阻止启动，等待用户“仍要打开”，已停止测试进程/恢复普通main；不记录为业务测试失败。详见ai_backend/SEARCH_IMPROVEMENTS.md。
+<!-- /SEARCH_IMPROVEMENTS -->
+
 <!-- HOME_STARTUP_OPTIMIZATION -->
 ## 2026-11-11 首页启动优化状态更新
 

@@ -10,13 +10,15 @@ from unittest.mock import AsyncMock, patch
 from fastapi.testclient import TestClient
 import httpx
 import app as backend
-from policy import (PolicyError, authenticate, day_key, generation_body, quota_info,
-                    reserve_device, secret_hash, validate_question)
+from answer_models import AnswerModelCatalog, parse_models
+from policy import (DAILY_LIMIT, PolicyError, authenticate, day_key, generation_body, generation_options,
+                    quota_info, reserve_device, secret_hash, validate_question)
 
 ID = 'a' * 32
 SECRET = 'b' * 64
 HEADERS = {'X-Device-ID': ID, 'Authorization': 'Bearer ' + SECRET}
 NOW = 1794484800.0
+MODELS_HTML = '<table><tr><td>stable</td><td>gemini-3.5-flash/answer_gen/v1</td><td>128K</td></tr><tr><td>gemini-3.5-flash/answer_gen/v1</td><td>Gemini</td><td>128K</td></tr></table>'
 
 
 class Snapshot:
@@ -70,11 +72,11 @@ class PolicyTests(unittest.TestCase):
         before = datetime(2026, 11, 12, 15, 59, 59, tzinfo=timezone.utc).timestamp()
         self.assertEqual(day_key(before), '2026-11-12')
         self.assertEqual(day_key(before + 1), '2026-11-13')
-        state = {'day': day_key(before), 'used': 100}
+        state = {'day': day_key(before), 'used': DAILY_LIMIT}
         self.assertEqual(quota_info(state, before)['remaining'], 0)
         self.assertEqual(reserve_device(state, before + 1, 'new_request')['used'], 1)
     def test_daily_minute_lease_and_duplicate(self):
-        cases = [({'day': day_key(NOW), 'used': 100}, 429),
+        cases = [({'day': day_key(NOW), 'used': DAILY_LIMIT}, 429),
                  ({'minute': int(NOW // 60), 'minute_used': 6}, 429),
                  ({'lease_until': NOW + 1}, 429),
                  ({'last_request': 'request_001'}, 409)]
@@ -83,6 +85,16 @@ class PolicyTests(unittest.TestCase):
                 reserve_device(state, NOW, 'request_001')
             self.assertEqual(error.exception.status, status)
         self.assertEqual(reserve_device({'lease_until': NOW - 1}, NOW, 'request_001')['used'], 1)
+    def test_weighted_allowance_and_option_validation(self):
+        for flags, cost in (({'rephrase':False,'streaming':False},1),
+                            ({'rephrase':True,'streaming':False},2), ({},3)):
+            self.assertEqual(generation_options(flags)[2],cost)
+            self.assertEqual(reserve_device({},NOW,'request_001',cost)['used'],cost)
+        for flags in ({'rephrase':False,'streaming':True}, {'rephrase':'false'}, {'streaming':1}):
+            with self.assertRaises(PolicyError):
+                generation_options(flags)
+        with self.assertRaises(PolicyError):
+            reserve_device({'day':day_key(NOW),'used':198},NOW,'request_001',3)
     def test_authentication(self):
         authenticate({'secret_hash': secret_hash(SECRET)}, SECRET)
         for state in (None, {}, {'secret_hash': secret_hash('wrong')}):
@@ -106,11 +118,15 @@ class BackendTests(unittest.TestCase):
         self.db = MemoryDB()
         self.db.data[('ai_devices', ID)] = {'secret_hash': secret_hash(SECRET)}
         self.patches = [patch.object(backend, 'db', self.db),
+                        patch.object(backend, 'model_catalog', AnswerModelCatalog()),
                         patch.object(backend.firestore, 'transactional', self.db.transactional),
                         patch.object(backend, 'google_headers', AsyncMock(return_value={})),
                         patch.object(backend.time, 'time', return_value=NOW)]
         for p in self.patches:
             p.start()
+        backend.model_catalog.models = parse_models(MODELS_HTML)
+        backend.model_catalog.fetched_at = NOW
+        backend.model_catalog.attempted_at = NOW
         self.upstream = []
         self.finish = 'STOP'
         self.failed = False
@@ -128,15 +144,28 @@ class BackendTests(unittest.TestCase):
         self.upstream.append(request)
         if self.failed:
             return httpx.Response(503)
+        if request.url.path.endswith(':streamAnswer'):
+            text='HLA I 与 CD8 结合。'
+            return httpx.Response(200,json=[
+                {'answer':{'state':'STREAMING','answerText':'HLA I '}},
+                {'answer':{'state':'STREAMING','answerText':'与 CD8 结合。'}},
+                {'answer':{'state':'SUCCEEDED' if self.finish=='STOP' else 'FAILED', 'answerText':text,
+                    'references':[{'unstructuredDocumentInfo':{'uri':'yibubang://questions/1637906'}}],
+                    'citations':[{'endIndex':str(len(text.encode())), 'sources':[{'referenceId':'0'}]}]}}])
+        if request.url.path.endswith(':answer'):
+            return httpx.Response(200, json={'answer': {'state': 'SUCCEEDED' if self.finish == 'STOP' else 'FAILED',
+                'answerText': 'HLA I 与 CD8 结合。',
+                'references': [{'unstructuredDocumentInfo': {'uri': 'yibubang://questions/1637906'}}],
+                'citations': [{'endIndex': str(len('HLA I 与 CD8 结合。'.encode())), 'sources': [{'referenceId': '0'}]}]}})
         if 'discoveryengine' in str(request.url):
-            return httpx.Response(200, json={'results': [] if self.empty else [
+            textbook = 'textbook' in json.loads(request.content).get('filter', '')
+            return httpx.Response(200, json={'results': [] if self.empty or textbook else [
                 {'document': {'structData': {'question_id': '1637906', 'title': 'HLA与CD8', 'text': 'HLA I提呈抗原'}}}]})
-        chunks = [{'candidates': [{'content': {'parts': [{'thought': True, 'text': 'hidden'}, {'text': 'HLA I [1]'}]}}]},
-                  {'candidates': [{'content': {'parts': [{'text': ' 与 CD8 结合。'}]}, 'finishReason': self.finish}]}]
-        return httpx.Response(200, text=''.join('data: ' + json.dumps(c) + '\n\n' for c in chunks))
+        return httpx.Response(200, text=MODELS_HTML)
     def search(self, **extra):
         return self.client.post('/v1/search', headers=HEADERS,
-                                json={'question': 'CD8为什么识别HLA I？', 'request_id': 'request_001', **extra})
+                                json={'question': 'CD8为什么识别HLA I？', 'request_id': 'request_001',
+                                      'rephrase':False,'streaming':False, **extra})
     def test_grounded_stream_and_followup(self):
         result = self.search(history=[{'question': '抗原提呈', 'answer': '前次回答'}])
         self.assertEqual(result.status_code, 200)
@@ -145,9 +174,41 @@ class BackendTests(unittest.TestCase):
         self.assertIn('event: done', result.text)
         self.assertNotIn('hidden', result.text)
         self.assertEqual(self.db.data[('ai_devices', ID)]['lease_until'], 0)
-        body = json.loads(self.upstream[1].content)
-        self.assertEqual(body['contents'][0]['parts'][0]['text'], '抗原提呈')
-        self.assertEqual(self.client.get('/v1/quota', headers=HEADERS).json()['remaining'], 99)
+        self.assertFalse(any('aiplatform' in str(r.url) for r in self.upstream))
+        self.assertIn('[1]', result.text)
+        requests = [r for r in self.upstream if r.url.path.endswith(':answer')]
+        body = json.loads(requests[0].content)
+        self.assertIn('抗原提呈', body['answerGenerationSpec']['promptSpec']['preamble'])
+        self.assertTrue(body['queryUnderstandingSpec']['queryRephraserSpec']['disable'])
+        self.assertFalse(body['relatedQuestionsSpec']['enable'])
+        self.assertNotIn('session', body)
+        self.assertIn('yibubang-medical-answer', str(requests[0].url))
+        self.assertEqual(self.client.get('/v1/quota', headers=HEADERS).json()['remaining'], DAILY_LIMIT-1)
+    def test_streamed_fragments_final_citations_and_three_unit_charge(self):
+        response=self.search(rephrase=True,streaming=True,quota_cost=0)
+        self.assertIn('event: delta',response.text)
+        self.assertIn('event: answer',response.text)
+        self.assertIn('event: done',response.text)
+        self.assertIn('HLA I 与 CD8 结合。[1]',response.text)
+        request=next(r for r in self.upstream if r.url.path.endswith(':streamAnswer'))
+        self.assertEqual(json.loads(request.content)['queryUnderstandingSpec']['queryRephraserSpec'],
+                         {'disable':False,'maxRephraseSteps':1})
+        self.assertEqual(self.db.data[('ai_devices',ID)]['used'],3)
+        self.assertEqual(self.db.data[('ai_devices',ID)]['lease_until'],0)
+    def test_rephrase_only_charges_two_and_insufficient_allowance_never_searches(self):
+        self.assertIn('event: done',self.search(rephrase=True,streaming=False).text)
+        self.assertEqual(self.db.data[('ai_devices',ID)]['used'],2)
+        request=next(r for r in self.upstream if r.url.path.endswith(':answer'))
+        self.assertFalse(json.loads(request.content)['queryUnderstandingSpec']['queryRephraserSpec']['disable'])
+        self.upstream.clear()
+        self.db.data[('ai_devices',ID)].update({'day':day_key(NOW),'used':198})
+        self.assertEqual(self.search(request_id='request_002',rephrase=True,streaming=True).status_code,429)
+        self.assertEqual(self.upstream,[])
+        self.assertEqual(self.db.data[('ai_devices',ID)]['used'],198)
+    def test_invalid_stream_without_rephrase_is_rejected_before_quota(self):
+        self.assertEqual(self.search(rephrase=False,streaming=True).status_code,400)
+        self.assertEqual(self.upstream,[])
+        self.assertNotIn('used',self.db.data[('ai_devices',ID)])
     def test_auth_invalid_and_actual_body_limit_never_call_google(self):
         self.assertEqual(self.client.post('/v1/search', json={}).status_code, 401)
         self.assertEqual(self.search(question='').status_code, 400)
@@ -184,7 +245,7 @@ class BackendTests(unittest.TestCase):
     def test_empty_retrieval_does_not_generate(self):
         self.empty = True
         self.assertIn('event: done', self.search().text)
-        self.assertEqual(len(self.upstream), 1)
+        self.assertEqual(len(self.upstream), 2)
     def test_two_parallel_reservations_cannot_bypass_lease(self):
         reserve = self.db.transactional(backend.reserve_transaction)
         def attempt(i):
@@ -196,6 +257,23 @@ class BackendTests(unittest.TestCase):
         with ThreadPoolExecutor(max_workers=8) as pool:
             self.assertEqual(sum(pool.map(attempt, range(8))), 1)
         self.assertEqual(self.db.data[('ai_devices', ID)]['used'], 1)
+
+    def test_model_query_is_authenticated_and_does_not_consume_search_quota(self):
+        self.assertEqual(self.client.get('/v1/models').status_code, 401)
+        response = self.client.get('/v1/models?refresh=true', headers=HEADERS)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['provider'], 'search_answer')
+        self.assertNotIn('used', self.db.data[('ai_devices', ID)])
+        self.assertEqual(self.upstream, [])
+
+    def test_model_selection_changes_answer_request_and_unknown_model_is_rejected(self):
+        self.assertEqual(self.search(model='gemini-3.8-flash').status_code, 400)
+        self.assertEqual(self.upstream, [])
+        self.assertNotIn('used', self.db.data[('ai_devices', ID)])
+        model = 'gemini-3.5-flash/answer_gen/v1'
+        self.assertIn('event: done', self.search(model=model).text)
+        request = next(r for r in self.upstream if r.url.path.endswith(':answer'))
+        self.assertEqual(json.loads(request.content)['answerGenerationSpec']['modelSpec']['modelVersion'], model)
 
 
 if __name__ == '__main__':

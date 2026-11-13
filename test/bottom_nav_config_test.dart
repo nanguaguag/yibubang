@@ -11,9 +11,10 @@ void main() {
 
   group('BottomNavConfig Tests', () {
     test(
-      'existing four-tab preferences append AI without losing custom order',
+      'existing four-tab preferences place AI between plan and statistics',
       () async {
-        final items = BottomNavConfig.getDefaultItems()..removeLast();
+        final items = BottomNavConfig.getDefaultItems()
+          ..removeWhere((i) => i.id == 'ai_search');
         items.insert(0, items.removeAt(3));
         items.firstWhere((i) => i.id == 'statistics').enabled = false;
         await BottomNavConfig.saveConfig(items);
@@ -22,10 +23,10 @@ void main() {
           'profile',
           'subjects',
           'daily_plan',
-          'statistics',
           'ai_search',
+          'statistics',
         ]);
-        expect(loaded.last.enabled, isTrue);
+        expect(loaded.firstWhere((i) => i.id == 'ai_search').enabled, isTrue);
         expect(loaded.firstWhere((i) => i.id == 'statistics').enabled, isFalse);
       },
     );
@@ -34,16 +35,18 @@ void main() {
       expect(items.length, 5);
       expect(items[0].id, 'subjects');
       expect(items[1].id, 'daily_plan');
-      expect(items[2].id, 'statistics');
-      expect(items[3].id, 'profile');
-      expect(items[4].id, 'ai_search');
+      expect(items[2].id, 'ai_search');
+      expect(items[3].id, 'statistics');
+      expect(items[4].id, 'profile');
       expect(items.every((i) => i.enabled), isTrue);
     });
 
     test('save and load persists custom reordering and visibility', () async {
       final items = BottomNavConfig.getDefaultItems();
       // 调整顺序：把 profile 移到最前，并隐藏 daily_plan
-      final profile = items.removeAt(3);
+      final profile = items.removeAt(
+        items.indexWhere((i) => i.id == 'profile'),
+      );
       items.insert(0, profile);
       items.firstWhere((i) => i.id == 'daily_plan').enabled = false;
 

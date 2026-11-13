@@ -16,22 +16,39 @@ class AiSearchController extends ChangeNotifier {
   bool busy = false;
   String phase = '';
   String? error;
+  AiModelCatalog? modelCatalog;
+  bool modelsLoading = false;
+  String? modelError;
+  String get selectedModel => gateway is AiModelGateway
+      ? (gateway as AiModelGateway).selectedModel
+      : 'stable';
+  String get modelLabel =>
+      modelCatalog?.models
+          .where((m) => m.id == selectedModel)
+          .firstOrNull
+          ?.label ??
+      '自动（稳定版）';
   int _generation = 0;
   bool _disposed = false;
   Future<void> _saves = Future.value();
   Timer? _checkpoint;
   Timer? _reveal;
   String _pendingText = '';
+  bool _revealLines = false;
   Completer<void>? _drained;
   AiTurn? _revealingTurn;
 
-  void _enqueueText(AiTurn turn, String text) {
+  void _enqueueText(AiTurn turn, String text, {bool lines = false}) {
     _pendingText += text;
+    _revealLines = lines;
     _revealingTurn = turn;
     _drained ??= Completer<void>();
-    _reveal ??= Timer.periodic(const Duration(milliseconds: 24), (_) {
+    _reveal ??= Timer.periodic(Duration(milliseconds: lines ? 140 : 24), (_) {
       final runes = _pendingText.runes.toList();
-      final count = (runes.length ~/ 6).clamp(2, 160).clamp(0, runes.length);
+      final newline = runes.indexOf(10);
+      final count = _revealLines
+          ? (newline < 0 ? runes.length : newline + 1)
+          : (runes.length ~/ 6).clamp(2, 160).clamp(0, runes.length);
       turn.answer += String.fromCharCodes(runes.take(count));
       _pendingText = String.fromCharCodes(runes.skip(count));
       _notify();
@@ -72,6 +89,40 @@ class AiSearchController extends ChangeNotifier {
     loading = false;
     _notify();
     if (!_disposed) unawaited(refreshQuota());
+  }
+
+  Future<void> refreshModels({bool refresh = false}) async {
+    if (_disposed || modelsLoading || gateway is! AiModelGateway) return;
+    modelsLoading = true;
+    modelError = null;
+    _notify();
+    try {
+      final result = await (gateway as AiModelGateway).models(refresh: refresh);
+      if (!_disposed) modelCatalog = result;
+    } catch (e) {
+      if (!_disposed) {
+        modelError = e is AiSearchException ? e.message : '模型查询失败，请重试';
+      }
+    } finally {
+      modelsLoading = false;
+      _notify();
+    }
+  }
+
+  Future<void> selectModel(AiAnswerModel model) async {
+    if (_disposed ||
+        busy ||
+        gateway is! AiModelGateway ||
+        model.availability == 'unavailable') {
+      return;
+    }
+    try {
+      await (gateway as AiModelGateway).selectModel(model.id);
+      modelError = null;
+    } catch (_) {
+      modelError = '模型选择保存失败，请重试';
+    }
+    _notify();
   }
 
   Future<void> refreshQuota() async {
@@ -190,6 +241,7 @@ class AiSearchController extends ChangeNotifier {
         id: generateSimpleId(),
         question: question,
         createdAt: DateTime.now(),
+        model: selectedModel,
       );
       position = turns.length;
       turns.add(turn);
@@ -224,9 +276,23 @@ class AiSearchController extends ChangeNotifier {
                 .toList();
             break;
           case 'delta':
-            _enqueueText(turn, event.data['text'] as String);
+            _enqueueText(
+              turn,
+              event.data['text'] as String,
+              lines: event.data['reveal'] == 'lines',
+            );
             turn.status = 'streaming';
             phase = '正在生成回答';
+            break;
+          case 'model':
+            turn.model = event.data['id'] as String?;
+            break;
+          case 'answer':
+            // Google returns its full authoritative text/references at the end.
+            // Finish displaying received fragments before adding final citations.
+            await _drained?.future;
+            if (generation != _generation || _disposed) break;
+            turn.answer = event.data['text'] as String;
             break;
           case 'done':
             await _drained?.future;

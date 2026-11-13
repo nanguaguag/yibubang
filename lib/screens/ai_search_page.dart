@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../common/adaptive_route.dart';
@@ -9,6 +10,8 @@ import '../models/chapter.dart';
 import '../models/question.dart';
 import '../repositories/question_search_repository.dart';
 import '../services/ai_search_controller.dart';
+import 'textbook_reader_page.dart';
+import 'textbook_search_page.dart';
 import '../widgets/ai_answer_text.dart';
 import '../widgets/gemini_mark.dart';
 import 'question_detail_page.dart';
@@ -33,6 +36,7 @@ class _AiSearchPageState extends State<AiSearchPage> {
   void initState() {
     super.initState();
     ai = widget.controller ?? AiSearchController();
+    focus.onKeyEvent = _composerKey;
     ai.addListener(_changed);
     scroll.addListener(() {
       if (scroll.hasClients) followBottom = scroll.position.extentAfter < 160;
@@ -66,14 +70,39 @@ class _AiSearchPageState extends State<AiSearchPage> {
       ? Duration.zero
       : AppAnimation.duration;
   void _send() {
-    if (input.text.trim().isEmpty || ai.busy) return;
+    if (input.text.trim().isEmpty ||
+        ai.busy ||
+        ai.loading ||
+        !input.value.composing.isCollapsed) {
+      return;
+    }
     final text = input.text;
     input.clear();
-    focus.unfocus();
+    if (!_desktopKeyboard) focus.unfocus();
     followBottom = true;
     final replace = editing;
     setState(() => editing = null);
     unawaited(ai.send(text, replaceFrom: replace));
+  }
+
+  bool get _desktopKeyboard => const {
+    TargetPlatform.macOS,
+    TargetPlatform.windows,
+    TargetPlatform.linux,
+  }.contains(defaultTargetPlatform);
+
+  KeyEventResult _composerKey(FocusNode node, KeyEvent event) {
+    if (!_desktopKeyboard ||
+        event.logicalKey != LogicalKeyboardKey.enter ||
+        !HardwareKeyboard.instance.isShiftPressed ||
+        HardwareKeyboard.instance.isControlPressed ||
+        HardwareKeyboard.instance.isAltPressed ||
+        HardwareKeyboard.instance.isMetaPressed ||
+        !input.value.composing.isCollapsed) {
+      return KeyEventResult.ignored;
+    }
+    if (event is KeyDownEvent) _send();
+    return KeyEventResult.handled;
   }
 
   void _edit(int index) {
@@ -165,6 +194,14 @@ class _AiSearchPageState extends State<AiSearchPage> {
     }
     setState(() => openingCitation = true);
     try {
+      if (citation.isTextbook) {
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => TextbookReaderPage(citation: citation),
+          ),
+        );
+        return;
+      }
       final repository = QuestionSearchRepository();
       final result = await repository.findQuestion(citation.questionId);
       if (result == null) {
@@ -230,9 +267,26 @@ class _AiSearchPageState extends State<AiSearchPage> {
       appBar: AppBar(
         title: const Row(
           mainAxisSize: MainAxisSize.min,
-          children: [GeminiMark(size: 22), SizedBox(width: 10), Text('AI 搜索')],
+          children: [
+            GeminiMark(size: 22),
+            SizedBox(width: 10),
+            Flexible(
+              child: Text(
+                'AI 搜索',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
         ),
         actions: [
+          IconButton(
+            tooltip: '教材检索',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const TextbookSearchPage()),
+            ),
+            icon: const Icon(Icons.menu_book_outlined),
+          ),
           IconButton(
             tooltip: '会话记录',
             onPressed: ai.busy || ai.loading ? null : _history,
@@ -410,9 +464,11 @@ class _AiSearchPageState extends State<AiSearchPage> {
                 _RetrievalSkeleton(animate: duration != Duration.zero),
               if (turn.answer.isNotEmpty)
                 AiAnswerText(
+                  key: ValueKey(turn.id),
                   text: turn.answer,
                   citations: turn.citations,
                   onCitation: _open,
+                  animateReveal: active && duration != Duration.zero,
                 ),
               if (turn.status == 'stopped' || turn.status == 'interrupted')
                 Padding(
@@ -429,7 +485,7 @@ class _AiSearchPageState extends State<AiSearchPage> {
                 ),
               if (turn.citations.isNotEmpty) ...[
                 const SizedBox(height: 16),
-                Text('参考题目', style: theme.textTheme.labelLarge),
+                Text('参考资料', style: theme.textTheme.labelLarge),
                 const SizedBox(height: 8),
                 Wrap(
                   spacing: 8,
@@ -579,7 +635,11 @@ class _AiSearchPageState extends State<AiSearchPage> {
                             )
                           : IconButton.filled(
                               key: const ValueKey('ai_send'),
-                              tooltip: editing == null ? '发送问题' : '修改并重试',
+                              tooltip: editing == null
+                                  ? (_desktopKeyboard
+                                        ? '发送问题（Shift+Enter）'
+                                        : '发送问题')
+                                  : '修改并重试',
                               onPressed: ai.loading ? null : _send,
                               icon: const Icon(Icons.arrow_upward_rounded),
                             ),
@@ -603,7 +663,7 @@ class _AiSearchPageState extends State<AiSearchPage> {
                 ),
                 if (ai.quota != null) ...[
                   Text(
-                    '今日剩余 ${ai.quota!.remaining}/100',
+                    '今日剩余 ${ai.quota!.remaining}/${ai.quota!.limit}',
                     style: TextStyle(
                       fontSize: 11,
                       color: scheme.onSurfaceVariant,

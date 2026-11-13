@@ -1,5 +1,63 @@
 # FEATURE_MATRIX.md - 医不帮功能实现与验证状态矩阵
 
+<!-- AI_SEARCH_FEEDBACK -->
+## 2026-11-13 AI 搜索反馈功能更新
+
+| 功能 | 实际链路与验证 |
+| --- | --- |
+| Markdown 粗体/嵌套列表 | AST 连续行内合并，中文括号紧邻粗体扩展；用户机制/CREB 原文与转义/代码/部分流式回归 PASS |
+| AI 设置一致性 | 通用设置相同 InfoCard/IconTile/Switch；模型弹层、本机回退、比例弹窗、独立使用说明；320/1000px 截图人工查看及保存/重开 PASS |
+| 教材触摸缩放 | PhotoView 与 PageView 轴向手势协调；真实 FileImage 双指/双击模拟 Android PASS，Android 真机待用户确认 |
+| 桌面键盘 | AI Shift+Enter、普通 Enter/组词/长按保护；教材左右方向键、边界与按钮后焦点、跳转弹窗保护 PASS |
+| 默认 Tab 位置 | 课程/每日计划/AI 搜索/统计/我的；旧四项补入、新默认/用户自定义顺序持久化 PASS |
+| 教材/题目检索比例 | App 本机设置→每轮 HTTP textbook_count→服务端校验→独立搜索0–12/12−n→统一引用；默认8:4、单源省一检索请求、28000字证据上限。后端5种比例/单源故障/越界 PASS，生产App实际6:6返回/本地SQLite/引用点击2项联网PASS；线上越界400且不扣额PASS |
+<!-- /AI_SEARCH_FEEDBACK -->
+
+
+<!-- ADVANCED_AI_SETTINGS -->
+## 2026-11-13 高级选项、流式和模型回退
+
+| 链路 | 当前状态/验证 |
+| --- | --- |
+| 设置通用下方AI组→模型/改写/流式 | IMPLEMENTED / TESTED：默认双开、联动/保存/重开、旧client读取最新设置通过；模型原AI按钮已迁移。 |
+| 真流式→平滑显示→最终引用校正 | DEPLOYED / VERIFIED：00015-rlt/100%，6delta、最终全文不重复、UTF-8引用URI正确；生产App联网与Widget引用PASS。 |
+| 日200/基础1/改写2/双开3 | VERIFIED：服务端事务核算；真实请求三模式扣额、少于3拒绝及客户端扣额字段不可信回归通过。IP/分钟/全站规则保留，教材纯检索1。 |
+| 模型目录离线/网络失败 | TESTED：本机缓存+共享公共快照、失败仍可保存模型、后端快照先回后台更新；官网仅后端访问，搜索本身仍需联网。 |
+
+Flutter348 PASS/3联网默认skip、后端33、analyze0与真实App联网2项PASS。TTL不是搜索运行/额度刷新必需项，现仅托管清理过期限额；Worker仅图片。默认200额度可66次高级加余2，不代表200次高级或Google3倍费用；赠金映射、原生新UI/四平台真机及大陆网络仍待验证。
+<!-- /ADVANCED_AI_SETTINGS -->
+
+<!-- BUILTIN_ANSWER_MODELS -->
+## 2026-11-13 内置基础Answer与模型选择
+
+| 功能 | 状态 | 实际验证 |
+| --- | --- | --- |
+| Search内置生成 | VERIFIED / TESTED / DEPLOYED | 新Enterprise应用共用原Store，两源Standard检索结果传基础:answer，00014-dlq/100%；旧Vertex预测权限/模型环境移除，无外接模型回退。 |
+| 内置模型查询/选择 | VERIFIED / TESTED | 官方模型表动态解析/缓存/节流/过期拒绝；四项模型真实200，App查询/本机保存/重开传参测试，查询不扣100次。Google无公开内置枚举API，不将Vertex或自训练模型目录冒充内置模型。 |
+| 省钱逐行显示与引用 | TESTED | 完整Answer返回后逻辑行推进，Markdown块/列表项渐入；UTF-8字节引用按原题/教材URI映射。生产client/controller→Cloud Run→Answer→SQLite及Widget引用点击PASS。 |
+
+当前27后端/18相关Flutter/analyze0通过；接续阶段全量344及Android/macOS Debug构建保持。基础请求禁用高级行为，但实测Answer仍需LLM开关，实际Advanced SKU/赠金抵扣未核实；原生缩略图系统确认及四平台真机仍待验收。[费用与模型](../../ai_backend/COSTS_AND_BUILTIN_MODELS.md)。
+<!-- /BUILTIN_ANSWER_MODELS -->
+
+<!-- SEARCH_IMPROVEMENTS -->
+## 2026-11-13 Markdown、教材优先检索与预览
+
+Markdown引用块/LaTeX公式/组合编号引用、教材关键词底色与右侧小图实现。Cloud Run两源并行候选，最多8教材+4题，教材优先重编号；明确新话题不拼历史关键词。真实慢阻肺新会话/肝硬化后证据相同及气流定义PASS。每问App额度仍1、Google Search查询2，输入证据总28000字符。
+
+textbooks.melonhu.com绑定同一私有R2 Worker，鉴权前不读缓存；20669缩略图377590170bytes全量上传且本地/R2散列匹配，小图签名读/缓存/不扣搜索PASS。Flutter340全量、14相关、后端21、Worker、analyze0，Android/macOS Debug构建PASS。原生真实小图显示待macOS签名确认后核验，当前测试未进入断言；普通main已恢复并open；大陆网络效果未测。模型为gemini-3.8-flash/global/LOW，赠金CSV未证明独立Gemini适用，不承诺生成免费。详见ai_backend/SEARCH_IMPROVEMENTS.md。
+<!-- /SEARCH_IMPROVEMENTS -->
+
+<!-- TEXTBOOK_IMPLEMENTATION -->
+## 2026-11-13 教材页检索与引用（实施与验收完成）
+
+53本/20669页复用OCR、本地主库与全部WebP保存，私有R2全部上传（6.833GiB）。53源PDF和20669页图SHA重算、完整manifest/R2回执/171463 Google导出hash覆盖PASS；Google21991教材块、原149472题块保留、删除0。407复核字段已逐项GET核对，真实Search与Cloud Run教材引用返回needs_review=true。
+
+App教材检索/书名筛选/关键词预览、教材引用原页、放大/翻页/页码跳转/重试与160页离线缓存实现并验证。337全量Flutter、相关22及最新相关14 PASS，analyze0、管线与后端各18、Worker PASS；真实App检索/混合AI引用、macOS原生引用→放大→翻页/跳转→离线缓存、三个末页SHA一致PASS；最新Android/macOS正常main Debug构建成功。
+
+AI/教材共用100搜索/天，图片独立1000/天与60/分钟；原PDF仅本地。375页符号/公式待人工复核、版次/ISBN待确认；其他平台、Android真机、目标地区网络与Release未验收。[操作与证据](../../scripts/knowledge_base/TEXTBOOK_EXECUTION.md)。
+<!-- /TEXTBOOK_IMPLEMENTATION -->
+
+
 <!-- APP_AI_SEARCH -->
 ## 2026-11-12 AI 搜索入口与独立RAG服务
 

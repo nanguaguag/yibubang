@@ -1,5 +1,84 @@
 # DEVELOPMENT_STATUS.md - 医不帮开发状态盘点与排期规划
 
+<!-- AI_SEARCH_COMMIT -->
+## 2026-11-13 用户授权提交 AI 搜索与教材功能
+
+- 提交范围：此前本地处理53本教材/增量上传工具、私有R2页图Worker、教材检索/引用/缓存阅读器、Search内置Answer与模型本机回退、高级流式与200额度，以及最新Markdown/设置一致性/缩放/快捷键/默认Tab/检索比例六项修订；保留先前实现，不拆出缺少依赖的客户端或服务端。
+- 验证：沿用同一源码Flutter355 PASS/3联网默认skip、后端36 PASS、静态0、Android/macOS Debug构建通过、生产App6:6联网2 PASS。提交前补充知识库Python18 PASS和Worker鉴权/过期/路径/散列/缓存PASS，Git差异与文件清单复核。
+- 只提交源代码、公开目录元数据、回归测试和文档；.local凭据/日志/截图、外置盘PDF/页图、知识库生成产物、虚拟环境、APK/App保持忽略。用户仅授权commit，本次不push或发布Release。
+- 下一次第一步：git log -1与git status核对提交，再读最新六项交接，按用户实机反馈验证Android缩放/大陆网络。待验收边界仍为375页符号公式人工医学复核、版次ISBN、其他平台真机及赠金实际SKU账单。
+<!-- /AI_SEARCH_COMMIT -->
+
+
+<!-- AI_SEARCH_FEEDBACK -->
+## 2026-11-13 AI 搜索六项反馈修订（实现/部署/回归与 App 联网验收完成）
+
+- Markdown 紧凑列表按连续行内节点合并，嵌套列表不再把粗体标题/冒号拆成两个段落；定向扩展中文括号紧邻粗体边界，保留普通 CommonMark、代码、转义、未闭合流式语法和引用。用户原文回归验证粗体字号权重与正文保留。
+- AI 设置整组改用现有 InfoCard/IconTile/Switch：模型、改写、流式、教材与题目比例、使用说明。长说明仅进入 Material 弹窗；模型单选使用自适应抽屉/桌面 Dialog，保留本机目录与后台刷新。320px/1000px 真实字体/图标截图已人工查看；窄屏稳定版标签缩短、比例弹窗两按钮。
+- 阅读器 PhotoViewGestureDetectorScope 协调 PageView 的横向拖动，双指缩放优先、放大后拖动及边缘翻页保留；读取本机稳定缓存不变。桌面阅读器方向键覆盖全页，跳转弹窗/文本编辑/组合键不拦截；AI 输入 Shift+Enter 发送、普通 Enter 不发送、输入法组词/长按重复不提交。
+- 默认导航为课程→每日计划→AI 搜索→统计→我的；已有五项用户排序保留，旧四项补入 AI 的默认邻居位置。恢复默认采用新顺序。
+- 客户端可选教材 0–12 条，题目 12−教材；默认 8:4。每轮重读 SharedPreferences，服务端严格 int 验证、在扣额前拒绝越界；二源仍独立检索，单源跳过无用请求、统一去重编号、总证据 28000 字上限，不自动挤占来源。纯教材检索/1–3 额度策略保持。
+- Flutter 全量 355 PASS / 3 联网默认 skip；后端 36 PASS。Android 模拟触摸双指缩放/双击、macOS 模拟按键边界与按钮后焦点、Markdown 用户原文、设置持久化/新旧导航回归均通过。最终静态分析0；Android/macOS Debug构建成功；Cloud Run00016-lbf/100%，生产App实际6教材+6题、引用打开与SQLite持久化2项联网PASS，越界400且不扣额PASS。未宣称 Android 真机已验收。
+- 本目标未 commit/push；不重导文本、不上传 PDF/页图、不改题库/用户库 schema。延续既有全部未提交改动。
+<!-- /AI_SEARCH_FEEDBACK -->
+
+
+<!-- ADVANCED_AI_SETTINGS -->
+## 2026-11-13 AI设置、高级流式与200额度（实施/部署/联网验收完成）
+
+- 用户覆盖基础省钱偏好，改为默认问题改写+streamAnswer。设置→通用下方新增AI搜索组，回答模型移入同组；开流式自动开改写，关改写同时关流式。客户端每次提问重读本机设置，现有AI页也生效。
+- 每安装/北京时间日200额度：基础1、仅改写2、改写+流式3，服务端事务核算，余额不足拒绝；保留原已用值，IP/分钟/全站仍计真实请求数。App显示服务端limit，教材纯检索每次1；默认最多66次高级完整提问，余2可换模式使用。3倍是App额度策略，不是Google3倍收费。
+- 解析Google增量JSON数组并转SSE片段，最终全文不重复追加；迟到引用按最终UTF-8偏移/原URI校正，客户端先平滑显示已收片段再校正。本机缓存/共用随App和Docker附带的4模型目录可即时选择；后端冷启动快照立即返回、后台官网刷新/4秒超时/60秒节流，旧目录明确标记，无客户端直连Google官网。
+- 后端00015-rlt/100%，health默认双开/200；33后端、Flutter全量348 PASS/3联网默认skip、最终analyze0；真实App联网2项PASS，线上基础/默认流式/仅改写扣1/3/2，12证据含8教材，模型查询不扣额度。默认流式6delta/首2.8s/总3.7s仅当前样本；Android/macOS Debug通过，线上200日额/分钟/并发/重放/错误凭据五项PASS，专用测试字段已恢复。
+- TTL保留现有3天过期限额记录清理，非额外后端/非零点刷新依赖，删除另计。文本检索生成仅App→Cloud Run→Discovery Engine；Cloudflare Worker仅教材图片签名鉴权/缓存。赠金SKU实际映射仍待账单，未声称100%抵扣；无独立Vertex Token入口、无重导数据/schema变化/commit/push/Release。
+<!-- /ADVANCED_AI_SETTINGS -->
+
+<!-- BUILTIN_ANSWER_MODELS -->
+## 2026-11-13 内置Answer与模型选择（已部署，赠金抵扣待账单）
+
+- 用户省钱优先/逐行渐入：已迁移Discovery Engine基础:answer；新Enterprise应用yibubang-medical-answer共用原Store，无重复导入。原Standard应用继续教材/题库各搜一次、最多8教材+4题。新应用实测须启用SEARCH_ADD_ON_LLM，否则最小Answer请求亦400；请求禁用改写/推荐追问，无Google托管session，不承诺实际Advanced计量已核实。
+- Cloud Run最终00014-dlq/100%东京；默认stable当前gemini-3.5-flash/answer_gen/v1。旧Gemini环境变量/预测权限移除；仅Search+Answer推理权限。App右上回答模型查询/刷新/选择，SharedPreferences保存选择，每轮turn payload保存模型。官方4项版本均真实200/SUCCEEDED。
+- 官方目录1小时缓存/60秒刷新节流，官网失败最多24小时回退，过期在节流内仍503。当前后端27、模型/Markdown/会话Flutter18、analyze0通过；接续阶段全量344与Android/macOS Debug记录保留。生产App client/controller→Cloud Run→Answer→SQLite→引用Widget PASS，最终health/目录/匿名401/查询不扣搜索次数再次PASS。
+- 两Standard+一Enterprise列表价USD7/千App提问；若另计Advanced保守USD11，实际SKU/免费分配及本笔赠金映射待账单。三项运行费/共享免费/TTL/出网/Worker边界见[费用说明](../../ai_backend/COSTS_AND_BUILTIN_MODELS.md)。原生缩略图系统确认、四平台真机/大陆网络/Release仍未验收；未commit/push，既有教材/Markdown改动保留。
+<!-- /BUILTIN_ANSWER_MODELS -->
+
+<!-- SEARCH_BILLING_REVIEW -->
+## 2026-11-13 Search赠金与生成入口核查（核查完成，赠金SKU范围/迁移未完成）
+
+- 当前线上是Cloud Run代理+两次Search+独立Vertex AI gemini-3.8-flash生成；ADC服务账号OAuth，费用进入绑定JPY结算账号，未抵扣部分可能由付款方式结算，没有实际扣卡证明。
+- 官方确认Search Enterprise USD4/1000含Core生成，Advanced另加USD4/1000，免费10000不含Advanced；内置Answer模型stable当前3.5-flash/answer_gen/v1。当前Engine只读GET仍STANDARD，未切换内置生成或部署。
+- 官方v1 Answer支持searchSpec.searchResultList，可评估复用两源汇总与引用，无需重建/导入。streamAnswer强制一次rephrase，实际Core/Advanced与多请求计量需核对，不能承诺流式全包仅一次USD4。
+- 找到社区转述Support指向的两组官方SKU，但当前均标废弃且范围不同；其中Offer组含部分Vertex模型，不能将其套用为本赠金条款。已向用户请求本笔赠金适用SKU/条款，余额不变不是模型免费证据。
+- 本轮仅只读云核查、官网/schema及文档追加；保留全部教材/Markdown等未提交改动，无commit/push/产品测试或付费生成调用。详见ai_backend/SEARCH_IMPROVEMENTS.md新增复核段。
+<!-- /SEARCH_BILLING_REVIEW -->
+
+<!-- SEARCH_IMPROVEMENTS -->
+## 2026-11-13 AI检索与Markdown修订（功能/部署/数据完成，原生小图显示待系统确认后验收）
+
+- 原缺陷确认：Markdown仅子集且只识单编号；混合pageSize6遮蔽教材；前两问无条件拼接污染新话题。
+- 修订CommonMark/GFM AST原生渲染引用块/列表/代码/表格和LaTeX内联/独立公式，组合引用拆分逐号点击；非法/未闭合公式回退文字、代码不转换、外部链接不能任意导航。
+- 后端两次并行Search候选教材12/题8，去重后最多8教材+4题、教材在先重编号，总证据28000字符；只明确省略追问用上一问，独立新话题不污染。两种慢阻肺真实搜索12证据相同/气流定义PASS。latest00011-mm9/100%。
+- textbooks.melonhu.com绑定独立页图Worker，鉴权在缓存前、稳定版本key边缘缓存。20669缩略图本地完成/上传完，377590170 bytes、全部本地/R2成功SHA一致；真实签名小图21.5KB/2.07s→HIT0.46s，不扣搜索次数。App右侧缩略图和关键词底色高亮实现。
+- Flutter340全量基线/最终15相关、后端21、WorkerPASS，最新analyze0；Android/macOS Debug通过；App组件生产检索PASS，原生真实缩略图显示核验待macOS“身份不明且版本不同”签名确认（已定位系统弹窗，测试尚未启动，不能称PASS）。
+- 线上模型gemini-3.8-flash/global/LOW；官方当前USD0.75输入/3.75输出含推理每百万tokens，2027-01-01起1.50/7.50；真实10770输入/204输出/0推理约USD0.00884，单独token SKU。赠金CSV仅限定使用，无法证明适用独立Gemini；Search每月10000免费查询+账单延迟最可能解释未扣赠金，JPY账号已核对，无billing export。
+- 本目标未commit/push/Release；原生测试被系统新签名确认挡住未进入断言，已停止测试进程/恢复普通main Debug并open；下一步用户点“仍要打开”后实际检查AI与教材预览，或重跑integration_test/textbook_reader_test.dart。生成费用赠金条款仍待明确，不需再次处理/上传20669图。。手册ai_backend/SEARCH_IMPROVEMENTS.md；此前教材实施改动完整保留。
+<!-- /SEARCH_IMPROVEMENTS -->
+
+<!-- TEXTBOOK_IMPLEMENTATION -->
+## 2026-11-13 53本教材实施（处理、Google、R2、App验收完成）
+
+- 用户已明确授权按方案处理/上传/开发，覆盖上一轮先讨论约束。main@02ea2ba开始干净；本目标没有commit/push/Release发布。
+- 原PDF留本地；53本20669页复用OCR，2991页双层去重（原始序列0交错），16558书页标签候选。36页无索引文字、239稀疏候选、375页符号/公式待人工复核，版次/ISBN未人工确认。
+- 外置盘可迁移主库/原始OCR/清洗JSONL/坐标与20669张WebP完整保存；R2私有桶yibubang-textbooks全量上传完成，7336669280 bytes=6.833GiB。53原PDF与20669本地页图重新计算SHA，全部R2成功SHA回执匹配，页图manifest无漏页/重复；verify_textbook_release.py PASS。
+- Google yibubang-medical-v1/原Engine：21991教材块+原149472题块，删除0，171463导出hash全部有成功回执。407复核标记增量任务8079863690164527043全成功；在线GET/Search发现新字段仍缺失，随后仅PATCH structData补齐（1试点+406），407条逐项GET核验PASS，未重传正文。真实Search及Cloud Run教材检索返回needs_review=true PASS。
+- Cloud Run最新00008-hj6/100%；独立Worker短时阅读签名/上传密钥分离，Google运行账号仅指定Secret accessor。全部上传进程已正常结束，无待续传任务；三个教材末页通过正式鉴权签名接口下载、SHA一致且不扣搜索次数。
+- App入口：AI搜索右上书本→教材检索/书名筛选/关键词预览→原页；题目/教材引用兼容旧本地会话，源版本+物理页定位。缩放/翻页/跳转/重试、160页稳定键缓存与离线阅读。AI/教材共用每日100搜索；图片独立1000/天、60/分钟。
+- 验证：337全量Flutter PASS（联网1项默认skip），相关22 PASS；最新客户端缓存后相关14、analyze0、管线18/后端18/Worker PASS。真实App→Cloud Run→Google检索、混合AI引用与图片安全测试PASS；macOS原生引用→放大→翻页101→跳转125→离线缓存PASS。最新Android/macOS正常main Debug构建成功，恢复产品入口；测试回执/截图仅保存在被忽略的.local/artifacts。
+- 本次最后操作：更新操作记录、功能矩阵与交接，Git范围/diff检查；启动最新macOS Debug App。下一会话第一步：先核对Git与scripts/knowledge_base/TEXTBOOK_EXECUTION.md，再按实机反馈处理；增加教材复用本地管线、原Store和增量成功账本，不重复导入原题或上传PDF。
+- 未验收：375页医学符号/公式人工校对、版次/ISBN确认、Windows/Linux/iOS/Android真机及目标地区网络、Release发布。Google专项credit实际SKU抵扣/账单仍未确认，不宣称这些已完成。
+<!-- /TEXTBOOK_IMPLEMENTATION -->
+
+
 <!-- TEXTBOOK_PLAN_REVIEW -->
 ## 2026-11-12 完成提交与53本教材方案研究（未处理/上传教材）
 

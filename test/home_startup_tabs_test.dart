@@ -109,7 +109,7 @@ void main() {
 
   testWidgets('自定义首个Tab生效，隐藏课程不会被提前初始化', (tester) async {
     final items = BottomNavConfig.getDefaultItems();
-    items.insert(0, items.removeAt(3));
+    items.insert(0, items.removeAt(items.indexWhere((i) => i.id == 'profile')));
     await BottomNavConfig.saveConfig(items);
     size(tester, const Size(1000, 900));
     addTearDown(() {
@@ -151,8 +151,8 @@ void main() {
     final plan = tester.state(find.byType(DailyPlanPage));
     await select(tester, '我的课程');
     final items = BottomNavConfig.getDefaultItems();
-    items[2].enabled = false;
-    items.insert(1, items.removeAt(3));
+    items.firstWhere((i) => i.id == 'statistics').enabled = false;
+    items.insert(1, items.removeAt(items.indexWhere((i) => i.id == 'profile')));
     await tester.runAsync(() => BottomNavConfig.saveConfig(items));
     await tester.pump();
     expect(find.byType(StatisticsPage, skipOffstage: false), findsNothing);
@@ -168,25 +168,25 @@ void main() {
 
   testWidgets('宽窄布局切换保持选择索引，窄屏滑动仍显示下一Tab', (tester) async {
     await mount(tester);
-    await select(tester, '每日计划');
-    await planReady(tester);
+    await select(tester, '统计');
+    await pumpReady(tester, find.byType(StatisticsPage));
     size(tester, const Size(600, 900));
     await tester.pump();
-    await planReady(tester);
-    expect(
-      tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
-      1,
-    );
-    expect(
-      tester.widget<PageView>(find.byType(PageView)).controller!.page!.round(),
-      1,
-    );
-    await tester.drag(find.byType(PageView), const Offset(-350, 0));
-    await tester.pump(const Duration(milliseconds: 600));
     await pumpReady(tester, find.byType(StatisticsPage));
     expect(
       tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
-      2,
+      3,
+    );
+    expect(
+      tester.widget<PageView>(find.byType(PageView)).controller!.page!.round(),
+      3,
+    );
+    await tester.drag(find.byType(PageView), const Offset(-350, 0));
+    await tester.pump(const Duration(milliseconds: 600));
+    await pumpReady(tester, find.byType(MyPage));
+    expect(
+      tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
+      4,
     );
     size(tester, const Size(1000, 900));
     await tester.pump();
@@ -196,9 +196,9 @@ void main() {
     );
     expect(
       tester.widget<NavigationRail>(find.byType(NavigationRail)).selectedIndex,
-      2,
+      4,
     );
-    expect(find.byType(StatisticsPage), findsOneWidget);
+    expect(find.byType(MyPage), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 }

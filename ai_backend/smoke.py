@@ -1,4 +1,4 @@
-"""Real register/quota/retrieval/Gemini/follow-up smoke. Credentials never printed."""
+"""Real register/quota/retrieval/Answer/follow-up smoke. Credentials never printed."""
 import argparse
 import json
 import os
@@ -65,6 +65,8 @@ def main():
                                 first_delta = round(time.monotonic() - start, 2)
                         if event == 'citations':
                             citations = data['items']
+                        if event == 'answer':
+                            answer = data['text']
                         if event == 'error':
                             raise RuntimeError(data['message'])
             assert events[-1] == 'done', events
@@ -77,7 +79,7 @@ def main():
             replay = client.post('/v1/search', headers=headers, json=payload)
             assert replay.status_code == 409, replay.text
         report['quota_after'] = client.get('/v1/quota', headers=headers).json()
-        assert report['quota_before']['remaining'] - report['quota_after']['remaining'] == 2
+        assert report['quota_before']['remaining'] - report['quota_after']['remaining'] == 6
         report['status'] = 'PASS'
         (path.parent / 'smoke-result.json').write_text(json.dumps(report, ensure_ascii=False, indent=2))
         print(json.dumps(report, ensure_ascii=False, indent=2))

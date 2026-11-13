@@ -1,5 +1,22 @@
 # AI 搜索验证记录（2026-11-12）
 
+## 2026-11-13 默认高级/设置与200额度（最新状态）
+
+- 东京00015-rlt/100%，默认rephrase/streaming=true，daily_limit=200，原Store及两源8教材+4题保持。
+- 后端33 PASS；Flutter全量348 PASS/3联网默认skip，设置4项PASS；analyze0。开关默认/联动/本机保存/重开、缓存损坏/网络失败回快照并离线选模型、旧client实时读选项、最终全文/引用不重复持久化均覆盖。
+- 三个线上模式分别扣1/3/2：默认streamAnswer 6delta、首文字2.8s、总3.7s；基础4.03s与仅改写4.74s。均12来源含8教材、内置stable，模型查询不扣额度。网络样本非延迟保证。
+- 实际App client/controller→Cloud Run→streamAnswer→SQLite与Widget引用点击2 PASS；Android/macOS Debug构建PASS，最终analyze0。线上200日额/每分钟6/并发/重放/错误凭据五项PASS，专用设备字段完整恢复；两个TTL规则只读GET均ACTIVE。截图是Widget渲染，原生新设置/四平台真机尚未验收。
+- 公共4模型JSON随App和Docker共用，不含凭据；后端冷启动不等官网、后台刷新4秒节流60秒，App不直连官网，网络失败仍有标记的备用目录。Google实际文本分片/最终完整答案/迟到引用已通过真实响应核查。
+- TTL和图片Worker保留原职责；3倍仅App额度，不把配置开关当已证实Google3倍费用或赠金100%抵扣。日志与回执均忽略的.local/advanced-*；没有重导数据/schema变化/commit/push/Release。
+
+## 2026-11-13 内置Answer与模型选择（当前状态优先）
+
+- 最终东京修订00014-dlq/100%，health provider=search_answer、generation_mode=basic_answer。运行推理角色只有Search/Answer两项权限，旧Vertex环境/预测权限移除。
+- 四个官方内置模型真实200/SUCCEEDED；生产App客户端/控制器→Cloud Run→Answer→本地SQLite与引用Widget实际PASS，12资料含8教材。UTF-8引用偏移映射按本轮来源URI；模型选择持久化/重开参数与逐行完成测试通过。
+- 最终后端27 PASS、相关Flutter18 PASS、analyze0。模型缓存过期且失败刷新节流内的下一请求仍拒绝回归通过。接续阶段全量344与Android/macOS Debug记录保留；未重复付费四模型生成。
+- 最终部署后health、官方目录4项、匿名401、模型查询前后搜索quota不变再次PASS。回执及最终测试/部署日志保存在忽略的.local/builtin-*，真实字体截图screenshots/builtin-ai-live.png为Widget渲染，非原生/手机实测。
+- 原Store无重导数据，原Standard检索应用保持；新Enterprise Answer应用实测需LLM开关。请求禁用改写/推荐、无托管session，不等于已核实实际Advanced计量/专项赠金SKU抵扣。[费用说明](COSTS_AND_BUILTIN_MODELS.md)。原生缩略图系统确认、四平台真机/国内网络/Release仍未验收。下方334/原独立Gemini/仅题目等描述为2026-11-12历史。
+
 项目 `yibubang-search`，独立服务东京 `yibubang-ai-search`，最终修订 `yibubang-ai-search-00003-cl2`，100% 流量。App 默认 URL 已替换为实际线上地址。
 
 ## 自动化
@@ -37,3 +54,12 @@
 - 仅题目引用打开原题；教材PDF页码查看尚未实现，实际PDF尚未供入。
 - Google trial credit实际SKU/有效期及是否抵扣Gemini/Cloud Run/Firestore尚未验账；新费用可能单独计费。
 - 测试中的题目详情既有官方网络请求被Flutter HTTP测试环境拒绝，验证的是本地原题/作答导航，不是官方在线接口。
+
+
+### 2026-11-13 六项 AI 搜索反馈修订
+
+- Flutter全量355 PASS/3 opt-in联网默认skip，后端36 PASS；最终静态分析0。用户Markdown原文、组词/Enter/Shift+Enter/KeyRepeat、Android双触点实际FileImage缩放/双击、教材方向键与跳转弹窗/边界、模型离线单选、比例持久化及新旧导航均有回归。最新设置/模型局部9 PASS，320/1000px真实字体图标截图已查看。
+- Cloud Run00016-lbf/100%，沿用全部既有配置与Store。生产App `AI_MODEL_LIVE_TEST=1 AI_TEXTBOOK_COUNT=6 flutter test --no-pub test/ai_model_live_test.dart` 2 PASS；实际6教材+6题、内置Answer生成、SQLite持久化、引用回调打开教材104页。此联网测试不等同于原生Reader真机验收。
+- /health比例能力=true；错误比例-1/13/bool/string返回400，专用测试设备额度不变。只有一种来源时后端仅1Search已由mock请求计数/故障回归验证，无重新导入任何数据。
+- Android APK/macOS App Debug构建通过。平台切换模拟手势不是Android真机；Windows/Linux/iOS/大陆网络与Release保持未验收。
+- .local/feedback-*日志/JSON/截图不提交凭据；本次未commit/push/Release，保持此前用户工作区。

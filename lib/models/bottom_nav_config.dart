@@ -52,6 +52,13 @@ class BottomNavConfig {
           enabled: true,
         ),
         BottomNavItem(
+          id: 'ai_search',
+          title: 'AI 搜索',
+          subtitle: '医学知识检索、解释与追问',
+          icon: Icons.auto_awesome_outlined,
+          selectedIcon: Icons.auto_awesome,
+        ),
+        BottomNavItem(
           id: 'statistics',
           title: AppStrings.statisticsTitle,
           subtitle: '做题数据、正确率与历史流水统计',
@@ -66,13 +73,6 @@ class BottomNavConfig {
           icon: Icons.person_outline,
           selectedIcon: Icons.person,
           enabled: true,
-        ),
-        BottomNavItem(
-          id: 'ai_search',
-          title: 'AI 搜索',
-          subtitle: '医学知识检索、解释与追问',
-          icon: Icons.auto_awesome_outlined,
-          selectedIcon: Icons.auto_awesome,
         ),
       ];
 
@@ -114,7 +114,12 @@ class BottomNavConfig {
       // 补充可能新增的默认项
       for (final d in defaults) {
         if (!result.any((r) => r.id == d.id)) {
-          result.add(d);
+          // Place newly introduced tabs beside their default neighbour while
+          // retaining the saved order and enabled state of existing tabs.
+          final before = defaults.skip(defaults.indexOf(d) + 1)
+              .map((item) => result.indexWhere((r) => r.id == item.id))
+              .where((index) => index >= 0).firstOrNull;
+          result.insert(before ?? result.length, d);
         }
       }
 

@@ -1,5 +1,92 @@
 # SESSION_HANDOFF.md - 跨会话开发交接记录
 
+<!-- AI_SEARCH_COMMIT -->
+## 2026-11-13 用户授权提交 AI 搜索与教材功能
+
+- 提交范围：此前本地处理53本教材/增量上传工具、私有R2页图Worker、教材检索/引用/缓存阅读器、Search内置Answer与模型本机回退、高级流式与200额度，以及最新Markdown/设置一致性/缩放/快捷键/默认Tab/检索比例六项修订；保留先前实现，不拆出缺少依赖的客户端或服务端。
+- 验证：沿用同一源码Flutter355 PASS/3联网默认skip、后端36 PASS、静态0、Android/macOS Debug构建通过、生产App6:6联网2 PASS。提交前补充知识库Python18 PASS和Worker鉴权/过期/路径/散列/缓存PASS，Git差异与文件清单复核。
+- 只提交源代码、公开目录元数据、回归测试和文档；.local凭据/日志/截图、外置盘PDF/页图、知识库生成产物、虚拟环境、APK/App保持忽略。用户仅授权commit，本次不push或发布Release。
+- 下一次第一步：git log -1与git status核对提交，再读最新六项交接，按用户实机反馈验证Android缩放/大陆网络。待验收边界仍为375页符号公式人工医学复核、版次ISBN、其他平台真机及赠金实际SKU账单。
+<!-- /AI_SEARCH_COMMIT -->
+
+
+<!-- AI_SEARCH_FEEDBACK -->
+## 最新交接：2026-11-13 AI 搜索六项反馈
+
+- 用户当前要求：修复嵌套列表/中文括号粗体、AI 设置 UI 全组重写且说明弹窗、Android 教材缩放、桌面 Shift+Enter/方向键翻页、默认 AI Tab 位于每日计划和统计之间、客户端教材/题目比例可设置。
+- 完成：AiAnswerText 行内连续段落合并 + 中文粗体括号边界扩展；标准解析其余内容保留。AiSearchSettingsGroup 全部沿用 InfoCard/IconTile/Switch，模型单选自适应弹层、说明仅弹窗、比例 0–12 Slider+保存/取消，稳定版短标签。320/1000px 真字体图标截图已人工查看，最新回执 .local/screenshots/feedback-*。
+- PhotoViewGestureDetectorScope(axis:horizontal) 优先双指并保留拖动/边缘翻页；阅读器全页 Focus 支持方向键，路由/输入框/组合键保护。AI 桌面 Shift+Enter 会发送，普通 Enter/输入法组词/KeyRepeat 不提交。真实 FileImage+临时缓存+双触点测试通过，未触及本机正式缓存。
+- BottomNavConfig 默认 subjects/daily_plan/ai_search/statistics/profile；已有五项排序/隐藏状态保留，旧四项补到默认邻居前。测试改为用 ID 定位，避免对旧索引产生假验收。
+- options.textbookCount SharedPreferences 保存，每次 Search payload textbook_count 重读；服务端校验 int0–12 后预扣原有额度，retrieve 默认 8+4/可选0+12或12+0，一种来源0时不发送其请求、总证据/统一编号/不足来源独立保留。未改 Google Store、数据、计费入口和每日200/1–3额度。
+- 当前已部署东京 Cloud Run 00016-lbf/100%，使用现有配置/账号与 Search 内置 Answer。后端 36 PASS；Flutter 全量 355 PASS/3 默认 skip，所有新增交互回归通过。最终flutter analyze0，Android/macOS Debug构建成功。生产App6:6请求→Cloud Run→Google内置Answer→本地SQLite→引用Widget2项联网PASS，12证据正好6教材/6题；错误比例4项400且余额不变PASS。新增模型离线单选UI在320/1000px仍可选/保存PASS，新9项设置/模型回归通过。
+- 回执：ai_backend/.local/feedback-{full-tests,backend-tests,reader-tests,gestures-tests,settings-visual-tests,app-live,final-analyze,deploy,android-build,macos-build}.log；feedback-app-live.json / feedback-online-check.json及screenshots/feedback-*。App联网只使用既有专用smoke设备，花3次App额度，没有重置真实用户计数。macOS已打开最新Debug；AndroidAPK已构建，真机待用户安装确认。
+- main@02ea2ba，起始大量此前教材/Markdown/高级设置未提交变更全部保留。本目标不 commit/push/Release，没有用户库 schema/题库写入或重复上传。
+- 本次闭环完成：最终分析、生产 App 6:6 核验、新 Debug 构建、文档/范围复核；无待处理构建或部署进程。下一次第一步核对 Git、本段和 .local/feedback-*.log，使用最新 Debug App 依用户真机反馈处理，勿重复导入知识库。375页人工医学校对、Windows/Linux/iOS/Android真机和大陆网络、专项赠金 SKU 账单仍属此前未验收项。
+<!-- /AI_SEARCH_FEEDBACK -->
+
+
+<!-- ADVANCED_AI_SETTINGS -->
+## 最新交接：2026-11-13 默认高级、AI设置与200额度
+
+- 本段覆盖基础省钱阶段：用户要求体验优先，已默认改写+streamAnswer。设置→通用下方AI搜索组包含回答模型、问题改写、流式输出；原AI页模型按钮移除。开关按Google限制联动；保存SharedPreferences，新请求在旧client实例上也重读最新模型/选项。
+- 服务端每安装日200额度，generation_options严格bool/禁止stream=true且rephrase=false，按1/2/3在Firestore原子预扣，客户端自报扣额不能绕过；剩2拒默认高级而允许基础/仅改写。旧used值保留，无重置/用户库schema变化。分钟6/IP300/全站2000仍按真实请求。默认200额度最多66次高级，余2可选其他模式；App文字明确3倍仅指额度。
+- builtin_answer.answer_packets增量JSON数组解码，处理网络/UTF-8边界与截断；STREAMING文字立即SSE，最终SUCCEEDED全文不追加第二遍，answer事件校正迟到引用，controller等显示队列完成再覆盖。Google内置模型/外部两源证据保持，无独立Vertex回退。真实Google首文本2.2s/完成2.78s，线上Cloud Run样本首2.8s/总3.7s/6delta，非性能承诺。
+- 模型离线：新增ai_backend/answer_model_catalog.json为已核对4模型快照，同时Flutter asset与DockerCOPY，.dockerignore仅放行此公共JSON。App先本机缓存/快照立即展示、后台有界刷新，失败仍可选/保存；后端冷启动立即快照、后台官网刷新（4秒/60秒节流），官方缓存超过24小时标记回快照。Google官网仅后端访问；Cloud Run不可达时目录仍可选，但搜索不能离线生成。
+- 最新部署00015-rlt/100%，health默认双开/200。后端33 PASS，Flutter全量348 PASS/3联网skip，最终静态0；真实App client/controller→Run→streamAnswer→SQLite与引用Widget2 PASS。线上三模式扣1/3/2、12证据含8教材与模型查询不扣额PASS。Android/macOS Debug完成；200日额/分钟6/并发/重放/错误凭据五项线上PASS，专用测试字段restored=true。两条TTL GET均ACTIVE。原生新设置/四平台真机/大陆网络/Release尚未验收，当前运行旧macOS进程需重启最新Debug。
+- 忽略回执：.local/advanced-online-validation.json、advanced-run-state.json、advanced-ttl-state.json、stream-answer-probe.json、advanced-app-live.log、advanced-full-tests.log、advanced-backend-tests.log、advanced-settings-tests.log、advanced-final-analyze.log、advanced-limits-validation.log、advanced-deploy.log及advanced-*-build.log。联网测试复用专用smoke设备，未输出/提交凭据；额度实扣9（线上6+App3），限额测试只临时改此设备且完整恢复，无真实用户计数修改。
+- TTL保持ai_request_limits/ai_registration_limits的expires_at，3天过期托管删除；不是另一套服务，也不是配额零点刷新条件，停用可运行但旧记录累积，删除无免费额度。仅图片走Cloudflare Worker，搜索推理直达Cloud Run/Discovery Engine。Google1/2/3次额度不等于其SKU计价；赠金具体抵扣/Advanced实际计量仍未取得账户账单，不按用户引用断言免扣卡。
+- 未commit/push/Release，无重导171463文本或上传教材；main@02ea2ba，所有此前未提交教材/Markdown工作保留。下一次第一步核对Git、本段和health，启动最新Debug体验设置与流式；账单反馈按Search各SKU核赠金，不重复造库。用户若要每天200次高级请求，应另明确调整总额度到600；本次按其200额度/高级扣3要求实施。
+<!-- /ADVANCED_AI_SETTINGS -->
+
+<!-- BUILTIN_ANSWER_MODELS -->
+## 最新交接：2026-11-13 内置Answer、模型选择与费用说明完成
+
+- 本段优先于下方“尚未迁移”历史：用户选择省钱/逐行渐入后已上线内置基础Answer。东京Cloud Run最终00014-dlq/100%，ANSWER_MODEL=stable，旧Gemini环境/预测权限移除；角色仅discoveryengine.servingConfigs.search/answer，Firestore/页图Secret权限保留。
+- 原Standard yibubang-medical-search保留两源检索、最多8教材+4题；新Enterprise yibubang-medical-answer共用原yibubang-medical-v1，无重新导入。新应用最小Answer实测必须SEARCH_ADD_ON_LLM，否则400；请求禁用rephrase/relatedQuestions，无托管session。基础Answer完整返回后App140ms逻辑行推进、Markdown块/列表项渐入，非真实token流；UTF-8引用字节偏移按本轮URI映射。
+- /v1/models读取官方Answer模型表（Google v1无内置枚举API），缓存1小时/刷新节流60秒/失败回退最多24小时。本轮修过期在节流内被复活的问题并增加回归。App右上调节图标→回答模型→刷新/选择，SharedPreferences与AiTurn payload持久化，无schema变更。stable当前3.5 Flash，另3.5固定版、3 Flash preview、3.1 Pro preview；四项真实200/SUCCEEDED、慢阻肺气流定义PASS。
+- 生产App client/controller→Cloud Run→Answer→本地SQLite实际回执及Widget引用点击PASS，12资料含8教材。当前后端27/相关Flutter18/analyze0；接续阶段全量344及Android/macOS Debug构建记录保留。最终部署后仅health/目录/匿名拒绝/不扣额度复核，不重复付费生成。忽略回执ai_backend/.local/builtin-final-online.json、builtin-run-state.json、builtin-model-validation.json、builtin-service-answer-live.json、builtin-app-live.json、screenshots/builtin-ai-live.png；最终logs为builtin-final-*。
+- ai_backend/COSTS_AND_BUILTIN_MODELS.md列SKU/高级功能/三项免费及估算。两Standard+一Enterprise列表价USD7/千App问题，若附加Advanced保守USD11，不能当一API USD4。本赠金CSV只有特定范围，实际适用SKU/免费分配/Advanced计量未证实，不承诺免扣卡。Firestore实际freeTier=true；R2教材+小图7.714GB，免费账号共享；Worker实际订阅未查明。
+- 未完成：上述账单与赠金映射、原生缩略图系统确认、Windows/Linux/iOS/Android真机/大陆网络、Release。当前macOS运行进程仍旧版，最新Debug已构建，重启后可体验模型选择；Widget截图不是原生新页面验收。未commit/push/Release，main@02ea2ba及已有全部教材/Markdown现场保留。
+- 下一步第一项：核对Git、本段、费用说明和线上health；若有结算报表，分别核Search Standard/Enterprise/Advanced SKU及本赠金ID抵扣。产品反馈先重启最新Debug核验模型选择/缩略图，不重复导入171463文本或上传PDF/20669页图，不凭余额不变推定免费。
+<!-- /BUILTIN_ANSWER_MODELS -->
+
+<!-- SEARCH_BILLING_REVIEW -->
+## 最新交接：2026-11-13赠金与API入口核查（尚未迁移）
+
+- 用户质疑独立Gemini费用是否抵扣专项赠金；实际仍Cloud Run latest00011-mm9/100%，两次Discovery Engine Search后独立Vertex gemini-3.8-flash/global生成，ADC服务账号。只读GET原Engine仍SEARCH_TIER_STANDARD，原Store与数据完整保留。
+- 已核实官网Search定价、Answer模型和v1 schema：Enterprise含Core生成，Advanced另计；stable当前gemini-3.5-flash/answer_gen/v1；searchSpec.searchResultList允许自选检索片段；streamAnswer不可禁用一次rephrase。迁移有功能路径但尚未测试，不能声称已上线或只收一次USD4/1000。
+- 找到Google论坛用户转述Support的两组官方SKU清单，均已标废弃且范围不同，一组含部分Vertex模型。赠金CSV没有实际SKU映射，不能据旧论坛或余额不变承诺所有生成抵扣；已异步请求本赠金条款/适用SKU。独立模型未获抵扣部分可能由绑卡结算，没有实际扣卡记录。
+- 本轮只追加ai_backend/SEARCH_IMPROVEMENTS.md复核段与两份交接/状态文档，官网与schema/GET回执在忽略的.local；无产品改动、重新导入、部署、commit/push或付费生成调用。此前教材/Markdown全部未提交工作保留，原生缩略图显示仍待系统签名确认。
+- 下一步第一项：读取本赠金适用SKU/条款（如用户回复）与本段，区分确定的Search内置计价和仍未证实的账户赠金抵扣。用户明确要求切换后，复用原Store评估Enterprise+内置Answer/streamAnswer，保留两源教材优先、引用和本地session；避免默默回退收费Vertex模型，验证实际多API计量及Advanced功能配置后部署。不凭本轮质疑擅自改变计费SKU。
+<!-- /SEARCH_BILLING_REVIEW -->
+
+<!-- SEARCH_IMPROVEMENTS -->
+## 2026-11-13 AI检索与Markdown修订（功能/部署/数据完成，原生小图显示待系统确认后验收）
+
+- 原缺陷确认：Markdown仅子集且只识单编号；混合pageSize6遮蔽教材；前两问无条件拼接污染新话题。
+- 修订CommonMark/GFM AST原生渲染引用块/列表/代码/表格和LaTeX内联/独立公式，组合引用拆分逐号点击；非法/未闭合公式回退文字、代码不转换、外部链接不能任意导航。
+- 后端两次并行Search候选教材12/题8，去重后最多8教材+4题、教材在先重编号，总证据28000字符；只明确省略追问用上一问，独立新话题不污染。两种慢阻肺真实搜索12证据相同/气流定义PASS。latest00011-mm9/100%。
+- textbooks.melonhu.com绑定独立页图Worker，鉴权在缓存前、稳定版本key边缘缓存。20669缩略图本地完成/上传完，377590170 bytes、全部本地/R2成功SHA一致；真实签名小图21.5KB/2.07s→HIT0.46s，不扣搜索次数。App右侧缩略图和关键词底色高亮实现。
+- Flutter340全量基线/最终15相关、后端21、WorkerPASS，最新analyze0；Android/macOS Debug通过；App组件生产检索PASS，原生真实缩略图显示核验待macOS“身份不明且版本不同”签名确认（已定位系统弹窗，测试尚未启动，不能称PASS）。
+- 线上模型gemini-3.8-flash/global/LOW；官方当前USD0.75输入/3.75输出含推理每百万tokens，2027-01-01起1.50/7.50；真实10770输入/204输出/0推理约USD0.00884，单独token SKU。赠金CSV仅限定使用，无法证明适用独立Gemini；Search每月10000免费查询+账单延迟最可能解释未扣赠金，JPY账号已核对，无billing export。
+- 本目标未commit/push/Release；原生测试被系统新签名确认挡住未进入断言，已停止测试进程/恢复普通main Debug并open；下一步用户点“仍要打开”后实际检查AI与教材预览，或重跑integration_test/textbook_reader_test.dart。生成费用赠金条款仍待明确，不需再次处理/上传20669图。。手册ai_backend/SEARCH_IMPROVEMENTS.md；此前教材实施改动完整保留。
+<!-- /SEARCH_IMPROVEMENTS -->
+
+<!-- TEXTBOOK_IMPLEMENTATION -->
+## 2026-11-13 53本教材实施（处理、Google、R2、App验收完成）
+
+- 用户已明确授权按方案处理/上传/开发，覆盖上一轮先讨论约束。main@02ea2ba开始干净；本目标没有commit/push/Release发布。
+- 原PDF留本地；53本20669页复用OCR，2991页双层去重（原始序列0交错），16558书页标签候选。36页无索引文字、239稀疏候选、375页符号/公式待人工复核，版次/ISBN未人工确认。
+- 外置盘可迁移主库/原始OCR/清洗JSONL/坐标与20669张WebP完整保存；R2私有桶yibubang-textbooks全量上传完成，7336669280 bytes=6.833GiB。53原PDF与20669本地页图重新计算SHA，全部R2成功SHA回执匹配，页图manifest无漏页/重复；verify_textbook_release.py PASS。
+- Google yibubang-medical-v1/原Engine：21991教材块+原149472题块，删除0，171463导出hash全部有成功回执。407复核标记增量任务8079863690164527043全成功；在线GET/Search发现新字段仍缺失，随后仅PATCH structData补齐（1试点+406），407条逐项GET核验PASS，未重传正文。真实Search及Cloud Run教材检索返回needs_review=true PASS。
+- Cloud Run最新00008-hj6/100%；独立Worker短时阅读签名/上传密钥分离，Google运行账号仅指定Secret accessor。全部上传进程已正常结束，无待续传任务；三个教材末页通过正式鉴权签名接口下载、SHA一致且不扣搜索次数。
+- App入口：AI搜索右上书本→教材检索/书名筛选/关键词预览→原页；题目/教材引用兼容旧本地会话，源版本+物理页定位。缩放/翻页/跳转/重试、160页稳定键缓存与离线阅读。AI/教材共用每日100搜索；图片独立1000/天、60/分钟。
+- 验证：337全量Flutter PASS（联网1项默认skip），相关22 PASS；最新客户端缓存后相关14、analyze0、管线18/后端18/Worker PASS。真实App→Cloud Run→Google检索、混合AI引用与图片安全测试PASS；macOS原生引用→放大→翻页101→跳转125→离线缓存PASS。最新Android/macOS正常main Debug构建成功，恢复产品入口；测试回执/截图仅保存在被忽略的.local/artifacts。
+- 本次最后操作：更新操作记录、功能矩阵与交接，Git范围/diff检查；启动最新macOS Debug App。下一会话第一步：先核对Git与scripts/knowledge_base/TEXTBOOK_EXECUTION.md，再按实机反馈处理；增加教材复用本地管线、原Store和增量成功账本，不重复导入原题或上传PDF。
+- 未验收：375页医学符号/公式人工校对、版次/ISBN确认、Windows/Linux/iOS/Android真机及目标地区网络、Release发布。Google专项credit实际SKU抵扣/账单仍未确认，不宣称这些已完成。
+<!-- /TEXTBOOK_IMPLEMENTATION -->
+
+
 <!-- TEXTBOOK_PLAN_REVIEW -->
 ## 最新交接：2026-11-12 三项commit与53本PDF方案（禁止直接开始处理）
 

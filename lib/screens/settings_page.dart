@@ -20,6 +20,7 @@ import '../widgets/common/info_card.dart';
 import '../widgets/common/styled_tile.dart';
 import '../widgets/theme_controller.dart';
 import '../widgets/bank_subscription_settings.dart';
+import '../widgets/ai_search_settings.dart';
 import 'about_page.dart';
 import 'bottom_nav_settings_page.dart';
 import 'cloud_sync_page.dart';
@@ -738,6 +739,9 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             ],
           ),
+          const SizedBox(height: 14),
+          const _SectionTitle(title: 'AI 搜索'),
+          const AiSearchSettingsGroup(),
           const SizedBox(height: 14),
           const _SectionTitle(title: '医考帮'),
           InfoCard(

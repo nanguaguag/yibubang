@@ -48,12 +48,12 @@ def main():
                                json={'question': '限额探针，请勿实际生成', 'request_id': request_id or secrets.token_hex(16)})
         try:
             state = deepcopy(saved)
-            state.update({'day': {'stringValue': day}, 'used': {'integerValue': '100'}, 'lease_until': {'doubleValue': 0}})
+            state.update({'day': {'stringValue': day}, 'used': {'integerValue': '200'}, 'lease_until': {'doubleValue': 0}})
             update(state)
             quota = client.get(args.endpoint + '/v1/quota', headers=device_headers)
             assert quota.json()['remaining'] == 0
-            report['checks']['daily_100'] = try_search().status_code
-            assert report['checks']['daily_100'] == 429
+            report['checks']['daily_200'] = try_search().status_code
+            assert report['checks']['daily_200'] == 429
             state.update({'used': {'integerValue': saved.get('used', {}).get('integerValue', '0')},
                           'minute': {'integerValue': str(int(now // 60))}, 'minute_used': {'integerValue': '6'}})
             update(state)

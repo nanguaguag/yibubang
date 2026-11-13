@@ -203,7 +203,7 @@ def load_pages(db, source, path):
         text = clean(row["text"])
         if not text:
             blank.append(page)
-        payload = dumps({"page": page, "text": text})
+        payload = dumps({**row, "page": page, "text": text})
         db.execute("INSERT INTO pages VALUES(?,?,?)", (source["id"], page, payload))
         count += 1
     if count == 0 or len(blank) == count:
@@ -243,14 +243,22 @@ def google_document(chunk):
     m = chunk["metadata"]
     title = chunk["title"]
     content = '<html lang="zh"><head><meta charset="utf-8"><title>' + html.escape(title) + '</title></head><body><h1>' + html.escape(title) + '</h1><pre>' + html.escape(chunk["text"]) + '</pre></body></html>'
-    return {"id": chunk["id"], "structData": {
+    fields = {
         "title": title, "uri": chunk["uri"], "text": chunk["text"],
         "document_id": chunk["document_id"], "question_id": m.get("question_id", ""),
         "kind": m["kind"], "bank_ids": m.get("bank_ids", []),
         "subjects": m.get("subjects", []), "source_ids": m["source_ids"],
         "page_start": m.get("page_start", 0), "page_end": m.get("page_end", 0),
         "content_hash": chunk["content_hash"]
-    }, "content": {"mimeType": "text/html", "rawBytes": base64.b64encode(content.encode()).decode()}}
+    }
+    if m["kind"] == "textbook":
+        fields.update({k: m.get(k, "") for k in ("book_id", "book_title", "source_version", "edition", "isbn", "image_key", "printed_page")})
+        fields["printed_page"] = str(fields["printed_page"] or "")
+        fields.update({k: m.get(k, 0) for k in ("page_count", "page_width", "page_height")})
+        if "medical_symbols_or_formula_review" in m.get("quality", []):
+            fields["needs_review"] = True
+    return {"id": chunk["id"], "structData": fields,
+            "content": {"mimeType": "text/html", "rawBytes": base64.b64encode(content.encode()).decode()}}
 
 
 def google_schema():
@@ -266,6 +274,13 @@ def google_schema():
         props[k] = {"type": "array", "items": {"type": "string", "retrievable": True, "indexable": True}}
     for k in ("page_start", "page_end"):
         props[k] = {"type": "integer", "retrievable": True, "indexable": True}
+    for k in ("book_id", "book_title", "source_version", "edition", "isbn", "image_key", "printed_page"):
+        props[k] = {"type": "string", "retrievable": True}
+    props["book_id"]["indexable"] = True
+    props["book_title"]["searchable"] = True
+    for k in ("page_count", "page_width", "page_height"):
+        props[k] = {"type": "number", "retrievable": True}
+    props["needs_review"] = {"type": "boolean", "retrievable": True}
     return {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object", "properties": props}
 
 
@@ -441,7 +456,14 @@ def build(config_path):
                       "text": page["text"], "chunk_context": title + " " + source.get("edition", "") + f" PDF第{page['page']}页",
                       "metadata": {"kind": "textbook", "source_ids": [source["id"]], "edition": source.get("edition", ""),
                                    "page_start": page["page"], "page_end": page["page"],
-                                   "printed_page": page["page"] + int(source.get("printed_page_offset", 0))}})
+                                   "book_id": source.get("book_id", source["id"]),
+                                   "book_title": title, "source_version": source.get("source_version", ""),
+                                   "isbn": source.get("isbn", ""), "page_count": source.get("page_count", 0),
+                                   "image_key": page.get("image_key", ""),
+                                   "page_width": page.get("width", 0), "page_height": page.get("height", 0),
+                                   "printed_page": page.get("printed_page") if "printed_page" in page else
+                                       (page["page"] + int(source["printed_page_offset"]) if "printed_page_offset" in source else None),
+                                   "blocks": page.get("blocks", []), "quality": page.get("quality", [])}})
         full.close()
         delta.close()
         portable.close()
