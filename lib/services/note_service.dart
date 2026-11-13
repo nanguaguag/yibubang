@@ -343,7 +343,7 @@ class NoteService {
         expectedOwner: pullOwner,
       );
       if (await DurableSyncQueue.owner() != pullOwner) {
-        return getLocalNotes(question.id);
+        return await getLocalNotes(question.id);
       }
 
       if (resp['code'].toString() == '200' && resp['data'] is List) {

@@ -6,6 +6,8 @@
 
 | 问题 | 状态与验证 |
 | --- | --- |
+| Flutter3.50 CI分析warning | syncNotesForQuestion的try内getLocalNotes返回补await；独立CI同版SDK的dart analyze/CI命令exit0，0 errors/warnings；119弃用info仍保留，不扩大迁移 |
+| 新SDK设置测试残留Timer | 开启自动检查原会发无关网络，fixture设最近检查时间，定向6 PASS、3.50全量357 PASS/3 skip；产品定时/超时逻辑未因此关闭 |
 | 段落选择lastSelectionResult断言 | 已修复；WidgetSpan引用/行内公式内部Text隔离选择，精确修前/修后事件、三击、正文可选和引用点击PASS |
 | 固定12证据/题库挤教材 | 已部署00018；总数1–25、独立来源比例、显式结果列表；线上25条17教材/8题和SQLite/引用PASS |
 | 紧凑列表粗体/冒号分行、CREB星号 | AST连续行内合并及中文边界修订，用户原文/转义/代码/流式回归PASS |

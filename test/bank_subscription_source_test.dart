@@ -291,6 +291,13 @@ void main() {
     'subscription auto-update and custom interval can be changed in settings',
     (tester) async {
       addTearDown(BankSubscriptionService.instance.stop);
+      // This settings test starts after a recent update check. Otherwise enabling
+      // automatic checks launches unrelated networking and its timeout timer.
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(
+        'bank_subscription_last_check',
+        DateTime.now().millisecondsSinceEpoch,
+      );
       await tester.pumpWidget(
         const MaterialApp(home: Scaffold(body: BankSubscriptionSettings())),
       );

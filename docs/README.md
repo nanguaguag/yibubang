@@ -18,7 +18,7 @@
 
 ## 维护方式
 
-操作命令均从仓库根目录执行；移动文档不移动脚本、配置、数据或凭据。根README只提供入口；完整中文/英文说明放在project目录。开发规则的版本化副本见[AGENT_RULES](antigravity/AGENT_RULES.md)，本机原AGENTS.md仍供代理发现。
+操作命令均从仓库根目录执行；移动文档不移动脚本、配置、数据或凭据。[根README](../README.md)保留原品牌页、功能章节、架构和截图，并维护最新App介绍；[英文README](../README_EN.md)保留对应介绍。project目录提供简要使用/构建说明，AI/知识库和开发文档仍分类维护。开发规则的版本化副本见[AGENT_RULES](antigravity/AGENT_RULES.md)，本机原AGENTS.md仍供代理发现。
 
 本地历史工具 `docs/yikaobang/`、网站 `docs/Bugaoshan-Web/` 与 API 抓包 `docs/api-req-resp/` 保持现有位置和忽略规则，不属于本次版本化文档。原PDF、页图、SQLite、生成语料、.local回执、虚拟环境与构建安装包不加入Git。
 

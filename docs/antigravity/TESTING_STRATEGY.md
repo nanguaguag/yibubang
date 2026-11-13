@@ -2,12 +2,17 @@
 
 更新2026-11-13；[历史测试盘点](../archive/development-history/TESTING_STRATEGY.md)。当前357项Flutter通过、3联网默认skip、39后端通过、静态0，Android/macOS Debug构建通过；具体日志在本地.local，[AI记录](../ai-search/VALIDATION.md)含最新线上证据。
 
+SDK复核：此前本地为Flutter3.44.6/Dart3.12.2，静态0不等同于新CI SDK结果。2026-11-13四平台Actions自动使用3.50.0，在note_service.dart的try中直接返回Future触发1个warning；补await后使用独立干净工作树/Flutter3.50.0/Dart3.14.0实测dart analyze与CI同一flutter analyze --no-fatal-infos均exit0，0 errors/warnings、119个弃用info。CI允许info但保留warning阻断，未改规则或大规模迁移Material导入。
+
+同SDK全量最终357 PASS/3联网默认skip；设置交互fixture增加最近检查时间，避免自动更新的无关网络timeout Timer。定向6 PASS，旧SDK笔记/队列27 PASS。修改后两种分析命令再次通过；这是本机同版复核，远程四平台尚未重跑，历史Debug构建也不是本轮新SDK构建结果。
+
 ## 常规门禁
 
 从仓库根目录执行，先针对变更运行相关测试；新失败/风险才扩大或重复，不为文档移动重复付费生成或处理医学数据。
 
 ```sh
-flutter analyze --no-pub
+dart analyze
+flutter analyze --no-pub --no-fatal-infos
 flutter test --no-pub --reporter expanded
 ai_backend/.venv/bin/python -m unittest discover -s ai_backend -p 'test_*.py' -v
 ```

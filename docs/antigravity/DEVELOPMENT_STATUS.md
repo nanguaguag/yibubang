@@ -1,6 +1,16 @@
 # 当前开发状态
 
-更新：2026-11-13；main；本次提交的父基线ec0fdf6。用户已授权提交检索数量/选择修复以及文档整理；本次不push或发布Release。准确HEAD以`git log -1`为准。
+## 2026-11-13 README恢复与新版CI分析修复
+
+用户选择仅撤销814a20d对README的精简改写，保留1–25检索/选择修复与docs整理。当前父基线082f205（用户已合并/同步远端），不reset或改写共享历史；恢复ec0fdf6的品牌页/徽章/章节/截图并补最新App功能，英文同步恢复。
+
+四平台Actions在Analyze阶段因Flutter自动更新至3.50.0而失败，本地此前3.44.6静态0不能代替该SDK。修复note_service.syncNotesForQuestion中try内返回Future缺await；3.50.0/Dart3.14.0独立工作树实际dart analyze与CI的flutter analyze --no-fatal-infos均exit0、0 errors/warnings、119弃用info。新版全量首次暴露设置测试触发后台网络的Timer，fixture补最近检查时间，避免无关网络；定向6 PASS，旧SDK笔记/队列27 PASS。同版SDK最终全量357 PASS/3联网默认skip，修改后两种分析命令再次exit0。
+
+不升级现有本机SDK、不修改CI warning阻断规则、不迁移全项目Material导入；3.50源码/缓存/隔离工作树/日志仅在ai_backend/.local。没有云重新部署或数据上传，远程Actions尚未重新运行。
+
+恢复后62份文档/544个本地链接检查通过，git diff --check通过；用原analysis_options的同版dart analyze仍exit0/119 infos。主工作区未引入SDK自动迁移或依赖配置变化。
+
+更新：2026-11-13；main；本轮修正提交父基线082f205，上一轮814a20d父基线ec0fdf6。用户已授权恢复README并保留功能修复和docs整理；本次不push或发布Release。准确HEAD以`git log -1`为准。
 
 [当前进度](../CURRENT_STATUS.md)是完整状态入口，[交接](SESSION_HANDOFF.md)列下一步。此前各阶段记录已完整保留在[历史状态](../archive/development-history/DEVELOPMENT_STATUS.md)，其中“未提交/未实现/旧模型”等描述仅属于对应阶段。
 

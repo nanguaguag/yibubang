@@ -4,7 +4,8 @@
 
 ## 最新验证
 
-- Flutter全量357 PASS/3联网默认skip；最终选择/设置8 PASS；后端39 PASS，flutter analyze0；Android APK/macOS普通main Debug构建通过。
+- 2026-11-13 CI同版复核：Flutter3.50.0/Dart3.14.0全量357 PASS/3联网默认skip，dart analyze与CI的flutter analyze --no-fatal-infos均exit0，0 errors/warnings、119弃用info。四平台原Actions停在Analyze；补笔记try内返回await、设置fixture避免无关自动检查网络后本机通过，远程Actions尚未重跑。最终日志在.local/ci-3.50-*-final.log。
+- 前一阶段Flutter3.44.6：全量357 PASS/3联网默认skip；最终选择/设置8 PASS；后端39 PASS，flutter analyze0；Android APK/macOS普通main Debug构建通过。本轮未重复后端/付费生成或新SDK原生构建。
 - 生产App `AI_MODEL_LIVE_TEST=1 AI_RESULT_COUNT=25 AI_TEXTBOOK_COUNT=17 flutter test --no-pub test/ai_model_live_test.dart` 2 PASS：17教材+8题、内置gemini-3.5-flash/answer_gen/v1回答成功、SQLite保存、AiSearchPage引用回调打开教材。
 - 服务端SUCCEEDED/references10/streaming=true/quota_cost3；正文含第13项。25卡片是提供的证据，不能证明模型全部使用25；实际引用由内置生成决定。
 - /health default_result_count12/max25；0/26/bool/string/教材超total五组400，专用设备额度不变。校验在扣额前完成。
