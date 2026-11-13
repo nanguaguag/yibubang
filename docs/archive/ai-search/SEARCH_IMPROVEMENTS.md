@@ -1,3 +1,5 @@
+> 历史阶段记录：2026-11-13归档，当前状态见[项目进度](../../CURRENT_STATUS.md)。旧部署/外接模型/未提交描述仅属当时。
+
 # AI检索、Markdown与教材预览修订（2026-11-13）
 
 已完成实现、独立Cloud Run部署和验证。最新修订yibubang-ai-search-00011-mm9/100%；macOS与Android Debug构建通过，未commit/push/发布Release。

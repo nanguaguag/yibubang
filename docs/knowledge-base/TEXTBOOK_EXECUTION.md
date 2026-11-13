@@ -2,6 +2,8 @@
 
 当前状态：53本教材的本地处理、Google文本导入、全部R2页图上传和App功能开发/验收完成。原PDF未上传；可从最新调试版的「AI搜索 → 右上书本 → 教材检索」体验。
 
+更新2026-11-13：页图/小图合计41338对象、7714259450 bytes；AI生成已迁移内置Answer/streamAnswer，Cloud Run00018-q7c/100%。设置可选1–25证据和来源比例，默认12/8:4；每日200额度/基础1–改写2–流式3。近期Android缩放和桌面快捷键通过模拟回归，其他真机/目标地区网络/医学人工校对仍未验收。[最新状态](../CURRENT_STATUS.md) · [费用](../ai-search/COSTS_AND_BUILTIN_MODELS.md)。下方按阶段记录保留各次实施证据。
+
 ## 数据与资源
 
 - 本地原PDF：`/Volumes/My PSSD/书籍/自用53本课本（可复制）`，原文件保持不变。
@@ -74,4 +76,4 @@ R2全量20669页/7336669280 bytes上传完成，进程正常结束；《医学�
 
 ## 2026-11-13 检索与页图速度修订
 
-页图正式地址改为https://textbooks.melonhu.com，仍为同一私有R2和签名Worker；鉴权后才允许命中边缘缓存。全部20669缩略图已从现有WebP本地生成/上传，377590170bytes，本地SHA与R2成功回执完整匹配；查询卡片使用独立小图/300图本地缓存，不下载整张页图作预览。增加关键词底色高亮。具体测试、独立教材优先检索、Markdown和模型费用说明见[SEARCH_IMPROVEMENTS.md](../../ai_backend/SEARCH_IMPROVEMENTS.md)。
+页图正式地址改为https://textbooks.melonhu.com，仍为同一私有R2和签名Worker；鉴权后才允许命中边缘缓存。全部20669缩略图已从现有WebP本地生成/上传，377590170bytes，本地SHA与R2成功回执完整匹配；查询卡片使用独立小图/300图本地缓存，不下载整张页图作预览。增加关键词底色高亮。具体测试、独立教材优先检索、Markdown和模型费用说明见[SEARCH_IMPROVEMENTS.md](../ai-search/SEARCH_IMPROVEMENTS.md)。

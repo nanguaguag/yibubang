@@ -1,4 +1,15 @@
+> 历史阶段记录：2026-11-13归档，当前状态见[项目进度](../../CURRENT_STATUS.md)。旧部署/外接模型/未提交描述仅属当时。
+
 # AI 搜索验证记录（2026-11-12）
+
+## 2026-11-13 检索条目1–25与段落选择断言（最新状态）
+
+- Cloud Run00018-q7c/100%，health默认12/最大25；严格result_count1–25、textbook_count0–total。线上0/26/bool/string/教材超总数返回400，专用设备额度不变。
+- Flutter全量357 PASS/3 opt-in联网默认skip；最终选择/设置8 PASS，后端最终39 PASS，analyze0。旧设置默认12/8:4、增总数保留来源比例、保存/取消/重开、client实时payload、25条预算/单源/完整编号与Answer显式列表25条均有回归。
+- 生产App `AI_MODEL_LIVE_TEST=1 AI_RESULT_COUNT=25 AI_TEXTBOOK_COUNT=17 flutter test --no-pub test/ai_model_live_test.dart` 2 PASS；真实17教材+8题，内置gemini-3.5-flash/answer_gen/v1生成成功、SQLite保存、引用回调打开教材。Google服务端SUCCEEDED/references10/streaming=true/quota_cost3；正文包含第13项，说明不是只用原来前12。仍不能以25参考卡片宣称模型读完全部25条；实际引用由内置回答决定。
+- 精确修前SelectParagraphSelectionEvent复现同一lastSelectionResult断言；引用/行内公式内部SelectionContainer.disabled后同用例、鼠标三击、正文选择、引用点击PASS。未关闭整个SelectionArea、未修改SDK或依赖。
+- 320/1000px设置与条目弹窗真实字体图标截图人工查看；Android APK/macOS普通main Debug构建通过。本轮产品UI为Widget渲染与模拟鼠标测试，未冒充Android/其他平台真机或大陆网络测试。
+- 回执ai_backend/.local/result-count-app-live.json、result-count-online-validation.json、result-count-online-answer.json；日志result-count-*、result-selection-*、selection-*及截图均忽略。无重导数据/页图/schema变更/commit/push/Release。[限制及费用边界](../../ai-search/RETRIEVAL_LIMITS.md)。
 
 ## 2026-11-13 默认高级/设置与200额度（最新状态）
 
@@ -15,7 +26,7 @@
 - 四个官方内置模型真实200/SUCCEEDED；生产App客户端/控制器→Cloud Run→Answer→本地SQLite与引用Widget实际PASS，12资料含8教材。UTF-8引用偏移映射按本轮来源URI；模型选择持久化/重开参数与逐行完成测试通过。
 - 最终后端27 PASS、相关Flutter18 PASS、analyze0。模型缓存过期且失败刷新节流内的下一请求仍拒绝回归通过。接续阶段全量344与Android/macOS Debug记录保留；未重复付费四模型生成。
 - 最终部署后health、官方目录4项、匿名401、模型查询前后搜索quota不变再次PASS。回执及最终测试/部署日志保存在忽略的.local/builtin-*，真实字体截图screenshots/builtin-ai-live.png为Widget渲染，非原生/手机实测。
-- 原Store无重导数据，原Standard检索应用保持；新Enterprise Answer应用实测需LLM开关。请求禁用改写/推荐、无托管session，不等于已核实实际Advanced计量/专项赠金SKU抵扣。[费用说明](COSTS_AND_BUILTIN_MODELS.md)。原生缩略图系统确认、四平台真机/国内网络/Release仍未验收。下方334/原独立Gemini/仅题目等描述为2026-11-12历史。
+- 原Store无重导数据，原Standard检索应用保持；新Enterprise Answer应用实测需LLM开关。请求禁用改写/推荐、无托管session，不等于已核实实际Advanced计量/专项赠金SKU抵扣。[费用说明](../../ai-search/COSTS_AND_BUILTIN_MODELS.md)。原生缩略图系统确认、四平台真机/国内网络/Release仍未验收。下方334/原独立Gemini/仅题目等描述为2026-11-12历史。
 
 项目 `yibubang-search`，独立服务东京 `yibubang-ai-search`，最终修订 `yibubang-ai-search-00003-cl2`，100% 流量。App 默认 URL 已替换为实际线上地址。
 

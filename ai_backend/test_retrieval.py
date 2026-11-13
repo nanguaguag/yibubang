@@ -4,11 +4,42 @@ import unittest
 import httpx
 
 from policy import retrieval_query
-from retrieval import retrieve, textbook_count
+from retrieval import retrieve, textbook_count, result_count
 from policy import PolicyError
 
 
 class RetrievalTests(unittest.IsolatedAsyncioTestCase):
+    def test_total_limit_and_source_split_are_validated_before_search(self):
+        self.assertEqual(result_count({}), 12)
+        for total in (1, 12, 25):
+            self.assertEqual(result_count({'result_count': total}), total)
+            self.assertEqual(textbook_count({'result_count': total, 'textbook_count': total}), total)
+        for total in (0, -1, 26, True, '25', 25.0, None):
+            with self.assertRaises(PolicyError):
+                result_count({'result_count': total})
+        with self.assertRaises(PolicyError):
+            textbook_count({'result_count': 10, 'textbook_count': 11})
+
+    async def test_twenty_five_results_reach_both_sources_with_complete_numbering(self):
+        for books in (0, 17, 25):
+            requests = []
+            def respond(request):
+                body = json.loads(request.content); requests.append(body)
+                kind = 'textbook' if 'textbook' in body['filter'] else 'question'
+                return httpx.Response(200, json={'results': [
+                    {'document': {'structData': {'kind': kind, 'question_id': str(i),
+                     'book_id': 'b', 'source_version': 'v', 'page_start': i,
+                     'text': ('气流受限慢阻肺'*1000)}}} for i in range(body['pageSize'])]})
+            async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+                items, failed = await retrieve(client, 'https://search.example', {}, '慢阻肺', books, 25)
+            self.assertEqual(len(items), 25)
+            self.assertEqual([i['kind'] for i in items], ['textbook']*books + ['question']*(25-books))
+            self.assertEqual([i['number'] for i in items], list(range(1,26)))
+            self.assertLessEqual(sum(len(i['text']) for i in items), 60000)
+            self.assertTrue(all(len(i['text']) > 1000 for i in items))
+            self.assertEqual(len(requests), 1 if books in (0,25) else 2)
+            self.assertEqual(failed, [])
+
     def test_ratio_is_optional_and_strictly_bounded(self):
         self.assertEqual(textbook_count({}), 8)
         for n in (0, 6, 12):

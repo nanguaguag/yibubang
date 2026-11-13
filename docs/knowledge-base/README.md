@@ -1,6 +1,8 @@
 # 医不帮可迁移医学知识库
 
-这个目录包含独立的本地构建、Google 导入、检索验证及向量迁移工具；不修改 Flutter 应用或原始题库。默认 Project ID 为 `yibubang-search`。
+工具位于 `scripts/knowledge_base/`，包含独立的本地构建、Google 导入、检索验证及向量迁移工具；不修改原始题库。默认 Project ID 为 `yibubang-search`，以下命令均从仓库根目录执行。
+
+2026-11-13当前进度：原149472题块+21991教材块，总171463块已入原Store；53本/20669页处理及私有R2页图/小图完成。App内置Answer/streamAnswer经独立Cloud Run使用同一Store。[教材实施](TEXTBOOK_EXECUTION.md) · [当前状态](../CURRENT_STATUS.md) · [AI手册](../ai-search/README.md)。以下Standard设置用于基础检索资源，App生成另复用Enterprise Answer应用；无需重建Store或重新导入。
 
 ## 在哪个控制台查看已导入的数据
 
@@ -10,7 +12,7 @@
 
 | Google产品/页面 | 资源类型 | API | 本次状态 |
 | --- | --- | --- | --- |
-| Vertex AI Search / Agent Search，`gen-app-builder` | Data Store和Search Engine | `discoveryengine.googleapis.com` | 已建库、导入149472块并查询验证 |
+| Vertex AI Search / Agent Search，`gen-app-builder` | Data Store和Search Engine | `discoveryengine.googleapis.com` | 已建库，171463题目/教材块并查询验证 |
 | RAG Engine，`agent-platform/rag/corpus` | RAG Corpus | `aiplatform.googleapis.com` | 本次未创建Corpus，此页面为空不代表Search导入失败 |
 | Agent Retrieval（原Vector Search 2.0），`agent-platform/agent-retrieval/collections` | Collection / Data Objects | `vectorsearch.googleapis.com` | 本次未创建Collection，也未启用此API |
 
@@ -67,7 +69,7 @@ artifacts/current/
 
 本地ID为 `question:<原始ID>`，Google ID为其稳定散列加块序号。即使内容修改，ID仍稳定。Google文件把已经清洗的HTML以 `content.rawBytes` 的base64形式装入Document JSONL，因此不需要上传十几万个单独HTML或SQLite文件。Google `structData` 保留可过滤的学科、来源、题目ID，以及可检索/可返回的正文。
 
-构建产生的完整缓存、JSONL和前一快照可能占数GiB，本地缓存大小不是Google计费索引大小。产物在本目录的 `.gitignore` 中排除；脚本和配置正常保留。不要提交医学原始数据或凭据。构建失败保留上次成功快照；构建锁仅在确认进程已退出后才可手动删除。
+构建产生的完整缓存、JSONL和前一快照可能占数GiB，本地缓存大小不是Google计费索引大小。产物由 `scripts/knowledge_base/.gitignore` 排除；脚本和配置正常保留。不要提交医学原始数据或凭据。构建失败保留上次成功快照；构建锁仅在确认进程已退出后才可手动删除。
 
 ## 二、Google Cloud 控制台要设置什么
 

@@ -29,6 +29,8 @@ void main() {
       final textbookCount = int.tryParse(
         Platform.environment['AI_TEXTBOOK_COUNT'] ?? '',
       );
+      final resultCount =
+          int.tryParse(Platform.environment['AI_RESULT_COUNT'] ?? '') ?? 12;
       setUpAll(() async {
         previous = HttpOverrides.current;
         HttpOverrides.global = null;
@@ -44,6 +46,7 @@ void main() {
           'ai_answer_model': 'stable',
           if (textbookCount != null)
             AiSearchOptions.textbookCountKey: textbookCount,
+          AiSearchOptions.resultCountKey: resultCount,
         });
         sqfliteFfiInit();
         databaseFactory = databaseFactoryFfi;
@@ -90,7 +93,7 @@ void main() {
             );
             expect(
               turn.citations.where((c) => !c.isTextbook).length,
-              12 - textbookCount,
+              resultCount - textbookCount,
             );
           }
           expect(

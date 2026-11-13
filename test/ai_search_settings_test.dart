@@ -57,6 +57,36 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   sqfliteFfiInit();
   databaseFactory = databaseFactoryFfi;
+  test(
+    'result count changes preserve source ratio and legacy settings',
+    () async {
+      SharedPreferences.setMockInitialValues({
+        AiSearchOptions.textbookCountKey: 6,
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final legacy = AiSearchOptions.fromPreferences(prefs);
+      expect(legacy.resultCount, 12);
+      expect(legacy.ratioLabel, '6 : 6');
+      final expanded = const AiSearchOptions().copyWith(resultCount: 25);
+      expect(expanded.ratioLabel, '17 : 8');
+      expect(expanded.quotaCost, 3);
+      expect(
+        const AiSearchOptions(
+          textbookCount: 0,
+        ).copyWith(resultCount: 25).textbookCount,
+        0,
+      );
+      expect(
+        const AiSearchOptions(
+          textbookCount: 12,
+        ).copyWith(resultCount: 25).textbookCount,
+        25,
+      );
+      await expanded.save(prefs);
+      expect(AiSearchOptions.fromPreferences(prefs).resultCount, 25);
+      expect(AiSearchOptions.fromPreferences(prefs).ratioLabel, '17 : 8');
+    },
+  );
   setUpAll(() async {
     if (Platform.environment['AI_FEEDBACK_SCREENSHOTS'] != '1') return;
     final icons = FontLoader('MaterialIcons')
@@ -147,7 +177,7 @@ void main() {
             of: find.byType(AiSearchSettingsGroup),
             matching: find.byType(IconTile),
           ),
-          findsNWidgets(5),
+          findsNWidgets(6),
         );
         expect(find.textContaining('1+1+1=3'), findsNothing);
         Future<void> capture(String name) async {
@@ -202,6 +232,28 @@ void main() {
         await tester.tap(find.text('问题改写'));
         await tester.pumpAndSettle();
         expect(find.text('6 : 6'), findsOneWidget);
+        await tester.tap(find.text('检索条目数'));
+        await tester.pumpAndSettle();
+        tester.widget<Slider>(find.byType(Slider)).onChanged!(25);
+        await tester.pumpAndSettle();
+        expect(find.text('最多 25 条'), findsOneWidget);
+        await capture('result-count');
+        await tester.tap(find.text('取消'));
+        await tester.pumpAndSettle();
+        expect(find.text('12 条'), findsOneWidget);
+        await tester.tap(find.text('检索条目数'));
+        await tester.pumpAndSettle();
+        tester.widget<Slider>(find.byType(Slider)).onChanged!(25);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('保存'));
+        await tester.pumpAndSettle();
+        expect(find.text('25 条'), findsOneWidget);
+        expect(find.text('13 : 12'), findsOneWidget);
+        await tester.tap(find.text('教材与题目比例'));
+        await tester.pumpAndSettle();
+        expect(tester.widget<Slider>(find.byType(Slider)).max, 25);
+        await tester.tap(find.text('取消'));
+        await tester.pumpAndSettle();
         await tester.tap(find.text('使用说明'));
         await tester.pumpAndSettle();
         await capture('help');
@@ -213,7 +265,8 @@ void main() {
           const MaterialApp(home: Scaffold(body: AiSearchSettingsGroup())),
         );
         await tester.pumpAndSettle();
-        expect(find.text('6 : 6'), findsOneWidget);
+        expect(find.text('13 : 12'), findsOneWidget);
+        expect(find.text('25 条'), findsOneWidget);
         await tester.pumpWidget(const SizedBox.shrink());
       },
     );
@@ -335,11 +388,13 @@ void main() {
       expect(bodies.last['rephrase'], true);
       expect(bodies.last['streaming'], true);
       expect(bodies.last['textbook_count'], 8);
+      expect(bodies.last['result_count'], 12);
       final prefs = await SharedPreferences.getInstance();
       await const AiSearchOptions(
         rephrase: false,
         streaming: false,
         textbookCount: 6,
+        resultCount: 25,
       ).save(prefs);
       await prefs.setString(
         'ai_answer_model',
@@ -349,6 +404,7 @@ void main() {
       expect(bodies.last['rephrase'], false);
       expect(bodies.last['streaming'], false);
       expect(bodies.last['textbook_count'], 6);
+      expect(bodies.last['result_count'], 25);
       expect(bodies.last['model'], 'gemini-3.5-flash/answer_gen/v1');
       client.dispose();
     },

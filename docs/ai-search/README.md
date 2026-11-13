@@ -2,6 +2,8 @@
 
 已接入现有医学 Search Data Store，独立 Cloud Run 服务已上线。重新构建 App 后，底栏/桌面侧栏出现「AI 搜索」，默认位于「每日计划」和「统计」之间；可在原导航设置中重排或隐藏。
 
+更新2026-11-13：Cloud Run00018-q7c/100%，每日200额度、默认改写/流式、检索1–25条/默认12和来源比例可调。[当前状态](../CURRENT_STATUS.md) · [交接](../antigravity/SESSION_HANDOFF.md)。本手册命令均从仓库根目录执行；服务代码仍在ai_backend/。
+
 ## 使用
 
 - 输入医学问题，页面依次显示检索、整理资料和回答。默认开启问题改写与streamAnswer，收到Google文字片段后立即逐字平滑显示；Google最终全文/引用只作校正，不重复追加。关闭流式时使用基础Answer全文返回后的逐行渐入。星芒呼吸动画、等待骨架、Markdown块/列表项淡入；支持深色模式和小屏/大字体，比较表格可横向滑动。
@@ -20,10 +22,10 @@
 | 项目 | `yibubang-search` / `520065588983` |
 | Cloud Run | [yibubang-ai-search，东京](https://console.cloud.google.com/run/detail/asia-northeast1/yibubang-ai-search/revisions?project=yibubang-search) |
 | App API | `https://yibubang-ai-search-2eg4oq4jcq-an.a.run.app` |
-| Search | 既有 `global/yibubang-medical-search`，Standard；教材/题库各检索一次，最多8教材+4题；原Data Store `yibubang-medical-v1`，171463块 |
+| Search | 既有 `global/yibubang-medical-search`，Standard；教材/题库独立检索，默认8教材+4题，可选总数1–25和来源比例；原Data Store `yibubang-medical-v1`，171463块 |
 | 内置Answer | `global/yibubang-medical-answer`，Enterprise，共用原Store；仅此应用开启API要求的LLM生成开关，默认streamAnswer/1步改写，无需再导入知识库 |
 | 限额数据库 | [Firestore：yibubang-ai](https://console.cloud.google.com/firestore/databases?project=yibubang-search)，Native/Standard，东京 |
-| 回答模型 | Search内置 `stable`（当前官方指向gemini-3.5-flash/answer_gen/v1），可选择其他官方内置版本；只调Discovery Engine :answer，无独立Vertex Token调用 |
+| 回答模型 | Search内置 `stable`（当前官方快照指向gemini-3.5-flash/answer_gen/v1），可选择其他官方内置版本；只调Discovery Engine :answer/:streamAnswer，无独立Vertex Token调用 |
 | 容器 | CPU 1 / 512 MiB；min 0 / max 2；concurrency 16；Cloud Run 请求上限 180 秒，检索+生成总上限 165 秒 |
 
 运行账号 `yibubang-ai-runtime@yibubang-search.iam.gserviceaccount.com` 的自定义推理角色只包含 `discoveryengine.servingConfigs.search` 和 `discoveryengine.servingConfigs.answer`；移除旧Vertex预测权限。`roles/datastore.user` 通过 IAM condition 限定 `projects/yibubang-search/databases/yibubang-ai`。Google 凭据来自运行账号 ADC，不写入 App。Cloud Run 对外可访问，搜索/模型接口另验安装凭据；匿名请求返回 401。
@@ -116,15 +118,19 @@ ai_backend/.venv/bin/python ai_backend/smoke_limits.py --gcloud /path/to/gcloud
 
 ## 后续知识库迁移
 
-当前服务读取原有 Search Engine，新增题库仍按 [知识库手册](../scripts/knowledge_base/README.md) 本地 build/validate→增量 sync，App 无需重建本地会话。额度结束迁到自建向量库时，用原有标准 JSONL、稳定 chunk ID 和全局 question ID 替换服务端检索适配，继续保留 SSE 协议、引用字段与 App 会话表，不必重新清洗源数据。
+当前服务读取原有 Search Engine，新增题库仍按 [知识库手册](../knowledge-base/README.md) 本地 build/validate→增量 sync，App 无需重建本地会话。额度结束迁到自建向量库时，用原有标准 JSONL、稳定 chunk ID 和全局 question ID 替换服务端检索适配，继续保留 SSE 协议、引用字段与 App 会话表，不必重新清洗源数据。
 
 53本教材已本地处理并导入清洗文本；页图和缩略图在私有R2，经textbooks.melonhu.com短时签名访问。App支持教材引用、逐页阅读/缩放/跳页/离线缓存；原PDF仍在本地。新增教材按既有本地增量管线，不把PDF引用当原题ID。
 
-[验证记录](VALIDATION.md) · [页面源码](../lib/screens/ai_search_page.dart) · [客户端](../lib/services/ai_search_client.dart) · [服务端](app.py)
+[验证记录](VALIDATION.md) · [页面源码](../../lib/screens/ai_search_page.dart) · [客户端](../../lib/services/ai_search_client.dart) · [服务端](../../ai_backend/app.py)
 
 
-### 可调整检索比例（2026-11-13）
+### 可调整检索条目与比例（2026-11-13）
 
-设置 → AI 搜索 → 教材与题目比例，选择教材 0–12 条；题目上限为 12 减去教材条数。默认 8:4，比例是检索证据条数的上限，不保证每次足量命中。`/v1/search` 可选 `textbook_count`（严格整数 0–12），省略仍为 8；校验在扣额度前完成。只有一种来源时跳过另一来源的 Search 请求，不自动拿另一来源填满不足结果；教材在前统一编号、最多 28000 字文本。纯教材检索不受此设置影响，原每日200和基础/改写/流式1/2/3使用额度不变。
+设置 → AI 搜索 → 检索条目数，可选总数 1–25，默认 12。调整总数按当前比例四舍五入分配教材/题目（默认8:4改为25条时为17:8）。再进入「教材与题目比例」可选择教材 0–总条数；题目上限为总数减去教材条数。条数指提供给内置回答的检索片段，不保证每次足量命中，也不代表读取整本书或全部题库。
+
+`/v1/search` 可选 `result_count`（严格整数1–25，省略12）和 `textbook_count`（严格整数0–总数，省略约2/3教材）；校验在扣额度前完成。旧客户端仍默认8:4。只有一种来源时跳过另一来源的 Search 请求，不自动拿另一来源填满不足结果；教材在前统一编号。总数≤12沿用28000字符预算；更大总数按条数增长至最多60000字符，并为后续题目保留预算。纯教材检索不受此设置影响，每日200和基础/改写/流式1/2/3使用额度不变。
 
 客户端每轮重读本机设置，保留内置 Answer 模型与本地会话。此次只更新应用/独立 Cloud Run，不导入数据或上传页图。
+
+Google默认/最大条数、当前两源检索与显式证据列表的区别、费用边界见[检索数量说明](RETRIEVAL_LIMITS.md)。

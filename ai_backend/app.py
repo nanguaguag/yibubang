@@ -19,7 +19,7 @@ from policy import (PolicyError, authenticate, day_key, generation_body,
                     DAILY_LIMIT, generation_options, quota_info, reserve_device, retrieval_query, secret_hash,
                     validate_identity, validate_question)
 from textbook_support import catalog, evidence as make_evidence, resolve_page, image_quota, signed_page, search_snippet
-from retrieval import retrieve, textbook_count
+from retrieval import retrieve, textbook_count, result_count
 from answer_models import AnswerModelCatalog
 from builtin_answer import answer_body, answer_packets, cited_answer
 
@@ -157,6 +157,7 @@ async def health():
             "provider": "search_answer", "generation_mode": "configurable_answer",
             "default_rephrase": True, "default_streaming": True,
             "retrieval_ratio_enabled": True, "default_textbook_count": 8,
+            "default_result_count": 12, "max_result_count": 25,
             "daily_limit": DAILY_LIMIT, "protocol": 1}
 
 
@@ -268,6 +269,7 @@ async def search(request: Request):
     question, request_id, history = validate_question(body)
     rephrase, streaming, cost = generation_options(body)
     textbook_limit = textbook_count(body)
+    total_limit = result_count(body)
     await authenticated_device(request)
     model = await model_catalog.validate(http, body.get("model", MODEL))
     quota = await asyncio.to_thread(firestore.transactional(reserve_transaction), db.transaction(), device_id, secret,
@@ -279,11 +281,11 @@ async def search(request: Request):
             yield frame("model", {"id": model, "provider": "search_answer",
                 "mode": "stream_answer" if streaming else "answer", "rephrase": rephrase,
                 "streaming": streaming, "quota_cost": cost})
-            source_label = "题库" if textbook_limit == 0 else "教材" if textbook_limit == 12 else "题库与教材"
+            source_label = "题库" if textbook_limit == 0 else "教材" if textbook_limit == total_limit else "题库与教材"
             yield frame("phase", {"message": "正在检索" + source_label})
             url = f"https://discoveryengine.googleapis.com/v1/projects/{PROJECT}/locations/global/collections/default_collection/engines/{ENGINE}/servingConfigs/default_search:search"
             evidence, failed_sources = await retrieve(http, url, await google_headers(),
-                                                     retrieval_query(question, history), textbook_limit)
+                                                     retrieval_query(question, history), textbook_limit, total_limit)
             if failed_sources:
                 missing = "教材" if "textbook" in failed_sources else "题库"
                 yield frame("phase", {"message": missing+"检索暂时不可用，正依据其余资料整理回答"})
@@ -335,6 +337,7 @@ async def search(request: Request):
                 "provider": "search_answer", "state": answer.get("state"),
                 "rephrase_disabled": not rephrase, "streaming": streaming, "quota_cost": cost,
                 "textbook_count": textbook_limit,
+                "result_count": total_limit,
                 "references": len(answer.get("references", []))}), flush=True)
             if len(text) > 12000:
                 yield frame("error", {"message": "回答过长，请缩小问题范围后重试"})

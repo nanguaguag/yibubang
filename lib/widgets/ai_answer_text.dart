@@ -243,32 +243,36 @@ class AiAnswerText extends StatelessWidget {
         parts.add(
           WidgetSpan(
             alignment: PlaceholderAlignment.middle,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 2),
-              child: Tooltip(
-                message: citation.title,
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(8),
-                  onTap: () => onCitation(citation),
-                  child: Semantics(
-                    label:
-                        '引用 $number，${citation.isTextbook ? '查看教材原页' : '查看原题'}',
-                    button: true,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 7,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: scheme.secondaryContainer,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        '$number',
-                        style: base.copyWith(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: scheme.onSecondaryContainer,
+            // Inline controls must not register their inner labels as separate
+            // selectable paragraphs in Text.rich's paragraph delegate.
+            child: SelectionContainer.disabled(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 2),
+                child: Tooltip(
+                  message: citation.title,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: () => onCitation(citation),
+                    child: Semantics(
+                      label:
+                          '引用 $number，${citation.isTextbook ? '查看教材原页' : '查看原题'}',
+                      button: true,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 7,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: scheme.secondaryContainer,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          '$number',
+                          style: base.copyWith(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: scheme.onSecondaryContainer,
+                          ),
                         ),
                       ),
                     ),
@@ -284,10 +288,12 @@ class AiAnswerText extends StatelessWidget {
     if (e.tag == 'math-inline' || e.tag == 'math-inline-display') {
       return WidgetSpan(
         alignment: PlaceholderAlignment.middle,
-        child: _math(
-          e.textContent,
-          base,
-          display: e.tag == 'math-inline-display',
+        child: SelectionContainer.disabled(
+          child: _math(
+            e.textContent,
+            base,
+            display: e.tag == 'math-inline-display',
+          ),
         ),
       );
     }

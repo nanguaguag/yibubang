@@ -11,6 +11,16 @@ HTML = '<table><tr><td>stable</td><td>Now gemini-9-flash/answer_gen/v1</td><td>1
 
 
 class AnswerTests(unittest.TestCase):
+    def test_all_twenty_five_explicit_results_are_given_to_builtin_answer(self):
+        items = [{'kind': 'question', 'question_id': str(n), 'title': '资料'+str(n),
+                  'text': '证据'+str(n), 'number': n} for n in range(1,26)]
+        payload = answer_body('问题', [], items, 'stable', True)
+        results = payload['searchSpec']['searchResultList']['searchResults']
+        self.assertEqual(len(results), 25)
+        self.assertNotIn('searchParams', payload['searchSpec'])
+        self.assertEqual(results[-1]['unstructuredDocumentInfo']['uri'], 'yibubang://questions/25')
+        self.assertIn('证据25', results[-1]['unstructuredDocumentInfo']['documentContexts'][0]['content'])
+
     def test_live_catalog_excludes_external_models_and_rejects_error_html(self):
         models = parse_models(HTML)
         self.assertEqual([m['id'] for m in models], ['stable', 'gemini-9-flash/answer_gen/v1'])

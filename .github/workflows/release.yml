@@ -252,9 +252,12 @@ jobs:
           RAW_TAG="$RELEASE_TAG"
           echo "TAG=$RAW_TAG" >> $GITHUB_OUTPUT
           # 优先读取发布 tag 中的专属说明，旧版本回退到该 tag 的提交信息。
-          NOTES_PATH=".github/release-notes/${RAW_TAG}.md"
+          NOTES_PATH="docs/release-notes/${RAW_TAG}.md"
+          LEGACY_NOTES_PATH=".github/release-notes/${RAW_TAG}.md"
           if git cat-file -e "refs/tags/${RAW_TAG}:${NOTES_PATH}" 2>/dev/null; then
             git show "refs/tags/${RAW_TAG}:${NOTES_PATH}" > release_notes.txt
+          elif git cat-file -e "refs/tags/${RAW_TAG}:${LEGACY_NOTES_PATH}" 2>/dev/null; then
+            git show "refs/tags/${RAW_TAG}:${LEGACY_NOTES_PATH}" > release_notes.txt
           else
             git log -1 --pretty=format:"%B" "refs/tags/${RAW_TAG}" > release_notes.txt
           fi

@@ -179,6 +179,7 @@ class _AiSearchSettingsGroupState extends State<AiSearchSettingsGroup> {
   }
 
   Future<void> _ratio() async {
+    final total = options.resultCount;
     var count = options.textbookCount;
     final selected = await showDialog<int>(
       context: context,
@@ -190,27 +191,28 @@ class _AiSearchSettingsGroupState extends State<AiSearchSettingsGroup> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  '教材 $count 条 · 题目 ${12 - count} 条',
+                  '教材 $count 条 · 题目 ${total - count} 条',
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 const SizedBox(height: 16),
                 Slider(
                   value: count.toDouble(),
                   min: 0,
-                  max: 12,
-                  divisions: 12,
-                  label: '$count : ${12 - count}',
+                  max: total.toDouble(),
+                  divisions: total,
+                  label: '$count : ${total - count}',
                   onChanged: (value) => update(() => count = value.round()),
                 ),
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
-                    onPressed: () => update(() => count = 8),
+                    onPressed: () =>
+                        update(() => count = (total * 2 / 3).round()),
                     child: const Text('恢复默认'),
                   ),
                 ),
-                const Text(
-                  '向右增加教材占比。默认 8 : 4，每次回答最多使用 12 条检索资料；实际条数取决于命中结果，不足的来源不会自动挤占另一来源。仅选择教材或题目时，只检索该来源。此设置不影响单独的教材检索。',
+                Text(
+                  '向右增加教材占比。每次回答最多使用 $total 条检索资料；实际条数取决于命中结果，不足的来源不会自动挤占另一来源。仅选择教材或题目时，只检索该来源。此设置不影响单独的教材检索。',
                 ),
               ],
             ),
@@ -230,6 +232,67 @@ class _AiSearchSettingsGroupState extends State<AiSearchSettingsGroup> {
     );
     if (mounted && selected != null) {
       await _saveOptions(options.copyWith(textbookCount: selected));
+    }
+  }
+
+  Future<void> _resultCount() async {
+    var total = options.resultCount;
+    final selected = await showDialog<int>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, update) {
+          final split = options.copyWith(resultCount: total);
+          return AlertDialog(
+            title: const Text('检索条目数'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '最多 $total 条',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 16),
+                  Slider(
+                    value: total.toDouble(),
+                    min: 1,
+                    max: 25,
+                    divisions: 24,
+                    label: '$total 条',
+                    onChanged: (value) => update(() => total = value.round()),
+                  ),
+                  Text(
+                    '教材 ${split.textbookCount} 条 · 题目 ${split.questionCount} 条',
+                  ),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      onPressed: () => update(() => total = 12),
+                      child: const Text('恢复默认'),
+                    ),
+                  ),
+                  const Text(
+                    '检索会在整个知识库中查找，再把相关结果交给 AI；此数字限制本次回答的资料量。默认 12 条，最多 25 条。增加条数可能覆盖更多资料，也可能增加等待时间和无关内容，不能保证穷尽全部资料。调整时保持教材与题目原比例，不改变每次使用额度。',
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('取消'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, total),
+                child: const Text('保存'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    if (mounted && selected != null) {
+      await _saveOptions(options.copyWith(resultCount: selected));
     }
   }
 
@@ -325,6 +388,12 @@ class _AiSearchSettingsGroupState extends State<AiSearchSettingsGroup> {
             value: options.streaming,
             onChanged: canSave ? streaming : null,
           ),
+        ),
+        IconTile(
+          icon: Icons.manage_search_rounded,
+          label: '检索条目数',
+          trailing: _value('${options.resultCount} 条'),
+          onTap: canSave ? _resultCount : null,
         ),
         IconTile(
           icon: Icons.balance_rounded,

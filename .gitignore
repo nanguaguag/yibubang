@@ -58,5 +58,13 @@ pubspec.lock
 .metadata
 .cxx/
 
-docs/
+# Local research captures and tools contain credentials, databases or dependencies.
+# Maintained project documentation under docs/ is versioned.
+docs/api-req-resp/
+docs/yikaobang/
+docs/Bugaoshan-Web/
+docs/**/.local/
+docs/**/artifacts/
+docs/**/__pycache__/
+docs/**/*.sqlite*
 AGENTS.md

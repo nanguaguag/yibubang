@@ -273,6 +273,7 @@ class AiSearchClient implements AiSearchGateway, AiModelGateway {
         'rephrase': options.rephrase,
         'streaming': options.streaming,
         'textbook_count': options.textbookCount,
+        'result_count': options.resultCount,
       };
       var encoded = jsonEncode(payload);
       // Bound the actual UTF-8 bytes, including long Chinese follow-up history.
