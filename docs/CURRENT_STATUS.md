@@ -1,5 +1,7 @@
 # 当前进度与验证
 
+2026-11-13 Windows CI最新修订：每日复习用例在fixture逐条写入阶段超30秒，改502题/502复习项两批事务，保留超过500条过滤后仍翻页找到q_4的真实断言。3.44/3.50该文件各11 PASS，3.50全量357 PASS/3 skip，dart analyze/CI分析均0 errors/warnings、119 infos。Windows修复后原生CI待push重跑；上一提交2b80da1的Android/macOS/Linux已成功，详细见[最新交接](antigravity/SESSION_HANDOFF.md)。
+
 2026-11-13 Android CI最新修订：4deacbb的Android分析/测试已通过，但Flutter3.50与AGP8.11.1的API不匹配导致release失败，本机复现。Android日常与Release build-android固定Flutter3.44.6，依赖检查恢复开启；Java17通用和3分ABI release APK、签名/元数据、同版两种分析均通过，全量357 PASS/3 skip，见[最新交接](antigravity/SESSION_HANDOFF.md)。新修复未push；旧4deacbb的Linux/macOS已绿，Windows独立测试timeout仍待处理，不能宣称全部Actions通过。
 
 2026-11-13最新修订：按用户选择恢复根README原品牌页/章节/截图并补当前App功能，保留docs与检索/选择修复。082f205的四平台CI使用Flutter3.50.0而先前本地3.44.6；补笔记try内返回的await后，独立3.50.0/Dart3.14.0实际dart analyze与CI命令均exit0、0 errors/warnings、119个弃用info。设置测试fixture隔离无关自动检查网络后，同版全量357 PASS/3联网默认skip，两种分析再次通过。旧“静态0”是3.44.6记录，不能等同于新SDK没有info；远程Actions尚未重新运行。[最新交接](antigravity/SESSION_HANDOFF.md)。

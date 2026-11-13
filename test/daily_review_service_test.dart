@@ -270,34 +270,46 @@ void main() {
     test('过滤超过500项未覆盖到期题后仍续页找到合法题目', () async {
       final repo = SpacedReviewRepository();
       final now = DateTime(2026, 11, 11, 12);
+      // Batch fixture writes so Windows disk commits do not exhaust the test
+      // timeout before the service's pagination is exercised.
+      final questions = userDb.batch();
+      final dueItems = <SpacedReviewItem>[];
       for (var i = 0; i < 501; i++) {
         final id = 'outside_$i';
-        await userDb.insert('Question', {
+        questions.insert('Question', {
           'id': id,
           'chapter_parent_id': 'outside',
         });
-        await repo.saveItem(
+        dueItems.add(
           SpacedReviewItem(
             itemId: id,
             planId: 'p',
             state: ReviewState.review,
             dueDate: 1,
           ),
-          userDb,
         );
       }
-      await userDb.insert('Question', {
-        'id': 'q_4',
-        'chapter_parent_id': 'sub_1',
-      });
-      await repo.saveItem(
+      questions.insert('Question', {'id': 'q_4', 'chapter_parent_id': 'sub_1'});
+      dueItems.add(
         const SpacedReviewItem(
           itemId: 'q_4',
           planId: 'p',
           state: ReviewState.review,
           dueDate: 2,
         ),
-        userDb,
+      );
+      await questions.commit(noResult: true);
+      await repo.batchSaveItems(dueItems, userDb);
+      final firstPage = await repo.getDueItems(
+        planId: 'p',
+        limit: 500,
+        now: now,
+        executor: userDb,
+      );
+      expect(firstPage.length, 500);
+      expect(
+        firstPage.every((item) => item.itemId.startsWith('outside_')),
+        isTrue,
       );
       const plan = ReviewPlan(
         id: 'p',

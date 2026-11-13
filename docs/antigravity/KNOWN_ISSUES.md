@@ -6,6 +6,7 @@
 
 | 问题 | 状态与验证 |
 | --- | --- |
+| Windows每日复习测试fixture超30秒/database_closed | 502题+502复习项逐条提交耗尽准备时间，timeout清理后写入已关闭库；改两批事务、保留501过滤/500首批与q_4翻页断言。3.44/3.50该文件各11 PASS，3.50全量357 PASS/3 skip；Windows runner修复后尚未重跑 |
 | Flutter3.50 Android getDefaultConfig API不匹配 | 本地复现；该SDK要求AGP>=9.1.1，项目8.11.1。Android日常/Release固定Flutter3.44.6并恢复依赖检查；Java17通用及3分ABI release APK通过，分析0、全量357 PASS/3 skip；修复后远程尚未重跑 |
 | Flutter3.50 CI分析warning | syncNotesForQuestion的try内getLocalNotes返回补await；独立CI同版SDK的dart analyze/CI命令exit0，0 errors/warnings；119弃用info仍保留，不扩大迁移 |
 | 新SDK设置测试残留Timer | 开启自动检查原会发无关网络，fixture设最近检查时间，定向6 PASS、3.50全量357 PASS/3 skip；产品定时/超时逻辑未因此关闭 |
@@ -23,7 +24,7 @@ A01–A20源码已修复并独立提交，见[修复日志](audits/A01_A20_REPAI
 
 ## 未解决/待核验
 
-- 4deacbb的Windows Actions43432164278：daily_review_service_test大fixture插入超30秒，355 PASS/1 fail/4 skip；数据库关闭是测试timeout后tearDown的后续报错。与Android AGP问题独立，本轮仅记录，未扩大修复。
+- Windows原Actions43432164278/43436136566的每日复习fixture超时已修复并本机复核；修复后Windows原生Test/Build仍需push重跑，不能用macOS同SDK通过代替。2b80da1的Android/macOS/Linux远程成功。
 - 同步协议v2服务端/schema部署、真实账号、官方ID/幂等边界与D1实际rows_written；客户端完成不证明线上同步闭环。
 - 教材375页符号/公式、239稀疏页候选、36无文本页的人工质量判断、版次ISBN；167题答案分歧、6923题配图未OCR。所有页图可读不等于全部文字医学正确。
 - 最新原生实机、Android/Windows/Linux/iOS、目标地区网络及Release；模拟手势/Debug构建不作实机性能保证。

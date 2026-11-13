@@ -4,6 +4,7 @@
 
 ## 最新验证
 
+- Windows复习fixture修复本机验收：3.44/3.50该文件各11 PASS、3.50全量357 PASS/3联网默认skip；数据准备改两批事务，保留500条过滤后续页q_4行为和30秒门禁。dart analyze/CI分析均0 errors/warnings、119 infos；Windows修复后原生CI尚未重跑。2b80da1的Android/macOS/Linux远程已成功；AI后端/付费生成/教材数据没有重复部署或上传。
 - Android工具链修复本机验收：固定Flutter3.44.6/Java17/AGP8.11.1/Gradle8.14，开启依赖检查；release通用80.1MB及3分ABI28.5MB/30.4MB/32.1MB均构建成功，包名/2.2.3+213/ABI与签名校验通过。dart analyze与CI分析No issues，全量357 PASS/3联网默认skip；日志.local/android-3.44-*，新修复尚未push或正式发布。旧4deacbb的Linux/macOS远程成功，Windows独立测试超时待处理。
 - 2026-11-13 CI同版复核：Flutter3.50.0/Dart3.14.0全量357 PASS/3联网默认skip，dart analyze与CI的flutter analyze --no-fatal-infos均exit0，0 errors/warnings、119弃用info。四平台原Actions停在Analyze；补笔记try内返回await、设置fixture避免无关自动检查网络后本机通过，远程Actions尚未重跑。最终日志在.local/ci-3.50-*-final.log。
 - 前一阶段Flutter3.44.6：全量357 PASS/3联网默认skip；最终选择/设置8 PASS；后端39 PASS，flutter analyze0；Android APK/macOS普通main Debug构建通过。本轮未重复后端/付费生成或新SDK原生构建。

@@ -1,6 +1,14 @@
 # 跨会话交接
 
-## 最新交接：Android Release工具链
+## 最新交接：Windows复习测试超时
+
+- 起始main@2b80da1与origin一致/干净，用户反馈Windows每日复习测试30秒timeout。两次真实Actions43432164278/43436136566均在fixture的insert/saveItem处结束，database_closed为超时清理后的后续写入，未进入buildDailySession。
+- 修改仅test/daily_review_service_test.dart中该用例：502题Batch.commit(noResult:true)、502复习项repo.batchSaveItems，从1004逐条提交变两批事务；501 outside/q_4末项和真实分页服务调用保留。新增首批500条outside断言，保证覆盖分页边界；保留30秒timeout、默认并发和生产SQLite行为。
+- Flutter3.44.6/3.50.0该文件各11 PASS；CI同SDK3.50全量357 PASS/3联网默认skip，dart analyze与CI的flutter analyze --no-fatal-infos均exit0、0 errors/warnings、119原有弃用info。单文件dart format、git diff --check、62份文档547本地链接检查通过。
+- 日志.local/windows-daily-3.44-tests.log、windows-daily-3.50-tests.log、windows-daily-3.50-full-tests.log、windows-daily-3.50-{dart,flutter}-analyze.log；CI日志actions-43436136566-failed.log。SDK3.50/隔离工作树复用上一轮.local资源，不提交日志、依赖锁或SDK自动迁移文件。
+- 本机macOS测试不能宣称Windows runner已通过；本轮不push/发布。下一次第一步git status/log核对该修复，用户push后检查Windows Test/Build/Upload；上一提交2b80da1的Android/macOS/Linux已远程成功。其他同步/医学/费用待办保持下方交接，不重复云部署/知识库上传。
+
+## 前次交接：Android Release工具链
 
 - 起始main@4deacbb与origin一致/干净，用户反馈Android构建失败。本轮只修Android工具链和同步文档，App业务/README/依赖声明/题库/云资源保持原状。
 - Actions43432164143使用Flutter3.50.0，Analyze/Tests成功、assembleRelease配置阶段getDefaultConfig API缺失；本地隔离树同版构建复现。Flutter插件编译依赖AGP9.1.1，最低支持同为9.1.1；项目8.11.1/Gradle8.14不能靠skip依赖检查解决。

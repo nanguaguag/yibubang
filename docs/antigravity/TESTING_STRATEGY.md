@@ -12,7 +12,9 @@ SDK复核：此前本地为Flutter3.44.6/Dart3.12.2，静态0不等同于新CI S
 
 Android构建使用Flutter3.44.6/Dart3.12.2，匹配AGP8.11.1/Gradle8.14/Kotlin2.2.20/Java17；android.yml和release.yml的build-android均固定此版本。其他平台和Release verify仍使用stable。Flutter3.50的Android插件需要AGP>=9.1.1，`--android-skip-build-dependency-validation`不能解决二进制API不匹配。修改Android构建配置须实际运行`flutter build apk --release`；Release分ABI还需`flutter build apk --release --split-per-abi`。保持依赖验证开启，APK成功与正式发布/真机验收分别记录。
 
-本轮固定SDK实际复核：上述两种构建均exit0，通用80.1MB及3分ABI APK产出，签名/版本/ABI检查通过；dart analyze与CI分析No issues/exit0，全量357 PASS/3联网默认skip。日志.local/android-3.44-*；原Flutter3.50失败复现.local/android-3.50-release-before.log。Windows远程的30秒大fixture超时是独立问题，未以关闭该测试或放宽全项目timeout处理。
+上一轮固定SDK实际复核：上述两种构建均exit0，通用80.1MB及3分ABI APK产出，签名/版本/ABI检查通过；dart analyze与CI分析No issues/exit0，全量357 PASS/3联网默认skip。日志.local/android-3.44-*；原Flutter3.50失败复现.local/android-3.50-release-before.log。2b80da1的Android/macOS/Linux远程已成功。
+
+Windows fixture复核：daily_review_service_test准备502题/502复习项改两批事务，使用现有batchSaveItems；首批500条均被排除，真实buildDailySession继续翻页获取q_4。保留默认30秒timeout/并发与501排除规模。3.44/3.50该文件各11 PASS，3.50全量357 PASS/3联网默认skip；同版dart analyze/CI分析均exit0、0 errors/warnings、119 infos。本机macOS，Windows修复后仍须原生CI重跑；日志.local/windows-daily-*。
 
 ```sh
 dart analyze
@@ -25,6 +27,7 @@ ai_backend/.venv/bin/python -m unittest discover -s ai_backend -p 'test_*.py' -v
 
 ## 最新有效回归
 
+- [daily_review_service_test.dart](../../test/daily_review_service_test.dart)：批量fixture、首批500条无可用题仍继续翻页取得q_4；跨库范围、999参数预算、斩题/笔记/超额复习回归共11项。
 - [ai_selection_test.dart](../../test/ai_selection_test.dart)：精确SelectParagraphSelectionEvent段尾断言，修前失败/修后通过；正文选中、鼠标三击和引用点击。
 - [ai_search_settings_test.dart](../../test/ai_search_settings_test.dart)：旧设置、总数1–25、比例联动、保存/取消/重开、模型回退、每轮payload与最终引用校正。
 - [test_retrieval.py](../../ai_backend/test_retrieval.py) / [test_builtin_answer.py](../../ai_backend/test_builtin_answer.py)：严格类型/越界、来源预算/单源/25条编号和显式列表。

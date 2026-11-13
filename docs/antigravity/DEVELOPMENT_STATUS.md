@@ -1,5 +1,13 @@
 # 当前开发状态
 
+## 2026-11-13 Windows复习测试超时修复
+
+起始main@2b80da1与origin一致/干净。Windows Actions43432164278与43436136566均在daily_review_service_test的数据准备阶段超30秒：502题+502复习项逐条自动提交，timeout后tearDown关闭库，未完成insert报database_closed；尚未调用buildDailySession。
+
+仅该用例改为题目Batch和现有repo.batchSaveItems两批事务；保留501条不在覆盖范围的到期题与最后q_4，增加首批500条均为outside的断言，继续通过真实服务验证翻页找到q_4。保留默认30秒门禁，不改生产服务/SQLite配置/CI并发或SDK。
+
+Flutter3.44.6与Windows CI同版3.50.0的该文件均11 PASS；3.50全量357 PASS/3联网默认skip。dart analyze与CI分析均exit0、0 errors/warnings、119弃用info，单文件格式/diff及62份文档547链接通过。本机为macOS，Windows runner修复后仍需push重跑；上一提交2b80da1的Android/macOS/Linux远程已成功。
+
 ## 2026-11-13 Android Release工具链修复
 
 起始main@4deacbb/工作区干净。该提交的Android Actions已通过Analyze/Tests，但release构建报ApplicationExtension.getDefaultConfig不存在；Flutter3.50.0要求AGP>=9.1.1，项目AGP8.11.1/Gradle8.14不兼容，本机同SDK复现原报错。
