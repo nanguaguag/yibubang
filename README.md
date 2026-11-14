@@ -249,7 +249,7 @@ flutter build linux
 
 ### ✅ 验证与开发文档
 
-当前源码版本仍为 `2.2.3+213`，用户库 schema 25。AI/教材功能已部署独立后端并完成 Android/macOS Debug 构建，尚未发布包含全部最新功能的新 Release；历史下载包不保证包含这些改动。
+当前源码版本为 `2.2.4+214`，用户库 schema 25。AI/教材功能已部署独立后端并完成 Android/macOS Debug 构建，最新功能说明请参阅 [发布说明](docs/release-notes/v2.2.4.md)；历史下载包不保证包含这些改动。
 
 最新本机复核使用 Flutter 3.50.0 / Dart 3.14.0：357 项 Flutter 测试通过、3 项联网测试默认跳过；此前后端 39 项通过。已修复 CI 发现的笔记异步返回 warning，并隔离设置测试触发的无关后台网络。`dart analyze` 与 CI 的 `flutter analyze --no-fatal-infos` 均成功，0 个 error / warning，119 个弃用 info。远程四平台 Actions 尚未重跑，完整 CI 结果以 Actions 记录为准。
 

@@ -16,7 +16,7 @@
 
 ## 平台与下载
 
-支持Android、macOS、Windows、Linux，iOS适配中。当前源码版本2.2.3+213；AI/教材改动已完成Debug构建和独立后端部署，但未发布新Release。历史Release的安装包不保证包含最新功能。
+支持Android、macOS、Windows、Linux，iOS适配中。当前源码版本2.2.4+214；AI/教材改动已完成Debug构建和独立后端部署，详见 [v2.2.4 发布说明](../release-notes/v2.2.4.md)。
 
 [GitHub Releases](https://github.com/nanguaguag/yibubang/releases) · [Gitee镜像](https://gitee.com/pumpkin_melon/yibubang/releases)
 

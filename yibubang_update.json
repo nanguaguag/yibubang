@@ -1,15 +1,15 @@
 {
-    "latest_app": "2.2.3",
-    "latest_app_url": "https://github.com/nanguaguag/yibubang/releases/tag/v2.2.3",
-    "update_info": "【医不帮 v2.2.3】：\n\nchore(release): release v2.2.3+213 with cloud sync batching and test stabilization (closes #22, closes #23)",
+    "latest_app": "2.2.4",
+    "latest_app_url": "https://github.com/nanguaguag/yibubang/releases/tag/v2.2.4",
+    "update_info": "【医不帮 v2.2.4】：\n\n1. 【全新 AI 搜索与 53 本教材知识库】：深度融合 53 本权威医学教科书与全题库知识；支持自然语言问答、流式输出、打字机光标、多教材检索与原版原页「直接查页」调阅；\n2. 【UI 体验与细节打磨】：全系统设置页提示统一规范组件（InfoHintBanner），教材与题目检索配比滑块融合，闪卡搜索自动聚焦，底栏导航防误关保护；\n3. 【核心业务与数据库加固】：全面修复 A01~A20 白盒缺陷（云同步断点恢复、复习事务原子性、跨库做题统计并发安全、用户库导入原子恢复等）；\n4. 【跨平台与构建稳定性】：修复 Windows CI 超时，优化 Android 发布工具链与构建配置。",
     "assets": {
-        "android": "https://github.com/nanguaguag/yibubang/releases/download/v2.2.3/yibubang-v2.2.3-android.apk",
-        "android_arm64": "https://github.com/nanguaguag/yibubang/releases/download/v2.2.3/yibubang-v2.2.3-android-arm64-v8a.apk",
-        "android_armv7": "https://github.com/nanguaguag/yibubang/releases/download/v2.2.3/yibubang-v2.2.3-android-armeabi-v7a.apk",
-        "android_x86_64": "https://github.com/nanguaguag/yibubang/releases/download/v2.2.3/yibubang-v2.2.3-android-x86_64.apk",
-        "windows": "https://github.com/nanguaguag/yibubang/releases/download/v2.2.3/yibubang-v2.2.3-windows-x64.zip",
-        "macos": "https://github.com/nanguaguag/yibubang/releases/download/v2.2.3/yibubang-v2.2.3-macos.zip",
-        "linux": "https://github.com/nanguaguag/yibubang/releases/download/v2.2.3/yibubang-v2.2.3-linux-x64.tar.gz"
+        "android": "https://github.com/nanguaguag/yibubang/releases/download/v2.2.4/yibubang-v2.2.4-android.apk",
+        "android_arm64": "https://github.com/nanguaguag/yibubang/releases/download/v2.2.4/yibubang-v2.2.4-android-arm64-v8a.apk",
+        "android_armv7": "https://github.com/nanguaguag/yibubang/releases/download/v2.2.4/yibubang-v2.2.4-android-armeabi-v7a.apk",
+        "android_x86_64": "https://github.com/nanguaguag/yibubang/releases/download/v2.2.4/yibubang-v2.2.4-android-x86_64.apk",
+        "windows": "https://github.com/nanguaguag/yibubang/releases/download/v2.2.4/yibubang-v2.2.4-windows-x64.zip",
+        "macos": "https://github.com/nanguaguag/yibubang/releases/download/v2.2.4/yibubang-v2.2.4-macos.zip",
+        "linux": "https://github.com/nanguaguag/yibubang/releases/download/v2.2.4/yibubang-v2.2.4-linux-x64.tar.gz"
     },
     "latest_data_url": "https://gitee.com/pumpkin_melon/yibubang/releases/download/database-1.0.3/question_data.sqlite.zip",
     "latest_data_md5": "59cef99484946b17167aa7e34d5b3cf1",

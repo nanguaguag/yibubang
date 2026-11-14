@@ -1,6 +1,25 @@
 # 跨会话交接
 
-## 最新交接：UI 统一与交互细节打磨（设置页提示统一 / 比例滑块融合 / 参考资料持久化与角标化）
+## 最新交接：v2.2.4+214 版本升级与清单回写发布
+
+- **版本发布与基线状态**：
+  - 代码版本正式递增为 `2.2.4+214`（[pubspec.yaml](../../pubspec.yaml)）；
+  - 更新在线分发清单 [yibubang_update.json](../../yibubang_update.json)，写入 v2.2.4 版本号、更新说明（四大核心维度）及各平台（Android 通用与分 ABI、Windows、macOS、Linux）Release 下载资产直链；
+  - 创建发布说明文档 [docs/release-notes/v2.2.4.md](../release-notes/v2.2.4.md) 并挂载至索引；
+  - 同步更新根 README、英文 README 及文档中心中的版本号描述。
+- **质量门禁核验结果**：
+  - `flutter analyze`：**No issues found! 0 errors, 0 warnings**。
+  - `flutter test`：**358 passed! 3 skipped (联网用例). All other tests passed! 100% 通过**。
+- **完成项回顾**：
+  1. **AI 搜索与 53 本医学教材知识库**：17 万条切片入库、流式输出、打字机光标动效、30+ 精选问题库、多课本检索直选、右上角原版页「直接查页」调阅、1～25 条比例融合设置滑块、引用角标化与折叠偏好持久化。
+  2. **UI 体验与细节打磨**：全系统设置页提示统一为 `InfoHintBanner` 组件，闪卡搜索框自动获取焦点（`autofocus`），底栏设置保护锁定「我的」不可隐藏。
+  3. **A01~A20 白盒深度审计修复**：云同步断点分页、复习事务原子性、跨库做题统计并发安全、用户库导入原子恢复等 20 项核心缺陷彻底闭环。
+  4. **跨平台 CI 与工具链**：Windows CI 超时修复，Android Release 构建工具链稳定。
+- **未完成项 / 下一次第一步**：
+  - 检查版本提交与 Git status；
+  - 根据用户指令决定是否推送远端分支或触发 GitHub Actions Tag Release 流水线。
+
+## 前次交接：UI 统一与交互细节打磨（设置页提示统一 / 比例滑块融合 / 参考资料持久化与角标化）
 
 - **完成项**：
   1. **设置页提示统一为 `InfoHintBanner`**：

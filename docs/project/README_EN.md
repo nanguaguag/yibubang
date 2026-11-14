@@ -16,7 +16,7 @@ The backend uses Google Cloud Run and Discovery Engine's built-in Answer/streamA
 
 ## Build and releases
 
-Current source version: 2.2.3+213; user database schema25 and question-bank schema1. Android/macOS Debug builds pass. The new AI/textbook work has not been published as a new Release; existing release packages may not include it.
+Current source version: 2.2.4+214; user database schema25 and question-bank schema1. Android/macOS Debug builds pass. See [v2.2.4 Release Notes](../release-notes/v2.2.4.md) for details.
 
 Requirements come from [pubspec.yaml](../../pubspec.yaml): Flutter≥3.32.0 and Dart≥3.8.0,<4.0.0. Run from the repository root:
 

@@ -85,7 +85,7 @@ Textbook search covers 53 books and 20,669 pages with book filters, keyword high
 
 The backend uses Cloud Run and Search's built-in Answer/streamAnswer. Model selection uses cached/bundled catalogs with bounded background refresh; the app does not contact Google's model documentation directly. Original PDFs stay local; clean text is indexed and private R2 serves page images. Medical facts, symbols and formulas should be checked against source pages; promotion eligibility and actual bills remain unverified.
 
-Current source version is 2.2.3+213, user database schema25. AI conversations do not participate in cross-device sync; sync protocol-v2 server publication and real-account validation remain separate work. The latest AI/textbook features have not been published as a new Release.
+Current source version is 2.2.4+214, user database schema25. AI conversations do not participate in cross-device sync; sync protocol-v2 server publication and real-account validation remain separate work. See [Release Notes](docs/release-notes/v2.2.4.md) for details.
 
 [AI operations](docs/ai-search/README.md) · [Retrieval limits](docs/ai-search/RETRIEVAL_LIMITS.md) · [Costs](docs/ai-search/COSTS_AND_BUILTIN_MODELS.md) · [Current progress](docs/CURRENT_STATUS.md)
 

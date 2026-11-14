@@ -12,5 +12,6 @@
 - AI会话仅本地保存，但当前问题/有限历史会提交Google；服务端Firestore只存认证哈希、限额/租约。删除会话或TTL不是重置搜索额度的方法。
 - 可迁移知识库的资产是本地规范文字、稳定ID/来源、页号/坐标和图片键；不是Google内部向量。换Embedding模型重算向量但无需重做OCR清洗。
 - 原PDF留本地，Google仅导清洗文本/来源，页图另存R2；医学符号/版次和冲突仍需审核。免费资料额度/赠金抵扣不作免扣费保证。
+- 版本发布与在线更新契约：客户端检测升级始终读取 `yibubang_update.json`，发布或递增版本时必须同步更新 `pubspec.yaml` 与 `yibubang_update.json`（包含 `latest_app`、`latest_app_url`、`update_info` 及各平台 Release 资产直链），缺一不可。
 
 版本、数量、部署与验证更新[开发状态](DEVELOPMENT_STATUS.md)；代理工作规则见[AGENT_RULES](AGENT_RULES.md)。
