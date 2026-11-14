@@ -16,8 +16,8 @@
   3. **A01~A20 白盒深度审计修复**：云同步断点分页、复习事务原子性、跨库做题统计并发安全、用户库导入原子恢复等 20 项核心缺陷彻底闭环。
   4. **跨平台 CI 与工具链**：Windows CI 超时修复，Android Release 构建工具链稳定。
 - **未完成项 / 下一次第一步**：
-  - 检查版本提交与 Git status；
-  - 根据用户指令决定是否推送远端分支或触发 GitHub Actions Tag Release 流水线。
+  - Tag `v2.2.4` 已打并成功推送至 GitHub 远端，`Release Build & Publish` Actions 流水线已正式触发运行；
+  - 下一次第一步：通过 `gh run watch` 或 GitHub 页面关注 Release 流水线构建打包产物（Android APK、Windows/macOS/Linux 资产）与 GitHub Release 正式发布状态。
 
 ## 前次交接：UI 统一与交互细节打磨（设置页提示统一 / 比例滑块融合 / 参考资料持久化与角标化）
 
