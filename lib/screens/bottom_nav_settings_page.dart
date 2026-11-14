@@ -42,6 +42,18 @@ class _BottomNavSettingsPageState extends State<BottomNavSettingsPage> {
   }
 
   void _onToggle(BottomNavItem item, bool value) async {
+    if (item.id == 'profile' && !value) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('「我的」页面包含设置入口，不可隐藏'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+      return;
+    }
+
     // 至少保留两个页面（Material 3 NavigationBar 原生要求至少 2 个 Destination）
     final enabledCount = _items.where((i) => i.enabled).length;
     if (!value && enabledCount <= 2) {
@@ -129,6 +141,7 @@ class _BottomNavSettingsPageState extends State<BottomNavSettingsPage> {
                     itemBuilder: (context, index) {
                       final item = _items[index];
                       final enabledCount = _items.where((i) => i.enabled).length;
+                      final isProfile = item.id == 'profile';
                       final isOnlyEnabled = item.enabled && enabledCount <= 2;
 
                       return Card(
@@ -153,17 +166,40 @@ class _BottomNavSettingsPageState extends State<BottomNavSettingsPage> {
                                 ? scheme.primary
                                 : scheme.onSurfaceVariant.withValues(alpha: 0.4),
                           ),
-                          title: Text(
-                            item.title,
-                            style: TextStyle(
-                              fontWeight: FontWeight.w600,
-                              color: item.enabled
-                                  ? scheme.onSurface
-                                  : scheme.onSurfaceVariant.withValues(alpha: 0.5),
-                            ),
+                          title: Row(
+                            children: [
+                              Text(
+                                item.title,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  color: item.enabled
+                                      ? scheme.onSurface
+                                      : scheme.onSurfaceVariant.withValues(alpha: 0.5),
+                                ),
+                              ),
+                              if (isProfile) ...[
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: scheme.surfaceContainerHighest,
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    '常驻',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: scheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
                           subtitle: Text(
-                            item.subtitle,
+                            isProfile ? '个人中心、账号与偏好设置（包含设置入口，不可隐藏）' : item.subtitle,
                             style: TextStyle(
                               fontSize: 12,
                               color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
@@ -174,7 +210,7 @@ class _BottomNavSettingsPageState extends State<BottomNavSettingsPage> {
                             children: [
                               Switch(
                                 value: item.enabled,
-                                onChanged: isOnlyEnabled
+                                onChanged: (isProfile || isOnlyEnabled)
                                     ? null
                                     : (val) => _onToggle(item, val),
                               ),

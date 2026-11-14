@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../services/bank_subscription_service.dart';
 import 'common/info_card.dart';
 import 'common/styled_tile.dart';
+import 'info_hint_banner.dart';
 
 String bankCheckIntervalLabel(int minutes) {
   if (minutes % 1440 == 0) return '每 ${minutes ~/ 1440} 天';
@@ -134,12 +135,10 @@ class _BankSubscriptionSettingsState extends State<BankSubscriptionSettings> {
         value: bankCheckIntervalLabel(_minutes),
         onTap: !_loaded || _saving ? null : _chooseInterval,
       ),
-      BaseTile(
-        child: Text(
-          '应用打开时检查来源。有本地补充、来源内容变更或版本回退的题库，需要手动确认后更新。',
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-          ),
+      const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: InfoHintBanner(
+          message: '应用打开时检查来源。有本地补充、来源内容变更或版本回退的题库，需要手动确认后更新。',
         ),
       ),
     ],

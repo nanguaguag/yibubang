@@ -1,5 +1,30 @@
 # 跨会话交接
 
+## 最新交接：UI 统一与交互细节打磨（设置页提示统一 / 比例滑块融合 / 参考资料持久化与角标化）
+
+- **完成项**：
+  1. **设置页提示统一为 `InfoHintBanner`**：
+     - 将 `lib/screens/settings_page.dart`（记忆算法设置弹窗、导入模式弹窗）、`lib/screens/shortcut_settings_page.dart`（单选题/多选题提示）、`lib/screens/bottom_nav_settings_page.dart`、`lib/widgets/ai_search_settings.dart`（使用说明、条目限制说明）以及 `lib/widgets/bank_subscription_settings.dart` 中的所有提示/说明文本全部统一为 `InfoHintBanner` 规范组件；
+     - 修复了 `lib/widgets/info_hint_banner.dart` 文件首行拼写错误。
+  2. **教材与题目检索比例滑块与彩带融合 (`lib/widgets/ai_search_settings.dart`)**：
+     - 移除独立的 8px 双色彩带，直接通过 `SliderTheme`（`activeTrackColor: scheme.primary`, `inactiveTrackColor: scheme.tertiary`, `trackHeight: 12`）将滑块轨道自身作为双色对比比例条；
+     - 移除了 320px 窄屏下可能导致 29px 布局溢出的冗余图例行，卡片顶部保留居中统计文本，在 320px 与 1000px 宽度下均完美自适应。
+  3. **参考资料折叠状态本地持久化 (`lib/screens/ai_search_page.dart`)**：
+     - 新增 `SharedPreferences` 存储键 `ai_search_citations_collapsed`，用户点击折叠/展开时自动记录到本地；
+     - 下次进入 AI 搜索页或发起新提问时，自动恢复用户偏好的展开/折叠状态。
+  4. **参考资料课本标题精简与右上角页码角标化 (`lib/screens/ai_search_page.dart`)**：
+     - 对教材类型标题提取纯净书名（如《药理学》-> 药理学），页码提取并转换为右上角专属微型角标（如 `P299`）；
+     - 彻底收窄卡片横向占用，避免“药理学·PDF第299页”过长导致的拥挤感，同时通过 `Tooltip` 完整保留原引用来源说明。
+  5. **验证与测试保障**：
+     - `dart analyze lib/`：**0 issues, No issues found!**
+     - `flutter test test/ai_search_settings_test.dart`：**7/7 全部 PASS**（覆盖 320px、1000px 窄屏宽屏自适应、比例持久化）。
+     - `flutter test test/ai_search_ui_test.dart test/textbook_search_test.dart`：**13/13 全部 PASS**。
+     - `flutter test test/bank_subscription_test.dart`：**2/2 全部 PASS**。
+- **未完成项 / 下一次第一步**：
+  - 代码变更保留在本地未暂存状态（未 commit，未 push），严格遵循 AGENTS.md 准则；
+  - 下一次第一步：执行 `git status` 确认未暂存代码，等待用户指示是否合并或提交。
+
+
 ## 最新交接：Windows复习测试超时
 
 - 起始main@2b80da1与origin一致/干净，用户反馈Windows每日复习测试30秒timeout。两次真实Actions43432164278/43436136566均在fixture的insert/saveItem处结束，database_closed为超时清理后的后续写入，未进入buildDailySession。

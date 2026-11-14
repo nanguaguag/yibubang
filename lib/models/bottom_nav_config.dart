@@ -133,6 +133,13 @@ class BottomNavConfig {
         }
       }
 
+      // 保证“我的”页面始终启用（包含设置与系统入口，防止隐藏后无法访问）
+      for (final item in result) {
+        if (item.id == 'profile') {
+          item.enabled = true;
+        }
+      }
+
       configNotifier.value = result;
       return result;
     } catch (_) {

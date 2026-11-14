@@ -106,6 +106,8 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(find.text('生理学').last);
         await tester.pumpAndSettle();
+        await tester.tap(find.textContaining('确定'));
+        await tester.pumpAndSettle();
       }
       await tester.enterText(find.byType(TextField), '钾离子');
       await tester.tap(find.byTooltip('检索教材'));
@@ -128,4 +130,29 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   }
+
+  testWidgets('direct page lookup opens exact page of chosen book', (tester) async {
+    final gateway = FakeTextbooks();
+    AiCitation? opened;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TextbookSearchPage(
+          gateway: gateway,
+          openPage: (_, c) async {
+            opened = c;
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('直接查页'));
+    await tester.pumpAndSettle();
+    expect(find.text('直接查阅教材原页'), findsOneWidget);
+    await tester.enterText(find.byType(TextField).last, '15');
+    await tester.tap(find.text('立即查阅'));
+    await tester.pumpAndSettle();
+    expect(opened, isNotNull);
+    expect(opened!.bookId, 'tb_123456789abc');
+    expect(opened!.pdfPage, 15);
+  });
 }

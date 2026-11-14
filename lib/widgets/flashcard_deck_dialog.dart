@@ -40,6 +40,8 @@ typedef FlashcardDeckDialog = FlashcardDeckPage;
 class _FlashcardDeckPageState extends State<FlashcardDeckPage> {
   final _spacedRepo = SpacedReviewRepository();
   final _searchController = TextEditingController();
+  final _searchFocusNode = FocusNode();
+  bool _isSearching = false;
 
   bool _loading = true;
   List<CustomFlashcard> _allCards = [];
@@ -61,6 +63,7 @@ class _FlashcardDeckPageState extends State<FlashcardDeckPage> {
   void dispose() {
     _searchController.removeListener(_applyFilter);
     _searchController.dispose();
+    _searchFocusNode.dispose();
     super.dispose();
   }
 
@@ -237,25 +240,52 @@ class _FlashcardDeckPageState extends State<FlashcardDeckPage> {
     final scheme = theme.colorScheme;
     final isDesktop = isDesktopLayout(context);
 
+    final showSearchField = _isSearching || _searchController.text.isNotEmpty;
+
     return Scaffold(
       appBar: AppBar(
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
+        title: Stack(
+          alignment: Alignment.centerLeft,
           children: [
-            const Text('闪卡卡包管理'),
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-              decoration: BoxDecoration(
-                color: scheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(10),
+            if (!showSearchField)
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('闪卡卡包管理'),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: scheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      '${_filteredCards.length}/${_allCards.length}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.normal,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              child: Text(
-                '${_filteredCards.length}/${_allCards.length}',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.normal,
-                  color: scheme.onSurfaceVariant,
+            IgnorePointer(
+              ignoring: !showSearchField,
+              child: Opacity(
+                opacity: showSearchField ? 1.0 : 0.0,
+                child: TextField(
+                  controller: _searchController,
+                  focusNode: _searchFocusNode,
+                  decoration: InputDecoration(
+                    hintText: '搜索正面问题、背面答案、知识点或标签...',
+                    hintStyle: TextStyle(
+                      fontSize: 14,
+                      color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
+                    ),
+                    border: InputBorder.none,
+                  ),
+                  style: const TextStyle(fontSize: 15),
                 ),
               ),
             ),
@@ -267,6 +297,25 @@ class _FlashcardDeckPageState extends State<FlashcardDeckPage> {
         ),
         actions: [
           IconButton(
+            tooltip: showSearchField ? '取消搜索' : '搜索闪卡',
+            icon: Icon(showSearchField ? Icons.close_rounded : Icons.search_rounded),
+            onPressed: () {
+              setState(() {
+                if (showSearchField) {
+                  _isSearching = false;
+                  _searchController.clear();
+                  _applyFilter();
+                  _searchFocusNode.unfocus();
+                } else {
+                  _isSearching = true;
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) _searchFocusNode.requestFocus();
+                  });
+                }
+              });
+            },
+          ),
+          IconButton(
             tooltip: '新建自制闪卡',
             icon: const Icon(Icons.add_rounded),
             onPressed: _createCard,
@@ -275,33 +324,9 @@ class _FlashcardDeckPageState extends State<FlashcardDeckPage> {
       ),
       body: Column(
         children: [
-          // 1. 搜索框
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-            child: TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                hintText: '搜索正面问题、背面答案、知识点或标签...',
-                hintStyle: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant.withValues(alpha: 0.7)),
-                prefixIcon: const Icon(Icons.search_rounded, size: 20),
-                suffixIcon: _searchController.text.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear_rounded, size: 18),
-                        onPressed: () => _searchController.clear(),
-                      )
-                    : null,
-                filled: true,
-                fillColor: scheme.surfaceContainerHighest.withValues(alpha: 0.35),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(AppShapes.large),
-                  borderSide: BorderSide.none,
-                ),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              ),
-            ),
-          ),
+          const SizedBox(height: 8),
 
-          // 2. 标签多选筛选横向滑动栏 (反馈 5)
+          // 1. 标签多选筛选横向滑动栏 (反馈 5)
           if (_availableTags.length > 1)
             SizedBox(
               height: 42,

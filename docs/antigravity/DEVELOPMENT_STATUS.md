@@ -1,5 +1,30 @@
 # 当前开发状态
 
+## 2026-11-14 AI 搜索全模块 UI 重构与细节体验升级
+
+针对用户对 AI 搜索、教材检索与设置界面的全面体验反馈，完成整体重构与细节打磨：
+1. **设置-AI搜索与全局设置提示统一 (`lib/widgets/info_hint_banner.dart` / `lib/widgets/ai_search_settings.dart` / `lib/screens/settings_page.dart` / `lib/screens/shortcut_settings_page.dart` / `lib/widgets/bank_subscription_settings.dart`)**：
+   - 模型选择改为自适应居中卡片 / 底部抽屉，内置推荐稳定版与预览版徽章，支持无感离线切换与单项高亮；
+   - 检索条目与比例设置：将独立的双色彩带与下方滑块直接融为一体（`SliderTheme` 轨道自身展示 primary 教材色与 tertiary 题目色），去除多余图例行，彻底消除了小屏 320px 宽度下的 29px 布局溢出；
+   - 设置页中的所有说明提示（记忆算法弹窗、导入模式弹窗、快捷键单选/多选提示、底栏设置提示、AI 搜索说明、题库自动检查更新说明）全部统一替换为标准化 `InfoHintBanner` 组件。
+2. **底栏-AI搜索页面 (`lib/screens/ai_search_page.dart`)**：
+   - 增加进入页面的平滑淡入与位移动画（FadeTransition + SlideTransition）；
+   - 欢迎界面卡片式排版，内置 30+ 医学高质量精选问题库，每次随机抽选 3 个问题展示；
+   - 聊天视图区分用户气泡与 AI 卡片，流式输出时平滑锁定当前提问顶部不强制跳滚；
+   - 参考资料折叠状态本地持久化（`SharedPreferences`），下次进入自动保持用户选择；
+   - 参考资料课本标题精简化（去除冗长前缀后缀，只保留书名），页码精炼为右上角微型角标（如 `P299`），整洁美观且通过 `Tooltip` 完整保留原引用来源说明。
+3. **AI搜索-教材检索页面与直接查页 (`lib/screens/textbook_search_page.dart`)**：
+   - 废除原生的 `DropdownButtonFormField`，改为多选模态卡片，移除多余的书本图标避免与打勾图标重叠；
+   - 右上角落地「直接查页」功能，支持选择课本、输入 PDF 页码快速验证并调阅真实高清页图。
+4. **自制闪卡体验优化 (`lib/widgets/flashcard_deck_dialog.dart`)**：
+   - 展开 AppBar 搜索框时自动获取焦点（`autofocus`），光标即刻就绪。
+5. **底栏设置安全兜底 (`lib/screens/bottom_nav_settings_page.dart` / `lib/models/bottom_nav_config.dart`)**：
+   - 限制「我的」页面不可取消勾选，保证系统设置入口始终可达。
+6. **全量与静态检查**：
+   - `test/ai_search_ui_test.dart`、`test/ai_search_settings_test.dart`、`test/textbook_search_test.dart`、`test/bank_subscription_test.dart` 100% PASS；
+   - `dart analyze lib/` 0 issues。
+
+
 ## 2026-11-13 Windows复习测试超时修复
 
 起始main@2b80da1与origin一致/干净。Windows Actions43432164278与43436136566均在daily_review_service_test的数据准备阶段超30秒：502题+502复习项逐条自动提交，timeout后tearDown关闭库，未完成insert报database_closed；尚未调用buildDailySession。

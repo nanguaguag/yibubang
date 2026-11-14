@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../common/shortcut_config.dart';
 import '../widgets/common/info_card.dart';
 import '../widgets/common/styled_tile.dart';
+import '../widgets/info_hint_banner.dart';
 
 /// 应用与刷题快捷键设置页
 ///
@@ -187,15 +188,8 @@ class _ShortcutSettingsPageState extends State<ShortcutSettingsPage> {
             ],
           ),
           const SizedBox(height: 10),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Text(
-              '单选题：按选项键直接判题；多选题：按选项键勾选，'
-              '再按「提交答案」键（默认 Enter）提交。',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-              ),
-            ),
+          const InfoHintBanner(
+            message: '单选题：按选项键直接判题；多选题：按选项键勾选，再按「提交答案」键（默认 Enter）提交。',
           ),
           const SizedBox(height: 14),
           _sectionTitle('滚动'),

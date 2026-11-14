@@ -21,6 +21,7 @@ import '../widgets/common/styled_tile.dart';
 import '../widgets/theme_controller.dart';
 import '../widgets/bank_subscription_settings.dart';
 import '../widgets/ai_search_settings.dart';
+import '../widgets/info_hint_banner.dart';
 import 'about_page.dart';
 import 'bottom_nav_settings_page.dart';
 import 'cloud_sync_page.dart';
@@ -289,9 +290,8 @@ class _SettingsPageState extends State<SettingsPage> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('导入方式'),
-        content: const Text(
-          '替换：用导入文件完全覆盖本地做题记录。\n'
-          '合并：将导入的做题记录并入本地（本地已做的题优先保留）。',
+        content: const InfoHintBanner(
+          message: '替换：用导入文件完全覆盖本地做题记录。\n合并：将导入的做题记录并入本地（本地已做的题优先保留）。',
         ),
         actions: [
           TextButton(
@@ -1069,9 +1069,6 @@ class _SettingsPageState extends State<SettingsPage> {
         String current = spacedAlgorithm;
         return StatefulBuilder(
           builder: (context, setDialogState) {
-            final theme = Theme.of(context);
-            final scheme = theme.colorScheme;
-
             return AlertDialog(
               title: const Text('记忆复习调度算法'),
               content: SingleChildScrollView(
@@ -1108,21 +1105,8 @@ class _SettingsPageState extends State<SettingsPage> {
                       },
                     ),
                     const SizedBox(height: 12),
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: scheme.surfaceContainerHighest.withValues(
-                          alpha: 0.4,
-                        ),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        '提示：轻量化 FSRS 采用成熟神经记忆参数集，无需在手机本地运行耗电拟合，切换后新复习题目即刻生效。',
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          color: scheme.onSurfaceVariant,
-                        ),
-                      ),
+                    const InfoHintBanner(
+                      message: '轻量化 FSRS 采用成熟神经记忆参数集，无需在手机本地运行耗电拟合，切换后新复习题目即刻生效。',
                     ),
                   ],
                 ),
