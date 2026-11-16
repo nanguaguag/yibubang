@@ -18,6 +18,19 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      - name: Setup Android SDK Platform 36
+        run: |
+          SDKMANAGER=$(which sdkmanager 2>/dev/null || true)
+          if [ -z "$SDKMANAGER" ] && [ -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
+            SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          elif [ -z "$SDKMANAGER" ] && [ -x "$ANDROID_HOME/tools/bin/sdkmanager" ]; then
+            SDKMANAGER="$ANDROID_HOME/tools/bin/sdkmanager"
+          fi
+          if [ -n "$SDKMANAGER" ]; then
+            yes | "$SDKMANAGER" --licenses || true
+            "$SDKMANAGER" "platforms;android-36" "build-tools;36.0.0" || true
+          fi
+
       - uses: subosito/flutter-action@v2
         with:
           channel: 'stable'

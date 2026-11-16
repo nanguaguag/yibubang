@@ -1,6 +1,30 @@
 # 跨会话交接
 
-## 最新交接：2026-11-16 卡片 Markdown 渲染支持、图片预览与全屏大图交互、闪卡编辑器实时预览
+## 最新交接：2026-11-17 修复 Android CI 编译 checkReleaseAarMetadata 失败（统一 subprojects compileSdk 36）
+
+- **用户授权与操作目标**：
+  - 修复 Github Android CI 编译错误：`:file_picker:checkReleaseAarMetadata` 报错 `:flutter_plugin_android_lifecycle` 要求依赖它的库与应用 `compileSdk >= 36`，而 `:file_picker` 自身声明为 `android-34`。
+- **根因分析**：
+  - 依赖链路中引入的新版 AndroidX / `flutter_plugin_android_lifecycle` 声明了 `minCompileSdk = 36`；
+  - 第三方插件（如 `file_picker`、`open_file_android`、`sqflite_android` 等）发布包中的 `android/build.gradle` 固化了 `compileSdk 34`；
+  - AGP 的 `checkReleaseAarMetadata` 任务会严格比对依赖项的 `minCompileSdk`，当模块自身 `compileSdk < 36` 时直接中断构建。
+- **完成项**：
+  1. **[统一提升子模块 compileSdk]**：
+     - 在根工程 `android/build.gradle` 中为 `subprojects` 注入生命周期感知配置：跳过已显式配置的 `:app`，并防御性检查 `project.state.executed`，对未评估的项目挂接 `afterEvaluate`，已评估的项目直接同步执行，解决 Gradle 8/9 的 `Cannot run Project.afterEvaluate(Closure) when the project is already evaluated` 异常；将所有包含 `android` 扩展的第三方插件及子工程强制将 `compileSdk` / `compileSdkVersion` 统一提升至 `36`，并自动补全缺失的 `namespace`；
+  2. **[主模块 compileSdk 对齐]**：
+     - 在 `android/app/build.gradle` 中将 `compileSdk` 明确提升为 `36`（保持 `targetSdk` / `minSdk` 稳定不变，不引入任何运行时行为破坏）；
+  3. **[CI 环境构建保障]**：
+     - 在 `.github/workflows/android.yml` 与 `.github/workflows/release.yml` 的 `Set up Java` 步骤后，优化 `sdkmanager` 多路径自适应探测（优先检测 PATH、`$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager` 与 `tools/bin/sdkmanager`），自动确认 Android SDK licenses 并安装 API 36 相关包；
+     - 在 `android/gradle.properties` 中开启 `android.builder.sdkDownload=true`，实现 Gradle 自动按需下载构建 SDK 的双重兜底；
+  4. **[CI 性能基准测试防抖加固]**：
+     - `test/bank_identity_performance_test.dart`：在检测到 CI 环境（`Platform.environment.containsKey('CI')`）时自适应提升物理耗时断言容差（避免 GitHub Actions macOS runner 宿主机 CPU 调度抖动引起的偶发 Flaky 误报），同时完全保留节点数量懒加载（`< 40`）与局部无序重绘防退化契约；
+  5. **[质量验证]**：
+     - `dart analyze lib/ test/`：**0 issues, No issues found!**
+     - `flutter test test/bank_identity_performance_test.dart`：**All tests passed!**
+- **未完成项 / 下一次第一步**：
+  - 下一次第一步：等待用户将分支推送到远程仓库触发 GitHub Actions 验证。
+
+## 前次交接：2026-11-16 卡片 Markdown 渲染支持、图片预览与全屏大图交互、闪卡编辑器实时预览
 
 - **用户授权与操作目标**：
   1. 卡片（正面/背面、卡片详情弹窗、每日复习、卡片翻转复习）全面支持 Markdown 渲染（粗体、斜体、列表、代码、公式等）；

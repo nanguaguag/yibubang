@@ -13,6 +13,37 @@ subprojects {
     project.evaluationDependsOn(":app")
 }
 
+subprojects { project ->
+    if (project.name == "app") return
+
+    def configureAndroid = {
+        if (project.hasProperty("android")) {
+            project.android {
+                if (namespace == null) {
+                    try {
+                        namespace project.group
+                    } catch (Throwable ignored) {}
+                }
+                try {
+                    compileSdk = 36
+                } catch (Throwable ignored) {
+                    try {
+                        compileSdkVersion 36
+                    } catch (Throwable ignored2) {}
+                }
+            }
+        }
+    }
+
+    if (project.state.executed) {
+        configureAndroid()
+    } else {
+        project.afterEvaluate {
+            configureAndroid()
+        }
+    }
+}
+
 tasks.register("clean", Delete) {
     delete rootProject.buildDir
 }
