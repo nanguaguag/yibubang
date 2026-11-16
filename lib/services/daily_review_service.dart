@@ -56,6 +56,27 @@ class DailyReviewService {
        _bankPathResolver = bankPathResolver,
        _bankPathsResolver = bankPathsResolver;
 
+  /// 根据本地持久化配置（如 SettingsPage 中选择的轻量化 FSRS 或 SM-2）异步构造已配置的复习调度服务
+  static Future<DailyReviewService> createConfigured({
+    SpacedReviewRepository? spacedRepo,
+    QuestionBankRepository? bankRepo,
+    QuestionBankDatabaseManager? dbManager,
+    UserDBHelper? userDbHelper,
+    Future<String?> Function(ReviewPlan plan)? bankPathResolver,
+    Future<Map<String, String>> Function(ReviewPlan plan)? bankPathsResolver,
+  }) async {
+    final engine = await SpacedRepetitionEngine.loadConfigured();
+    return DailyReviewService(
+      spacedRepo: spacedRepo,
+      bankRepo: bankRepo,
+      dbManager: dbManager,
+      engine: engine,
+      userDbHelper: userDbHelper,
+      bankPathResolver: bankPathResolver,
+      bankPathsResolver: bankPathsResolver,
+    );
+  }
+
   SpacedRepetitionEngine get engine => _engine;
 
   /// 组装今日刷题会话（到期复习队列 + 今日新题队列）

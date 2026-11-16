@@ -148,7 +148,7 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets('正常默认卡片入口传入SM2服务，绕过已保存fsrs配置', (tester) async {
+  testWidgets('正常默认卡片入口使用配置的算法服务（遵循已保存fsrs配置）', (tester) async {
     await tester.runAsync(() async {
       await createBank(1);
       final repo = SpacedReviewRepository();
@@ -180,7 +180,7 @@ void main() {
     await drainWidgetIo(tester, find.byType(DailyReviewPage));
     final page = tester.widget<DailyReviewPage>(find.byType(DailyReviewPage));
     expect(page.service, isNotNull);
-    expect(page.service!.engine.algorithmType, SpacedAlgorithmType.sm2);
+    expect(page.service!.engine.algorithmType, SpacedAlgorithmType.fsrsLite);
     await drainWidgetIo(tester, find.text('审计正面'));
     await tester.pumpWidget(const SizedBox.shrink());
   });

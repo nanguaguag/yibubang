@@ -226,6 +226,18 @@ void main() {
       expect(find.text('今日计划已圆满打卡！'), findsOneWidget);
       expect(find.text('再学一组 / 继续巩固'), findsOneWidget);
     });
+
+    testWidgets('ensures configured algorithm engine is loaded when service is not injected', (tester) async {
+      SharedPreferences.setMockInitialValues({'spaced_algorithm': 'fsrs_lite'});
+      await tester.pumpWidget(
+        const MaterialApp(home: Scaffold(body: DailyReviewCard())),
+      );
+      // pump to let _loadSummary and _ensureConfiguredService complete
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      final dynamic cardState = tester.state(find.byType(DailyReviewCard));
+      expect(cardState.service.engine.algorithmType, SpacedAlgorithmType.fsrsLite);
+    });
   });
 
   group('DailyReviewPage Interactive Flow Tests', () {

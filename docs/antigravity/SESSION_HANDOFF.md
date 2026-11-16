@@ -1,5 +1,34 @@
 # 跨会话交接
 
+## 最新交接：2026-11-16 P0 级缺陷修复与 Worker 批处理性能优化完成
+
+- **用户授权与操作目标**：用户明确指示修复 P0 级 issue，运行完整 test/analyze 验证后中文 commit。
+- **完成项**：
+  1. **[M13] 首页每日计划卡片入口算法配置对齐**：
+     - 在 `DailyReviewCard` 增加 `_ensureConfiguredService()` 动态加载与对齐逻辑，卡片进入 `DailyReviewPage` 时无缝继承用户在设置中选择的算法模型（轻量化 FSRS / SM-2）；
+     - `DailyReviewService` 提供 `createConfigured(...)` 静态工厂方法；
+     - 更新 `docs/antigravity/audits/post_a20_current_state_probe_test.dart` 探针测试为正向断言，并在 `test/daily_review_ui_test.dart` 补充卡片独立加载引擎的 Widget 回归用例。
+  2. **云同步 Worker `pushMutations` 批量操作聚合**：
+     - 重构 `backend/src/sync_v2.ts`：将 500 个 mutation 的逐条串行 SELECT 与单条 D1 batch 写入优化为 25 条切片批次查询与单事务聚合提交；
+     - 大幅降低 Worker CPU 耗时与子请求数，消除超限风险。
+  3. **后端测试与环境声明规范化**：
+     - `backend/package.json` 声明 `"engines": { "node": ">=22.11.0" }` 并规范 `"test"`、`"typecheck"` 脚本。
+- **质量门禁验证**：
+  - `dart analyze lib/`：**0 issues, No issues found!**
+  - `flutter test`：**359 passed! 3 skipped (联网用例). 100% 通过**；
+  - 后端 `sync_v2_test.mjs` / `deployment_test.mjs`：**11/11 passed**，`tsc --noEmit` 通过。
+- **未完成项 / 下一次第一步**：
+  - P1 级技术债（M04/M05 概览纯 SQL 统计与单写 FIFO 优先级、M03 启动多题库懒加载、Android AGP 9.1 工具链升级）待后续根据计划推进。
+  - 下一次第一步：执行 `git status` 核对提交树，关注用户后续功能迭代或发版需求。
+
+## 前次交接：2026-11-15 云同步协议 v2 发布完成
+
+- 用户明确授权部署；main@468e72b起始干净。D1备份/真实数据演练后增量迁移，旧账号口令/题目/流水保持；正式Worker b482e035-765f-4563-b964-32b9a863cb8f/100%，主域health及实际sync为protocol2。
+- 验证：后端11/11、tsc/dry-run、Flutter同步相关18/18；独立账号HTTP501分页/ACK/重试/删除通过，生产CloudSyncService+两临时用户库联网1/1。清理后17账号/31设备/18313状态/20584流水，38897变更序号，无完整性/外键异常。[发布记录](audits/SYNC_V2_DEPLOYMENT.md)列回执、配额与回滚。
+- 私有备份/账号/工具/探针在audits/.local/sync-v2-release，禁止提交或泄露；公开改动为后端版本/健康字段、回填SQL、部署回归及DDL夹具/冒烟脚本/文档。未改Flutter产品/用户schema/题库或AI资源，未commit/push。
+- 未完成：真实用户双端/目标地区网络、D1全天预算与持久熔断、投影一致性专项。迁移已用77813 rows_written，不能承诺大规模首次上报不触配额。
+- 下一次第一步：核对Git和本段，用户用当前v2客户端点击正常同步；失败先看HTTP/配额，保留pending，避免清库/重配对/重复强制全量。后续发布不重复迁移回填或创建测试账号。原Release流水线待办独立保留。
+
 ## 最新交接：v2.2.4+214 版本升级与清单回写发布
 
 - **版本发布与基线状态**：
@@ -105,7 +134,7 @@ Flutter全量357 PASS/3联网默认skip、最终相关8 PASS，后端39 PASS，a
 ## 未完成项和授权边界
 
 - 用户原手势实机、Android/Windows/Linux/iOS、目标地区网络、375页医学符号人工复核、版次ISBN、167题答案分歧/6923题配图OCR、Release与真实向量库迁移仍未验收。
-- 同步协议v2服务端部署/真实账号验证，以及M03目录分阶段/M04/M05/M13等属于独立后续任务；本次不部署同步服务。
+- 该段为2026-11-13历史授权边界：当时未部署同步服务。2026-11-15用户已明确授权并完成v2服务端发布及独立账号验证，见顶部最新交接；真实用户/M03目录分阶段/M04/M05/M13仍为后续项。
 - 专项赠金适用SKU、实际Advanced计量和账户运行费用仍待账单，不承诺100%抵扣/不扣卡。混合搜索两Standard+一Enterprise列表价USD7/千、Advanced预算USD11，App1/2/3不是Google收费倍数。
 - 当前没有保证每个子问题按来源比例迭代检索，25条并不穷尽全库。只有用户明确授权下一步才发布Release、push或新建云资源。
 

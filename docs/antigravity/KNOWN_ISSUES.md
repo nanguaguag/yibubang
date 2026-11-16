@@ -1,11 +1,17 @@
 # 已知问题与验证边界
 
+## 2026-11-15 已解决：云服务协议 v2 / D1 schema 未发布
+
+正式D1迁移与Worker发布完成，protocol2和精确ACK线上可用，原数据/口令保留；后端11/11、Flutter相关18/18，独立账号HTTP及实际客户端临时SQLite联网通过。详见[发布记录](audits/SYNC_V2_DEPLOYMENT.md)。D1本次迁移77813行计费，不意味着免费额度问题消失；真实用户/国内网络及全天计费仍待核验。
+
 更新2026-11-13；[旧问题账本](../archive/development-history/KNOWN_ISSUES.md)保留原始证据，旧“未修”不得覆盖后续修复结果。
 
 ## 最近已解决
 
 | 问题 | 状态与验证 |
 | --- | --- |
+| 每日复习卡片主入口绕过已配置算法 (M13) | 已修复；`DailyReviewCard` 动态感知并加载设置中的算法引擎（如 `fsrs_lite`），`DailyReviewService` 提供 `createConfigured` 工厂，探针及 Widget 12/12 测试通过 |
+| 云同步 Worker pushMutations 串行处理 500 变动性能瓶颈 | 已修复；按 25 条切片批量查询 `seenMap` 并在单 D1 batch 事务中聚合提交，彻底消除 CPU 耗尽与子请求超限风险；后端 11/11 测试通过 |
 | Windows每日复习测试fixture超30秒/database_closed | 502题+502复习项逐条提交耗尽准备时间，timeout清理后写入已关闭库；改两批事务、保留501过滤/500首批与q_4翻页断言。3.44/3.50该文件各11 PASS，3.50全量357 PASS/3 skip；Windows runner修复后尚未重跑 |
 | Flutter3.50 Android getDefaultConfig API不匹配 | 本地复现；该SDK要求AGP>=9.1.1，项目8.11.1。Android日常/Release固定Flutter3.44.6并恢复依赖检查；Java17通用及3分ABI release APK通过，分析0、全量357 PASS/3 skip；修复后远程尚未重跑 |
 | Flutter3.50 CI分析warning | syncNotesForQuestion的try内getLocalNotes返回补await；独立CI同版SDK的dart analyze/CI命令exit0，0 errors/warnings；119弃用info仍保留，不扩大迁移 |
@@ -25,7 +31,7 @@ A01–A20源码已修复并独立提交，见[修复日志](audits/A01_A20_REPAI
 ## 未解决/待核验
 
 - Windows原Actions43432164278/43436136566的每日复习fixture超时已修复并本机复核；修复后Windows原生Test/Build仍需push重跑，不能用macOS同SDK通过代替。2b80da1的Android/macOS/Linux远程成功。
-- 同步协议v2服务端/schema部署、真实账号、官方ID/幂等边界与D1实际rows_written；客户端完成不证明线上同步闭环。
+- 同步v2/schema已发布及独立账号闭环通过；真实用户、官方ID/幂等边界、国内网络及D1全天计费/熔断仍待验证，迁移回执77813 rows_written已记录。
 - 教材375页符号/公式、239稀疏页候选、36无文本页的人工质量判断、版次ISBN；167题答案分歧、6923题配图未OCR。所有页图可读不等于全部文字医学正确。
 - 最新原生实机、Android/Windows/Linux/iOS、目标地区网络及Release；模拟手势/Debug构建不作实机性能保证。
 - 专项赠金抵扣/Advanced实际SKU、Worker订阅和整账号共享免费额度，没有完整账单证明。

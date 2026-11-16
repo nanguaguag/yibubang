@@ -1,5 +1,26 @@
 # 当前开发状态
 
+## 2026-11-16 P0 级缺陷修复与云同步 Worker 批处理性能优化（完成）
+
+用户明确指示立即修复 P0 级 issue 并在测试通过后中文 commit。
+1. **[M13] 每日计划卡片入口算法配置修复 (`lib/widgets/daily_review_card.dart` / `lib/services/daily_review_service.dart`)**：
+   - 修复了 `DailyReviewCard` 默认使用未配置 SM-2 算法服务进入 `DailyReviewPage` 的隐性缺陷，增加 `_ensureConfiguredService()` 动态加载与校验引擎机制；
+   - `DailyReviewService` 新增 `createConfigured(...)` 静态异步工厂方法，统一根据用户偏好（轻量化 FSRS / SM-2）构造服务；
+   - 更新 `post_a20_current_state_probe_test.dart` 断言与 `test/daily_review_ui_test.dart`（覆盖配置 FSRS 后从卡片直接进入复习的场景）。
+2. **云同步 Worker `pushMutations` 批量操作聚合 (`backend/src/sync_v2.ts`)**：
+   - 将原先对最多 500 个 mutation 的逐条串行 SELECT 检查与独立 D1 batch 写入，优化为按 25 条切片批量查询已存在变动（`seenMap`）并在单个 D1 batch 事务中聚合提交；
+   - 将单次 500 条突发上传的网络往返次数从 1000 次急剧降至 40 次以内，彻底消除了 Cloudflare Worker CPU 耗尽与子请求（subrequests）超限风险。
+3. **后端环境与测试规范标准化 (`backend/package.json`)**：
+   - 明确声明 `"engines": { "node": ">=22.11.0" }`，增加 `"test"` 与 `"typecheck"` 脚本，统一测试运行标准。
+4. **质量门禁**：
+   - Flutter 测试：全量 359 项 100% PASS（3 联网 skip）；
+   - `dart analyze lib/`：0 errors, 0 warnings, 0 issues；
+   - 后端测试：`sync_v2_test.mjs` / `deployment_test.mjs` 11 项全部 PASS，`tsc --noEmit` 0 errors。
+
+## 2026-11-15 云同步协议 v2 正式发布（完成）
+
+用户明确授权云服务升级；起始main@468e72b/干净。正式D1已增量迁移并保留17账号/31设备/18313题状态/20584流水，补齐38897变更序号；Worker b482e035-765f-4563-b964-32b9a863cb8f/100%。健康明确protocol2，生产HTTP500+1分页/重试去重/删除跨设备及实际CloudSyncService临时SQLite链路通过；后端11/11、tsc/dry-run、Flutter相关18/18，联网1/1。迁移计费77813行写入，免费额度仍需预算。详见[发布记录](audits/SYNC_V2_DEPLOYMENT.md)。未改App/AI/教材，未commit/push；测试账号清理后原数据数量和完整性检查保持。
+
 ## 2026-11-15 版本发布：v2.2.4+214
 
 - **版本号升级**：`pubspec.yaml` 正式递增至 `2.2.4+214`。
@@ -79,4 +100,4 @@ Android日常与Release build-android固定Flutter3.44.6，保留现有Gradle/AG
 
 ## 独立待完成
 
-同步服务协议v2/schema发布与真实账号验收；M03目录阶段化、M04/M05、M13算法入口等维护；375页医学符号/公式与版次ISBN、167题答案冲突；Android/Windows/Linux/iOS实机、目标地区网络、Release发布；专项赠金SKU/Advanced实际账单；真正Embedding/向量库迁移。[问题账本](KNOWN_ISSUES.md)和[技术债](TECHNICAL_DEBT.md)保留边界。
+同步服务真实用户/目标网络及全天配额验收（v2/schema已发布）；M03目录阶段化、M04/M05、M13算法入口等维护；375页医学符号/公式与版次ISBN、167题答案冲突；Android/Windows/Linux/iOS实机、目标地区网络、Release发布；专项赠金SKU/Advanced实际账单；真正Embedding/向量库迁移。[问题账本](KNOWN_ISSUES.md)和[技术债](TECHNICAL_DEBT.md)保留边界。

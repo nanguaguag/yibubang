@@ -1,5 +1,9 @@
 # 当前测试与验证策略
 
+## 2026-11-15 同步服务发布验证
+
+后端 `node --test test/*.mjs` 11/11、tsc/dry-run；真实线上v1 DDL夹具验证无损升级/幂等及20850条历史分页。Flutter同步/outbox/刷新18/18；生产独立账号HTTP501边界及实际CloudSyncService临时库联网1/1。未改Flutter产品，未重复全量358项；测试账号清理、D1完整性和历史数量复核通过，[发布记录](audits/SYNC_V2_DEPLOYMENT.md)记录配额和实机边界。
+
 更新2026-11-13；[历史测试盘点](../archive/development-history/TESTING_STRATEGY.md)。当前357项Flutter通过、3联网默认skip、39后端通过、静态0，Android/macOS Debug构建通过；具体日志在本地.local，[AI记录](../ai-search/VALIDATION.md)含最新线上证据。
 
 SDK复核：此前本地为Flutter3.44.6/Dart3.12.2，静态0不等同于新CI SDK结果。2026-11-13四平台Actions自动使用3.50.0，在note_service.dart的try中直接返回Future触发1个warning；补await后使用独立干净工作树/Flutter3.50.0/Dart3.14.0实测dart analyze与CI同一flutter analyze --no-fatal-infos均exit0，0 errors/warnings、119个弃用info。CI允许info但保留warning阻断，未改规则或大规模迁移Material导入。

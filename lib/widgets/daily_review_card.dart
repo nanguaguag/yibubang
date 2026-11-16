@@ -7,6 +7,7 @@ import '../common/platform_adaptive.dart';
 import '../models/daily_review_session.dart';
 import '../screens/daily_review_page.dart';
 import '../services/daily_review_service.dart';
+import '../services/spaced_repetition_engine.dart';
 import 'daily_review_plan_dialog.dart';
 
 /// 首页“每日记忆计划”百词斩打卡卡片
@@ -25,10 +26,13 @@ class DailyReviewCard extends StatefulWidget {
 }
 
 class _DailyReviewCardState extends State<DailyReviewCard> with WidgetsBindingObserver {
-  late final DailyReviewService _service;
+  late DailyReviewService _service;
   bool _loading = true;
   DailyReviewSummary? _summary;
   String _lastLoadedDay = '';
+
+  @visibleForTesting
+  DailyReviewService get service => _service;
 
   @override
   void initState() {
@@ -37,6 +41,16 @@ class _DailyReviewCardState extends State<DailyReviewCard> with WidgetsBindingOb
     _service = widget.service ?? DailyReviewService();
     _lastLoadedDay = _currentDayString();
     _loadSummary();
+  }
+
+  /// 确保使用用户在设置页配置的算法引擎（如切换为轻量化 FSRS）
+  Future<DailyReviewService> _ensureConfiguredService() async {
+    if (widget.service != null) return widget.service!;
+    final engine = await SpacedRepetitionEngine.loadConfigured();
+    if (_service.engine.algorithmType != engine.algorithmType) {
+      _service = DailyReviewService(engine: engine);
+    }
+    return _service;
   }
 
   @override
@@ -66,7 +80,8 @@ class _DailyReviewCardState extends State<DailyReviewCard> with WidgetsBindingOb
     setState(() => _loading = true);
 
     try {
-      final summary = await _service.getTodaySummary();
+      final service = await _ensureConfiguredService();
+      final summary = await service.getTodaySummary();
       if (mounted) {
         setState(() {
           _summary = summary;
@@ -79,11 +94,13 @@ class _DailyReviewCardState extends State<DailyReviewCard> with WidgetsBindingOb
   }
 
   Future<void> _navigateToDailyReview({bool isExtra = false}) async {
+    final service = await _ensureConfiguredService();
+    if (!mounted) return;
     final result = isDesktopLayout(context)
         ? await pushAdaptiveModalPage<bool>(
             context,
             builder: (_) => DailyReviewPage(
-              service: _service,
+              service: service,
               isExtraSession: isExtra,
             ),
           )
@@ -91,7 +108,7 @@ class _DailyReviewCardState extends State<DailyReviewCard> with WidgetsBindingOb
             context,
             adaptivePageRoute(
               builder: (_) => DailyReviewPage(
-                service: _service,
+                service: service,
                 isExtraSession: isExtra,
               ),
             ),

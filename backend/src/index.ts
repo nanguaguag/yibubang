@@ -56,14 +56,15 @@ async function authenticateDevice(
 app.get('/', (c) => {
   return c.json({
     service: 'yibubang-sync-server',
-    version: '1.0.0',
+    version: '2.0.0',
+    protocol: 2,
     status: 'ok',
     timestamp: Date.now(),
   });
 });
 
 app.get('/api/health', (c) => {
-  return c.json({ status: 'ok', timestamp: Date.now() });
+  return c.json({ status: 'ok', protocol: 2, timestamp: Date.now() });
 });
 
 // 2. 设备注册 / 初始化

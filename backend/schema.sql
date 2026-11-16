@@ -91,12 +91,17 @@ END;
 CREATE TRIGGER IF NOT EXISTS sync_activity_insert AFTER INSERT ON sync_activities BEGIN
   INSERT INTO sync_changes(user_id,kind,entity_id) VALUES(NEW.user_id,'activity',NEW.id);
 END;
+-- 集合连接回填旧数据，重复执行不写入，避免逐行扫描同账号的整个变更历史。
 INSERT INTO sync_changes(user_id,kind,entity_id)
- SELECT user_id,'question',question_id FROM sync_questions q
- WHERE NOT EXISTS (SELECT 1 FROM sync_changes c WHERE c.user_id=q.user_id AND c.kind='question' AND c.entity_id=q.question_id);
+ SELECT q.user_id,'question',q.question_id FROM sync_questions q
+ LEFT JOIN (SELECT DISTINCT user_id,entity_id FROM sync_changes WHERE kind='question') c
+ ON c.user_id=q.user_id AND c.entity_id=q.question_id
+ WHERE c.entity_id IS NULL;
 INSERT INTO sync_changes(user_id,kind,entity_id)
- SELECT user_id,'activity',id FROM sync_activities a
- WHERE NOT EXISTS (SELECT 1 FROM sync_changes c WHERE c.user_id=a.user_id AND c.kind='activity' AND c.entity_id=a.id);
+ SELECT a.user_id,'activity',a.id FROM sync_activities a
+ LEFT JOIN (SELECT DISTINCT user_id,entity_id FROM sync_changes WHERE kind='activity') c
+ ON c.user_id=a.user_id AND c.entity_id=a.id
+ WHERE c.entity_id IS NULL;
 
 -- 流水ID不可变：删除墓碑永久阻止旧客户端和旧备份重放。
 CREATE TABLE IF NOT EXISTS sync_deleted_activities(user_id TEXT NOT NULL,id TEXT NOT NULL,PRIMARY KEY(user_id,id));

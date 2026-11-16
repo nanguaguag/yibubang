@@ -6,7 +6,7 @@
 
 [database_helper.dart](../../lib/db/database_helper.dart)管理用户库升级；题库正式文件物理只读，安装/合并使用暂存替换。Question.id跨库共享，作答/Activities/笔记留用户库；[data_transfer.dart](../../lib/db/data_transfer.dart)执行ATTACH聚合。桌面/移动文件选择和Dialog/抽屉须保持原适配。
 
-首页M02真实路径指纹、M01精准revision刷新与M03隐藏Tab延迟挂载切片已完成；未把目录检查、迁移和所有调度阶段整体重构。云同步协议v2源码及ACK/outbox修复已完成，服务端发布与真实账号验证仍独立待办。
+首页M02真实路径指纹、M01精准revision刷新与M03隐藏Tab延迟挂载切片已完成；未把目录检查、迁移和所有调度阶段整体重构。云同步协议v2及ACK/outbox已完成；2026-11-15正式D1/Worker发布及独立账号HTTP/实际客户端链路验证通过，见[发布记录](audits/SYNC_V2_DEPLOYMENT.md)。真实用户多端及目标网络仍待验收。
 
 ## AI与教材
 
