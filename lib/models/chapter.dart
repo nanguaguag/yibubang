@@ -188,17 +188,20 @@ Future<List<Chapter>> getChaptersBySubject(Subject subject) async {
     );
   }
 
-  // 4. 在内存中把主数据和用户数据合并，构造 Chapter 对象列表
+  // 4. 在内存中把主数据和用户数据合并，构造 Chapter 对象列表（使用 Map 替代 O(C²) 的 firstWhere）
+  final userMap = {
+    for (final u in userRows) (u['chapter_id'] as String): u,
+  };
   final List<Chapter> chapters = mainRows.map((r) {
     final cid = r['chapter_id'] as String;
-    final userRec = userRows.firstWhere((u) => u['chapter_id'] == cid);
+    final userRec = userMap[cid];
     return Chapter(
       id: cid,
       name: r['chapter_name'] as String,
       subjectId: subject.id,
       total: r['total'] as int,
-      correct: userRec['correct'] as int,
-      incorrect: userRec['incorrect'] as int,
+      correct: (userRec?['correct'] as int?) ?? 0,
+      incorrect: (userRec?['incorrect'] as int?) ?? 0,
       identityId: identityId,
     );
   }).toList();

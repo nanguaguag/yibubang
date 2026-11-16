@@ -82,7 +82,11 @@ class QuestionDetailController extends ChangeNotifier
       for (final entry in Map<String, UserQuestion>.from(
         _pendingTestSelections,
       ).entries) {
-        final q = questions.firstWhere((q) => q.id == entry.key);
+        final q = questions.cast<Question?>().firstWhere(
+          (q) => q?.id == entry.key,
+          orElse: () => null,
+        );
+        if (q == null) continue;
         await updateQuestionSimple(
           entry.value,
           q,

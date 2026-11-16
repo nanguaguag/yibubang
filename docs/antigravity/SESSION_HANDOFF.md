@@ -1,6 +1,27 @@
 # 跨会话交接
 
-## 最新交接：2026-11-16 P0 级缺陷修复与 Worker 批处理性能优化完成
+## 最新交接：2026-11-16 P1 级架构优化与性能重构完成
+
+- **用户授权与操作目标**：用户指示推进 P1 级 issue 修复和部分代码重构，测试通过后中文 commit。
+- **完成项**：
+  1. **[M04] 每日复习概览纯 SQL EXISTS 聚合优化与请求去重**：
+     - 重构 `daily_review_service.dart` 的 `_scopePoolCounts`，直接通过本地 `QuestionRelations` 投影执行纯 SQL `EXISTS` 范围判定，避免十万题向 `temp.review_pool_ids` 拷贝写入，十万题概览时间实测从 **228ms 降至 8ms**（降低 96.5%）；
+     - 为 `getTodaySummary` 增加了 in-flight Future 请求去重，防止并发重复计算。
+  2. **[M05] 云同步轻量化重算优化**：
+     - `cloud_sync_service.dart` 仅在 `pulledQuestions > 0` 时触发相关题库的 `rebuildQuestionCount`，纯流水（Activities）拉取不再触发全库 ATTACH 重算，消除队头写锁阻塞。
+  3. **[M04] 章节合并 $O(C^2) \to O(C)$ 性能提升**：
+     - `lib/models/chapter.dart` 消除 `userRows.firstWhere` 线性检索，重构为 Map 键值查找。
+  4. **交卷逻辑空指针安全性加固**：
+     - `question_detail_controller.dart` 安全防御 `firstWhere` 未命中异常。
+- **质量门禁验证**：
+  - `dart analyze lib/`：**0 issues, No issues found!**
+  - `flutter test`：**359 passed! 3 skipped (联网用例). 100% 全部通过**；
+  - 后端测试：`11/11 passed`，`tsc --noEmit` 0 errors。
+- **未完成项 / 下一次第一步**：
+  - P2 级项（D1 客户端持久化退避冷却、AI 搜索多轮会话 Token 窗口裁剪、统一 >999 参数分片 Helper）待后续按需推进。
+  - 下一次第一步：执行 `git status` 核对提交树，等待用户指示推送到远程分支。
+
+## 前次交接：2026-11-16 P0 级缺陷修复与 Worker 批处理性能优化完成
 
 - **用户授权与操作目标**：用户明确指示修复 P0 级 issue，运行完整 test/analyze 验证后中文 commit。
 - **完成项**：

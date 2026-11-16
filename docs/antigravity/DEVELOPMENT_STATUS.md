@@ -1,5 +1,23 @@
 # 当前开发状态
 
+## 2026-11-16 P1 级架构优化与性能重构（完成）
+
+用户指示推进 P1 级 issue 修复与部分代码重构，完成测试后中文 commit。
+1. **[M04] 每日复习概览纯 SQL EXISTS 聚合优化与请求去重 (`lib/services/daily_review_service.dart`)**：
+   - 彻底优化了 `_scopePoolCounts` 逻辑：当 `QuestionRelations` 投影有效时，直接基于用户库走纯 SQL `EXISTS` 范围统计，消除了每次查询将十万道题 ID 拷贝入 `temp.review_pool_ids` 的巨大磁盘与内存开销；
+   - 十万题合成数据库概览耗时实测从 **228ms 骤降至 8ms**（降低 96.5%）；
+   - 为 `getTodaySummary` 增加了 in-flight Future 自动请求去重，避免页面首帧多个卡片与 Tab 并发重复查询数据库。
+2. **[M05] 消除纯流水云同步时的无意义全库章节重算 (`lib/services/cloud_sync_service.dart`)**：
+   - 修复了云同步拉取到任意记录（包含纯流水）即无条件遍历所有题库执行 `rebuildQuestionCount` 的性能缺陷；改为仅在真正拉取到 `pulledQuestions > 0` 时重算受影响题库，大幅减轻后台同步对主写锁的占用。
+3. **[M04] 章节合并由 $O(C^2)$ 线性扫描优化为 $O(C)$ Map 映射 (`lib/models/chapter.dart`)**：
+   - 将 `getChaptersBySubject` 中主数据与用户数据合并时的 `userRows.firstWhere` 替换为 Map 键值查找，并安全处理了空值兜底。
+4. **交卷逻辑空指针安全保护 (`lib/screens/question_detail/question_detail_controller.dart`)**：
+   - 统一优化交卷前未保存题目的查找逻辑，防止 `firstWhere` 在弱网或异常退出时因题目未命中抛出 `StateError: Bad state: No element`。
+5. **质量门禁**：
+   - Flutter 自动化测试：359 项全部 PASS（3 联网 skip）；
+   - `dart analyze lib/`：0 errors, 0 warnings, 0 issues；
+   - 后端测试：11/11 项全部 PASS，`tsc --noEmit` 0 errors。
+
 ## 2026-11-16 P0 级缺陷修复与云同步 Worker 批处理性能优化（完成）
 
 用户明确指示立即修复 P0 级 issue 并在测试通过后中文 commit。

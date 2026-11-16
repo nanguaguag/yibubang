@@ -519,8 +519,43 @@ class DailyReviewService {
     return rows.isEmpty ? {} : Map<String, dynamic>.from(rows.single);
   }
 
-  /// 获取今日学习概览与卡片统计
+  Future<DailyReviewSummary>? _inFlightSummary;
+  String? _inFlightSummaryKey;
+
+  /// 获取今日学习概览与卡片统计（对同屏并发调用实现 in-flight 请求去重）
   Future<DailyReviewSummary> getTodaySummary({
+    ReviewPlan? customPlan,
+    DateTime? now,
+    DatabaseExecutor? executor,
+  }) {
+    if (executor == null) {
+      final currentTime = (now ?? DateTime.now()).toLocal();
+      final key =
+          '${customPlan?.id ?? "active"}_${currentTime.year}-${currentTime.month}-${currentTime.day}';
+      if (_inFlightSummary != null && _inFlightSummaryKey == key) {
+        return _inFlightSummary!;
+      }
+      final future = _loadTodaySummary(
+        customPlan: customPlan,
+        now: currentTime,
+      );
+      _inFlightSummary = future;
+      _inFlightSummaryKey = key;
+      return future.whenComplete(() {
+        if (_inFlightSummary == future) {
+          _inFlightSummary = null;
+          _inFlightSummaryKey = null;
+        }
+      });
+    }
+    return _loadTodaySummary(
+      customPlan: customPlan,
+      now: now,
+      executor: executor,
+    );
+  }
+
+  Future<DailyReviewSummary> _loadTodaySummary({
     ReviewPlan? customPlan,
     DateTime? now,
     DatabaseExecutor? executor,
@@ -1452,6 +1487,109 @@ class DailyReviewService {
     ReviewPlan plan,
   ) async {
     final banks = await _scopeBanks(plan);
+    final bankIds = banks.keys.toList();
+    if (bankIds.isEmpty) {
+      return {'wrong': 0, 'collected': 0, 'notes': 0, 'learning': 0, 'mastered': 0};
+    }
+
+    // 优先尝试基于 QuestionRelations 与已就绪投影走纯 SQL EXISTS 聚合，
+    // 避免向 SQLite temp.review_pool_ids 复制十万级题目 ID 带来的写放大与排队阻塞
+    final hasRelations = (await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='QuestionRelations'",
+    )).isNotEmpty;
+
+    if (hasRelations) {
+      final projectionStateRows = await db.query(
+        'QuestionProjectionState',
+        where: 'bank_id IN (${List.filled(bankIds.length, '?').join(',')})',
+        whereArgs: bankIds,
+      );
+      if (projectionStateRows.length == bankIds.length) {
+        final bankPlaceholders = List.filled(bankIds.length, '?').join(',');
+        final subjects = plan.coveredSubjects;
+        final hasSubjectFilter = subjects.isNotEmpty;
+        final subjectPlaceholders =
+            hasSubjectFilter ? List.filled(subjects.length, '?').join(',') : '';
+
+        final relFilter = hasSubjectFilter
+            ? 'r.bank_id IN ($bankPlaceholders) AND r.subject_id IN ($subjectPlaceholders)'
+            : 'r.bank_id IN ($bankPlaceholders)';
+        final relArgs =
+            hasSubjectFilter ? [...bankIds, ...subjects] : [...bankIds];
+
+        final counts = (await db.rawQuery('''
+          SELECT
+            SUM(CASE WHEN uq.status=2 THEN 1 ELSE 0 END) AS wrong,
+            SUM(CASE WHEN uq.collection=1 THEN 1 ELSE 0 END) AS collected
+          FROM main.Question uq
+          WHERE COALESCE(uq.cut_question,'0') NOT IN ('1','cutted')
+            AND EXISTS (
+              SELECT 1 FROM main.QuestionRelations r
+              WHERE r.question_id = uq.id AND $relFilter
+            )
+        ''', relArgs)).single;
+
+        final noteRows = await db.rawQuery('''
+          SELECT COUNT(DISTINCT n.question_id)
+          FROM main.Notes n
+          LEFT JOIN main.Question uq ON uq.id=n.question_id
+          WHERE COALESCE(uq.cut_question,'0') NOT IN ('1','cutted')
+            AND EXISTS (
+              SELECT 1 FROM main.QuestionRelations r
+              WHERE r.question_id = n.question_id AND $relFilter
+            )
+        ''', relArgs);
+
+        final learning = await db.rawQuery('''
+          SELECT COUNT(*)
+          FROM main.SpacedReviewItem s
+          WHERE s.state=1
+            AND (s.plan_id=? OR s.plan_id IS NULL)
+            AND (
+              s.item_type='flashcard'
+              OR EXISTS (
+                SELECT 1 FROM main.QuestionRelations r
+                WHERE r.question_id = s.item_id AND $relFilter
+              )
+            )
+        ''', [plan.id, ...relArgs]);
+
+        final mastered = await db.rawQuery('''
+          SELECT COUNT(*)
+          FROM (
+            SELECT uq.id
+            FROM main.Question uq
+            WHERE uq.cut_question IN ('1','cutted')
+              AND EXISTS (
+                SELECT 1 FROM main.QuestionRelations r
+                WHERE r.question_id = uq.id AND $relFilter
+              )
+            UNION
+            SELECT s.item_id AS id
+            FROM main.SpacedReviewItem s
+            WHERE s.state=3
+              AND (s.plan_id=? OR s.plan_id IS NULL)
+              AND (
+                s.item_type='flashcard'
+                OR EXISTS (
+                  SELECT 1 FROM main.QuestionRelations r
+                  WHERE r.question_id = s.item_id AND $relFilter
+                )
+              )
+          )
+        ''', [...relArgs, plan.id, ...relArgs]);
+
+        return {
+          'wrong': (counts['wrong'] as num?)?.toInt() ?? 0,
+          'collected': (counts['collected'] as num?)?.toInt() ?? 0,
+          'notes': Sqflite.firstIntValue(noteRows) ?? 0,
+          'learning': Sqflite.firstIntValue(learning) ?? 0,
+          'mastered': Sqflite.firstIntValue(mastered) ?? 0,
+        };
+      }
+    }
+
+    // 兜底回退：若投影未全量就绪，保留原基于 ATTACH 与 TEMP 表的安全聚合
     return UserDatabaseCoordinator.instance.run(() async {
       await db.execute(
         'CREATE TEMP TABLE review_pool_ids(id TEXT PRIMARY KEY)',

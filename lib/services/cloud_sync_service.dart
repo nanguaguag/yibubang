@@ -446,12 +446,13 @@ class CloudSyncService extends ChangeNotifier {
         after = chunk.isEmpty ? through : chunk.last['seq'] as int;
       } while (after < through);
 
-      // 数据已逐页原子合并；章节投影仍通过 ATTACH 聚合重算。
-      if (pulledActivities > 0 || pulledQuestions > 0) {
-        final banks = await userDb.query('QuestionBank', columns: ['bank_id']);
-        affectedBankIds.addAll(banks.map((b) => b['bank_id'] as String));
-        final active = prefs.getString('activeBankId');
-        if (active != null && active.isNotEmpty) affectedBankIds.add(active);
+      // 数据已逐页原子合并；仅当真正拉取到题目变动（pulledQuestions > 0）时，才重算相关题库的章节投影。
+      // 纯流水（Activities）拉取不改动题目作答状态与计数，无需对题库执行昂贵的 ATTACH 全量重算。
+      if (pulledQuestions > 0) {
+        if (affectedBankIds.isEmpty) {
+          final active = prefs.getString('activeBankId');
+          if (active != null && active.isNotEmpty) affectedBankIds.add(active);
+        }
         for (final bank in affectedBankIds) {
           try {
             await rebuildQuestionCount(bankId: bank);
