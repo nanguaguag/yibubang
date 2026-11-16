@@ -22,6 +22,9 @@ class CloudOutbox {
     await db.execute(
       'CREATE TABLE IF NOT EXISTS CloudSyncAccounts (owner TEXT PRIMARY KEY)',
     );
+    await db.execute(
+      'CREATE TABLE IF NOT EXISTS CloudPullCursor(owner TEXT PRIMARY KEY, cursor INTEGER NOT NULL DEFAULT 0)',
+    );
     await db.execute('''CREATE TABLE IF NOT EXISTS CloudOutbox (
       seq INTEGER PRIMARY KEY AUTOINCREMENT, owner TEXT NOT NULL,
       kind TEXT NOT NULL, entity_id TEXT NOT NULL, mask INTEGER NOT NULL DEFAULT 0,
@@ -91,6 +94,55 @@ class CloudOutbox {
         SELECT owner, 'activity', NEW.id FROM CloudSyncContext WHERE id=1;
       END''',
     );
+    await db.execute(
+      'CREATE TABLE IF NOT EXISTS CloudDeletedFlashcards(id TEXT PRIMARY KEY)',
+    );
+    await db.execute(
+      """CREATE TRIGGER IF NOT EXISTS cloud_flashcard_no_resurrection BEFORE INSERT ON CustomFlashcards
+      WHEN (SELECT applying FROM CloudSyncContext WHERE id=1)=1 AND EXISTS(SELECT 1 FROM CloudDeletedFlashcards WHERE id=NEW.id)
+      BEGIN SELECT RAISE(IGNORE); END""",
+    );
+    await db.execute(
+      """CREATE TRIGGER IF NOT EXISTS cloud_flashcard_delete AFTER DELETE ON CustomFlashcards
+      BEGIN
+        INSERT OR IGNORE INTO CloudDeletedFlashcards(id) VALUES(OLD.id);
+        DELETE FROM CloudOutbox WHERE kind='flashcard' AND entity_id=OLD.id;
+        INSERT INTO CloudOutbox(owner,kind,entity_id)
+          SELECT owner,'flashcard_delete',OLD.id FROM CloudSyncContext WHERE id=1 AND applying=0;
+      END""",
+    );
+    for (final event in ['INSERT', 'UPDATE']) {
+      await db.execute(
+        '''CREATE TRIGGER IF NOT EXISTS cloud_flashcard_${event.toLowerCase()}
+        AFTER $event ON CustomFlashcards
+        WHEN (SELECT applying FROM CloudSyncContext WHERE id=1)=0
+        BEGIN
+          DELETE FROM CloudOutbox WHERE kind='flashcard' AND entity_id=NEW.id AND owner=(SELECT owner FROM CloudSyncContext WHERE id=1);
+          INSERT INTO CloudOutbox(owner, kind, entity_id, updated_at)
+          SELECT owner, 'flashcard', NEW.id, NEW.updated_at FROM CloudSyncContext WHERE id=1;
+        END''',
+      );
+      await db.execute(
+        '''CREATE TRIGGER IF NOT EXISTS cloud_spaced_item_${event.toLowerCase()}
+        AFTER $event ON SpacedReviewItem
+        WHEN (SELECT applying FROM CloudSyncContext WHERE id=1)=0 AND (NEW.state != 0 OR NEW.reps > 0)
+        BEGIN
+          DELETE FROM CloudOutbox WHERE kind='spaced_item' AND entity_id=NEW.item_id AND owner=(SELECT owner FROM CloudSyncContext WHERE id=1);
+          INSERT INTO CloudOutbox(owner, kind, entity_id, updated_at)
+          SELECT owner, 'spaced_item', NEW.item_id, NEW.last_review_at FROM CloudSyncContext WHERE id=1;
+        END''',
+      );
+      await db.execute(
+        '''CREATE TRIGGER IF NOT EXISTS cloud_review_plan_${event.toLowerCase()}
+        AFTER $event ON ReviewPlans
+        WHEN (SELECT applying FROM CloudSyncContext WHERE id=1)=0
+        BEGIN
+          DELETE FROM CloudOutbox WHERE kind='review_plan' AND entity_id=NEW.id AND owner=(SELECT owner FROM CloudSyncContext WHERE id=1);
+          INSERT INTO CloudOutbox(owner, kind, entity_id, updated_at)
+          SELECT owner, 'review_plan', NEW.id, NEW.updated_at FROM CloudSyncContext WHERE id=1;
+        END''',
+      );
+    }
   }
 
   static Future<void> bind(Database db, String owner) => db.transaction((
@@ -116,6 +168,24 @@ class CloudOutbox {
       '''INSERT INTO CloudOutbox(owner, kind, entity_id)
       SELECT ?, 'activity', id FROM Activities a WHERE is_right IN ('0','1')
       AND NOT EXISTS (SELECT 1 FROM CloudOutbox o WHERE o.owner=? AND o.kind='activity' AND o.entity_id=a.id)''',
+      [owner, owner],
+    );
+    await tx.rawInsert(
+      '''INSERT INTO CloudOutbox(owner, kind, entity_id, updated_at)
+      SELECT ?, 'flashcard', id, updated_at FROM CustomFlashcards f
+      WHERE NOT EXISTS (SELECT 1 FROM CloudOutbox o WHERE o.owner=? AND o.kind='flashcard' AND o.entity_id=f.id)''',
+      [owner, owner],
+    );
+    await tx.rawInsert(
+      '''INSERT INTO CloudOutbox(owner, kind, entity_id, updated_at)
+      SELECT ?, 'spaced_item', item_id, last_review_at FROM SpacedReviewItem s WHERE state != 0
+      AND NOT EXISTS (SELECT 1 FROM CloudOutbox o WHERE o.owner=? AND o.kind='spaced_item' AND o.entity_id=s.item_id)''',
+      [owner, owner],
+    );
+    await tx.rawInsert(
+      '''INSERT INTO CloudOutbox(owner, kind, entity_id, updated_at)
+      SELECT ?, 'review_plan', id, updated_at FROM ReviewPlans p
+      WHERE NOT EXISTS (SELECT 1 FROM CloudOutbox o WHERE o.owner=? AND o.kind='review_plan' AND o.entity_id=p.id)''',
       [owner, owner],
     );
     await tx.insert('CloudSyncAccounts', {'owner': owner});
@@ -162,8 +232,29 @@ class CloudOutbox {
         if (mask & field.value != 0) payload[field.key] = row[field.key];
       }
       payload['updated_at'] = row['updated_at'];
-    } else if (row['kind'] == 'activity_delete') {
-      // 不可变流水ID的删除意图无需读取已删除实体。
+    } else if (row['kind'] == 'activity_delete' || row['kind'] == 'flashcard_delete') {
+      // 不可变实体ID的删除意图无需读取已删除实体。
+    } else if (row['kind'] == 'flashcard') {
+      final rows = await db.query(
+        'CustomFlashcards',
+        where: 'id=?',
+        whereArgs: [row['entity_id']],
+      );
+      if (rows.isNotEmpty) payload.addAll(rows.single);
+    } else if (row['kind'] == 'spaced_item') {
+      final rows = await db.query(
+        'SpacedReviewItem',
+        where: 'item_id=?',
+        whereArgs: [row['entity_id']],
+      );
+      if (rows.isNotEmpty) payload.addAll(rows.single);
+    } else if (row['kind'] == 'review_plan') {
+      final rows = await db.query(
+        'ReviewPlans',
+        where: 'id=?',
+        whereArgs: [row['entity_id']],
+      );
+      if (rows.isNotEmpty) payload.addAll(rows.single);
     } else {
       final rows = await db.query(
         'Activities',
@@ -269,6 +360,50 @@ class CloudOutbox {
       }
       for (final value in data['pull_questions'] as List) {
         await mergeQuestion(tx, Map<String, dynamic>.from(value as Map));
+      }
+      for (final id in (data['pull_deleted_flashcards'] as List? ?? const [])) {
+        if (id is! String || id.isEmpty) continue;
+        await tx.insert(
+          'CloudDeletedFlashcards',
+          {'id': id},
+          conflictAlgorithm: ConflictAlgorithm.ignore,
+        );
+        await tx.delete(
+          'CloudOutbox',
+          where: "kind='flashcard' AND entity_id=?",
+          whereArgs: [id],
+        );
+        await tx.delete('CustomFlashcards', where: 'id=?', whereArgs: [id]);
+      }
+      for (final value in (data['pull_flashcards'] as List? ?? const [])) {
+        final fc = Map<String, dynamic>.from(value as Map);
+        final id = fc['id']?.toString();
+        if (id == null || id.isEmpty) continue;
+        await tx.insert(
+          'CustomFlashcards',
+          fc,
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+      for (final value in (data['pull_spaced_items'] as List? ?? const [])) {
+        final item = Map<String, dynamic>.from(value as Map);
+        final itemId = item['item_id']?.toString();
+        if (itemId == null || itemId.isEmpty) continue;
+        await tx.insert(
+          'SpacedReviewItem',
+          item,
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+      for (final value in (data['pull_review_plans'] as List? ?? const [])) {
+        final plan = Map<String, dynamic>.from(value as Map);
+        final planId = plan['id']?.toString();
+        if (planId == null || planId.isEmpty) continue;
+        await tx.insert(
+          'ReviewPlans',
+          plan,
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
       }
       await tx.insert('CloudPullCursor', {
         'owner': owner,

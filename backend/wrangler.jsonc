@@ -12,6 +12,12 @@
       "database_id": "8da12c55-e7fb-4f2d-9120-0da499ebff4e"
     }
   ],
+  "r2_buckets": [
+    {
+      "binding": "BACKUP_BUCKET",
+      "bucket_name": "yibubang-user-backups"
+    }
+  ],
   "routes": [
     {
       "pattern": "yibubang.melonhu.com",

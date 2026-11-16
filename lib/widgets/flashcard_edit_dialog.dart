@@ -1,10 +1,13 @@
+import 'dart:io';
 import 'dart:math' as math;
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../common/app_shapes.dart';
 import '../common/platform_adaptive.dart';
 import '../models/spaced_review_item.dart';
 import '../repositories/spaced_review_repository.dart';
+import '../services/note_service.dart';
 
 /// 闪卡创建与编辑组件（支持常规弹窗与下弹抽屉 BottomSheet 两种形态）
 class FlashcardEditDialog extends StatefulWidget {
@@ -126,6 +129,73 @@ class _FlashcardEditDialogState extends State<FlashcardEditDialog> {
   final List<String> _selectedTags = [];
   List<String> _availableTags = [];
   bool _saving = false;
+  bool _uploadingFront = false;
+  bool _uploadingBack = false;
+
+  Future<void> _insertImageToController(
+    TextEditingController controller,
+    bool isFront,
+  ) async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+      allowMultiple: false,
+    );
+    if (result == null || result.files.isEmpty || result.files.first.path == null) {
+      return;
+    }
+
+    final filePath = result.files.first.path!;
+    setState(() {
+      if (isFront) {
+        _uploadingFront = true;
+      } else {
+        _uploadingBack = true;
+      }
+    });
+
+    try {
+      final noteImage = await NoteService.instance.uploadImage(File(filePath));
+      if (!mounted) return;
+
+      if (noteImage != null && noteImage.bImg.isNotEmpty) {
+        final imgMarkdown = '\n![图片](${noteImage.bImg})\n';
+        final text = controller.text;
+        final sel = controller.selection;
+        if (sel.isValid && sel.start >= 0) {
+          final newText = text.replaceRange(sel.start, sel.end, imgMarkdown);
+          controller.value = TextEditingValue(
+            text: newText,
+            selection: TextSelection.collapsed(offset: sel.start + imgMarkdown.length),
+          );
+        } else {
+          controller.text = text.isEmpty ? imgMarkdown.trim() : '$text$imgMarkdown';
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('图片已成功上传至医考帮官方图床并插入')),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('图片上传失败，请确保已登录医考帮账号且网络正常')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('上传异常: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          if (isFront) {
+            _uploadingFront = false;
+          } else {
+            _uploadingBack = false;
+          }
+        });
+      }
+    }
+  }
 
   @override
   void initState() {
@@ -329,6 +399,20 @@ class _FlashcardEditDialogState extends State<FlashcardEditDialog> {
                 color: scheme.primary,
               ),
             ),
+            const Spacer(),
+            TextButton.icon(
+              icon: _uploadingFront
+                  ? const SizedBox(
+                      width: 12,
+                      height: 12,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.add_photo_alternate_outlined, size: 16),
+              label: const Text('插入图片', style: TextStyle(fontSize: 12)),
+              onPressed: _uploadingFront
+                  ? null
+                  : () => _insertImageToController(_frontController, true),
+            ),
           ],
         ),
         const SizedBox(height: 6),
@@ -364,6 +448,20 @@ class _FlashcardEditDialogState extends State<FlashcardEditDialog> {
                 fontWeight: FontWeight.bold,
                 color: scheme.secondary,
               ),
+            ),
+            const Spacer(),
+            TextButton.icon(
+              icon: _uploadingBack
+                  ? const SizedBox(
+                      width: 12,
+                      height: 12,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.add_photo_alternate_outlined, size: 16),
+              label: const Text('插入图片', style: TextStyle(fontSize: 12)),
+              onPressed: _uploadingBack
+                  ? null
+                  : () => _insertImageToController(_backController, false),
             ),
           ],
         ),

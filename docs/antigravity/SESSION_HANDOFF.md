@@ -1,6 +1,38 @@
 # 跨会话交接
 
-## 最新交接：2026-11-16 P1 修复推进与架构重构第二阶段完成
+## 最新交接：2026-11-16 Cloudflare D1+R2 混合冷热同步架构、官方图床接入与开发者模式同步队列完善
+
+- **用户授权与操作目标**：
+  1. 补齐 Cloudflare D1 同步真空（将自制闪卡、FSRS 记忆曲线、复习计划纳入 D1 增量同步）；
+  2. 实现“D1 增量同步 + R2 冷备快照”：D1 专职负责高频细粒度增量，R2 负责周期/按需 SQLite 整库冷备份；自动备份默认不开启，开启后默认保留最近 10 条（1~50 条可调），默认每周备份一次（1~30 天可调）；
+  3. 卡片与笔记图片统一请求医考帮官方图片上传 API，上传到官方图床；
+  4. 云端同步接入“开发者模式”-“同步队列”，排查修复同步队列的 bug 与缺失记录；
+  5. 验证测试通过后进行规范中文 commit。
+- **完成项**：
+  1. **[D1 增量同步真空补齐] 卡片、记忆曲线与计划增量互通**：
+     - `backend/schema.sql`、`backend/src/sync_v2.ts`：扩展 `sync_flashcards`、`sync_deleted_flashcards`、`sync_spaced_items`、`sync_review_plans` 表结构与触发器，支持 4 类实体的批量推送（pushMutations）与分页拉取（pullChanges）；
+     - `lib/db/cloud_outbox.dart`：补齐实体增量捕获触发器与 `CloudDeletedFlashcards` 墓碑机制，在 `CloudOutbox.bind` 首次关联时自动回填现有卡片和记忆项，在 `CloudOutbox.mergePage` 自动解包并合并远端拉取的卡片与记忆项；
+     - 优化墓碑判定条件为云端拉取防复活（`applying=1`），并在 `saveFlashcard` 显式重新建卡时清除墓碑，修复复习安全测试；
+     - 编写并通过 `backend/test/sync_v2_extensions_test.mjs` 与 `test/cloud_outbox_extensions_test.dart`。
+  2. **[D1+R2 混合冷热同步] R2 整库冷备快照与原子还原**：
+     - `backend/wrangler.jsonc`、`backend/src/index.ts`：绑定 R2 Bucket `BACKUP_BUCKET`，实现 `/api/backup/upload`、`/api/backup/list`、`/api/backup/download/:filename`、`/api/backup/:filename` 路由，支持流式上传、校验和比对与老备份自动修剪；
+     - `lib/models/cloud_backup.dart`、`lib/services/cloud_backup_service.dart`：整库 WAL checkpoint 截断、GZip 压缩、SHA-256 校验和、双端点主备容灾轮询、防损回滚保护（`.restore_bak`）、自动周期调度；
+     - `lib/screens/cloud_sync_page.dart`：R2 冷备设置卡片（自动备份默认关、周期 7 天可调、保留 10 份可调、立即创建快照、快照历史与还原抽屉）。
+  3. **[官方图床接入] 闪卡编辑器接入医考帮官方图床**：
+     - `lib/services/note_service.dart`：`uploadImage` 强化默认兜底；
+     - `lib/widgets/flashcard_edit_dialog.dart`：正面与背面均增加「插入图片」按钮，选择本地图片后上传至医考帮官方图床并在光标处插入 Markdown 图片语法。
+  4. **[开发者模式接入与排障] 同步队列全量覆盖与流水类型纠偏**：
+     - `lib/screens/developer_page.dart`：增加「Cloudflare D1 增量同步队列 (CloudOutbox)」与「Cloudflare R2 整库冷备快照」卡片，支持未决变动列表、游标监控、单项查看实体详情与移出队列；
+     - 修复 `Activities` 本地流水渲染时将闪卡/记忆曲线复习误判为做题提交的展示 bug；
+     - 补齐 `_loadDatabaseStats()` 缺失的 6 张核心数据表统计计数（`CustomFlashcards`、`CloudDeletedFlashcards`、`SpacedReviewItem`、`ReviewPlans`、`CloudOutbox`、`CloudPullCursor`）。
+- **质量门禁验证**：
+  - `dart analyze lib/`：**0 issues, No issues found!**
+  - 后端测试：`tsc --noEmit` 0 errors，`backend/test/*.mjs` 13/13 项全量通过；
+  - `flutter test`：**371 passed! 3 skipped (联网用例). 100% 全部通过**。
+- **未完成项 / 下一次第一步**：
+  - 下一次第一步：执行 `git status` 核对提交树，等待用户指示推送到远程仓库。
+
+## 前次交接：2026-11-16 P1 修复推进与架构重构第二阶段完成
 
 - **用户授权与操作目标**：用户指示实施 M04 剩余项、M03 启动懒加载、M10 统一 SQLite 分片、AI 搜索 20 轮上下文滑动窗口控制与 Android 编译工具链升级统一 SDK，测试通过后中文 commit。
 - **完成项**：

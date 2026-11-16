@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../db/data_transfer.dart';
 import '../db/cloud_outbox.dart';
 import '../db/database_helper.dart';
+import 'cloud_backup_service.dart';
 
 /// 云服务健康检查状态
 class HealthCheckResult {
@@ -118,6 +119,8 @@ class CloudSyncService extends ChangeNotifier {
   bool get enabled => _enabled;
   String? get userId => _userId;
   String? get deviceId => _deviceId;
+  String? get deviceToken => _deviceToken;
+  List<String> get endpoints => [primaryEndpoint, fallbackEndpoint];
   String? get deviceName => _deviceName ?? _defaultDeviceName();
   String? get passphrase => _passphrase;
   int get lastSyncTime => _lastSyncTime;
@@ -363,7 +366,11 @@ class CloudSyncService extends ChangeNotifier {
           mergedData ||
           (page['pull_questions'] as List).isNotEmpty ||
           (page['pull_activities'] as List).isNotEmpty ||
-          (page['pull_deleted_activities'] as List? ?? const []).isNotEmpty;
+          (page['pull_deleted_activities'] as List? ?? const []).isNotEmpty ||
+          (page['pull_flashcards'] as List? ?? const []).isNotEmpty ||
+          (page['pull_deleted_flashcards'] as List? ?? const []).isNotEmpty ||
+          (page['pull_spaced_items'] as List? ?? const []).isNotEmpty ||
+          (page['pull_review_plans'] as List? ?? const []).isNotEmpty;
     }
 
     try {
@@ -465,6 +472,9 @@ class CloudSyncService extends ChangeNotifier {
       // 5. 更新本地同步游标
       _lastSyncTime = serverTime;
       await prefs.setInt(_keyLastSyncTime, _lastSyncTime);
+
+      // 6. 检查并按需在后台执行 R2 整库周期冷备
+      unawaited(CloudBackupService.instance.checkAndRunAutoBackup());
 
       final result = SyncResult(
         success: true,

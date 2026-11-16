@@ -215,9 +215,9 @@ class NoteService {
   /// 上传单张图片到医考帮服务器
   Future<NoteImage?> uploadImage(
     File file, {
-    required String subjectId,
-    required String identityId,
-    required String appId,
+    String? subjectId,
+    String? identityId,
+    String? appId,
     String? expectedOwner,
   }) async {
     try {
@@ -235,15 +235,24 @@ class NoteService {
       final secret = prefs.getString('secret') ?? '';
       final userId = prefs.getString('user_id') ?? '';
 
+      final effectiveIdentityId =
+          (identityId != null && identityId.isNotEmpty)
+              ? identityId
+              : (prefs.getString('identityId') ?? '1');
+      final effectiveAppId =
+          (appId != null && appId.isNotEmpty) ? appId : '12';
+      final effectiveSubjectId =
+          (subjectId != null && subjectId.isNotEmpty) ? subjectId : '1';
+
       final timestamp = getTimestamp();
       final fields = <String, String>{
-        'subject_id': subjectId,
+        'subject_id': effectiveSubjectId,
         'is_svip': '0',
         'user_id': userId,
-        'identity_id': identityId,
+        'identity_id': effectiveIdentityId,
         'is_vip': '0',
         'secret': secret,
-        'app_id': appId,
+        'app_id': effectiveAppId,
         'token': token,
       };
 

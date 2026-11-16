@@ -95,6 +95,23 @@
    - `dart analyze lib/` 0 issues。
 
 
+## 2026-11-16 Cloudflare D1+R2 混合冷热同步架构与开发者同步队列接入
+
+- **D1 同步真空补齐**：卡片（`CustomFlashcards`）、记忆曲线（`SpacedReviewItem`）、复习计划（`ReviewPlans`）全面纳入 Cloudflare D1 增量同步流水线，支持批量推送、拉取合并与防复活墓碑控制。
+- **D1 增量 + R2 冷备快照**：
+  - Cloudflare Worker 绑定 R2 Bucket `BACKUP_BUCKET` 并提供备份上传、列表、下载与自动修剪接口；
+  - 客户端实现 `CloudBackupService`，支持 WAL checkpoint 截断、GZip 压缩、SHA-256 校验和、双端点主备容灾轮询、防损回滚与自动周期调度（默认关、7天/10份可调）；
+  - `CloudSyncPage` 提供完整的冷备快照管理面板与抽屉还原交互。
+- **官方图床接入**：自制闪卡（正面与背面）支持直接调用医考帮官方图床上传接口，在光标处插入 Markdown 图片语法。
+- **开发者模式同步队列升级**：
+  - `DeveloperPage` 接入「Cloudflare D1 增量变动队列 (CloudOutbox)」与「Cloudflare R2 冷备快照」卡片，支持实时监控、实体详情穿透查阅与单项移出；
+  - 修复 `Activities` 渲染将闪卡/记忆项自评误判为做题提交的展示 bug；
+  - 补齐数据库统计中缺失的 6 张核心数据表计数。
+- **全量回归验证**：
+  - `dart analyze lib/`：0 issues；
+  - 后端测试：`tsc --noEmit` 0 errors，13/13 项全量通过；
+  - `flutter test`：371 passed，100% 全部通过。
+
 ## 2026-11-13 Windows复习测试超时修复
 
 起始main@2b80da1与origin一致/干净。Windows Actions43432164278与43436136566均在daily_review_service_test的数据准备阶段超30秒：502题+502复习项逐条自动提交，timeout后tearDown关闭库，未完成insert报database_closed；尚未调用buildDailySession。

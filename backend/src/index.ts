@@ -4,6 +4,7 @@ import { cors } from 'hono/cors';
 
 type Bindings = {
   DB: D1Database;
+  BACKUP_BUCKET?: R2Bucket;
 };
 
 interface DeviceAuth {
@@ -333,6 +334,149 @@ app.post('/api/sync', async (c) => {
       accepted_count: accepted.length,
     },
   });
+});
+
+// 6. R2 SQLite 整库冷备快照管理接口
+app.post('/api/backup/upload', async (c) => {
+  const db = c.env.DB;
+  const bucket = c.env.BACKUP_BUCKET;
+  if (!bucket) {
+    return c.json({ code: 501, message: 'R2 storage is not configured' }, 501);
+  }
+  const auth = await authenticateDevice(db, c.req.header('Authorization'));
+  if (!auth) {
+    return c.json({ code: 401, message: 'Unauthorized device' }, 401);
+  }
+
+  const checksum = c.req.header('X-Backup-Checksum') || '';
+  const timestampStr = c.req.header('X-Backup-Timestamp') || Date.now().toString();
+  const maxRetained = Math.max(1, Math.min(50, Number(c.req.header('X-Max-Retained')) || 10));
+  const filename = `${timestampStr}.sqlite.gz`;
+  const key = `backups/${auth.userId}/${filename}`;
+
+  const bodyStream = c.req.raw.body;
+  if (!bodyStream) {
+    return c.json({ code: 400, message: 'Empty backup stream' }, 400);
+  }
+
+  await bucket.put(key, bodyStream, {
+    httpMetadata: { contentType: 'application/gzip' },
+    customMetadata: {
+      userId: auth.userId,
+      checksum,
+      timestamp: timestampStr,
+    },
+  });
+
+  // 轮转自动清理：保留最近 maxRetained 个快照
+  try {
+    const listResult = await bucket.list({ prefix: `backups/${auth.userId}/` });
+    if (listResult.objects.length > maxRetained) {
+      const sorted = [...listResult.objects].sort((a, b) => b.key.localeCompare(a.key));
+      const toDelete = sorted.slice(maxRetained);
+      for (const obj of toDelete) {
+        await bucket.delete(obj.key);
+      }
+    }
+  } catch (err) {
+    console.error('Failed to prune old backups:', err);
+  }
+
+  return c.json({
+    code: 0,
+    message: 'Backup uploaded successfully',
+    data: {
+      filename,
+      key,
+      timestamp: Number(timestampStr),
+    },
+  });
+});
+
+app.get('/api/backup/list', async (c) => {
+  const db = c.env.DB;
+  const bucket = c.env.BACKUP_BUCKET;
+  if (!bucket) {
+    return c.json({ code: 501, message: 'R2 storage is not configured' }, 501);
+  }
+  const auth = await authenticateDevice(db, c.req.header('Authorization'));
+  if (!auth) {
+    return c.json({ code: 401, message: 'Unauthorized device' }, 401);
+  }
+
+  const listResult = await bucket.list({ prefix: `backups/${auth.userId}/` });
+  const backups = listResult.objects
+    .map(obj => {
+      const filename = obj.key.split('/').pop() || '';
+      return {
+        key: obj.key,
+        filename,
+        size: obj.size,
+        uploaded: obj.uploaded.getTime(),
+        checksum: obj.customMetadata?.checksum || '',
+        timestamp: Number(obj.customMetadata?.timestamp) || obj.uploaded.getTime(),
+      };
+    })
+    .sort((a, b) => b.timestamp - a.timestamp);
+
+  return c.json({
+    code: 0,
+    message: 'Success',
+    data: { backups },
+  });
+});
+
+app.get('/api/backup/download/:filename', async (c) => {
+  const db = c.env.DB;
+  const bucket = c.env.BACKUP_BUCKET;
+  if (!bucket) {
+    return c.json({ code: 501, message: 'R2 storage is not configured' }, 501);
+  }
+  const auth = await authenticateDevice(db, c.req.header('Authorization'));
+  if (!auth) {
+    return c.json({ code: 401, message: 'Unauthorized device' }, 401);
+  }
+
+  const filename = c.req.param('filename');
+  if (!filename || filename.includes('..') || filename.includes('/')) {
+    return c.json({ code: 400, message: 'Invalid filename' }, 400);
+  }
+
+  const key = `backups/${auth.userId}/${filename}`;
+  const object = await bucket.get(key);
+  if (!object) {
+    return c.json({ code: 404, message: 'Backup not found' }, 404);
+  }
+
+  return new Response(object.body, {
+    headers: {
+      'Content-Type': 'application/gzip',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'X-Backup-Checksum': object.customMetadata?.checksum || '',
+      'X-Backup-Timestamp': object.customMetadata?.timestamp || '',
+    },
+  });
+});
+
+app.delete('/api/backup/:filename', async (c) => {
+  const db = c.env.DB;
+  const bucket = c.env.BACKUP_BUCKET;
+  if (!bucket) {
+    return c.json({ code: 501, message: 'R2 storage is not configured' }, 501);
+  }
+  const auth = await authenticateDevice(db, c.req.header('Authorization'));
+  if (!auth) {
+    return c.json({ code: 401, message: 'Unauthorized device' }, 401);
+  }
+
+  const filename = c.req.param('filename');
+  if (!filename || filename.includes('..') || filename.includes('/')) {
+    return c.json({ code: 400, message: 'Invalid filename' }, 400);
+  }
+
+  const key = `backups/${auth.userId}/${filename}`;
+  await bucket.delete(key);
+  return c.json({ code: 0, message: 'Backup deleted successfully' });
 });
 
 export default app;

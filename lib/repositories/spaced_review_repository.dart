@@ -383,6 +383,13 @@ class SpacedReviewRepository {
         where: 'item_id=?',
         whereArgs: [card.id],
       );
+      try {
+        await tx.delete(
+          'CloudDeletedFlashcards',
+          where: 'id=?',
+          whereArgs: [card.id],
+        );
+      } catch (_) {}
       await tx.insert(
         'CustomFlashcards',
         card.toMap(),

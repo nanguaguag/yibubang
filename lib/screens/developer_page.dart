@@ -14,9 +14,12 @@ import '../services/auth_service.dart';
 import 'api_playground_page.dart';
 import 'my_page.dart';
 import '../db/database_helper.dart';
+import '../models/cloud_backup.dart';
+import '../services/cloud_backup_service.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/note_service.dart';
 import '../services/ykb_sync_service.dart';
+import 'cloud_sync_page.dart';
 
 /// 开发者调试页面
 class DeveloperPage extends StatefulWidget {
@@ -47,6 +50,17 @@ class _DeveloperPageState extends State<DeveloperPage>
   List<Map<String, dynamic>> _ykbQueueItems = [];
   List<Map<String, dynamic>> _noteQueueItems = [];
   List<Map<String, dynamic>> _recentActivities = [];
+
+  // Cloudflare 同步与冷备队列
+  List<Map<String, dynamic>> _cloudOutboxItems = [];
+  int? _cloudPullCursor;
+  String? _cloudSyncOwner;
+  bool _backupAutoEnabled = false;
+  int _backupIntervalDays = 7;
+  int _backupMaxRetained = 10;
+  BackupSnapshot? _lastBackup;
+  bool _isSyncingCloud = false;
+  bool _isBackingUpCloud = false;
 
   // 数据库统计
   Map<String, int> _tableCounts = {};
@@ -152,6 +166,37 @@ class _DeveloperPageState extends State<DeveloperPage>
     } catch (_) {
       _recentActivities = [];
     }
+
+    try {
+      final outboxRows = await db.query('CloudOutbox', orderBy: 'seq ASC');
+      _cloudOutboxItems = List<Map<String, dynamic>>.from(outboxRows);
+    } catch (_) {
+      _cloudOutboxItems = [];
+    }
+
+    try {
+      final cursorRows = await db.query('CloudPullCursor', limit: 1);
+      if (cursorRows.isNotEmpty) {
+        _cloudPullCursor = cursorRows.first['cursor'] as int?;
+        _cloudSyncOwner = cursorRows.first['owner']?.toString();
+      } else {
+        _cloudPullCursor = 0;
+        _cloudSyncOwner = null;
+      }
+    } catch (_) {
+      _cloudPullCursor = 0;
+      _cloudSyncOwner = null;
+    }
+
+    try {
+      _backupAutoEnabled = await CloudBackupService.instance.getAutoEnabled();
+      _backupIntervalDays = await CloudBackupService.instance.getIntervalDays();
+      _backupMaxRetained = await CloudBackupService.instance.getMaxRetained();
+      final backups = await CloudBackupService.instance.listBackups();
+      _lastBackup = backups.isNotEmpty ? backups.first : null;
+    } catch (_) {
+      _lastBackup = null;
+    }
   }
 
   Future<void> _loadDatabaseStats() async {
@@ -167,6 +212,12 @@ class _DeveloperPageState extends State<DeveloperPage>
       'Question',
       'Notes',
       'Activities',
+      'CustomFlashcards',
+      'CloudDeletedFlashcards',
+      'SpacedReviewItem',
+      'ReviewPlans',
+      'CloudOutbox',
+      'CloudPullCursor',
       'YkbSyncQueue',
       'NoteSyncQueue',
       'IdentitySubject',
@@ -636,12 +687,20 @@ class _DeveloperPageState extends State<DeveloperPage>
   }
 
   // ---------------------------------------------------------------------------
-  // Tab 2: 医考帮与本地数据上传/下载队列及同步历史
+  // Tab 2: 云端同步、医考帮队列与本地数据上传/下载队列及流水
   // ---------------------------------------------------------------------------
   Widget _buildSyncQueuesTab(ThemeData theme) {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        // Cloudflare D1 增量同步队列 (CloudOutbox)
+        _buildCloudOutboxCard(theme),
+        const SizedBox(height: 16),
+
+        // Cloudflare R2 整库冷备快照
+        _buildCloudBackupCard(theme),
+        const SizedBox(height: 16),
+
         // 医考帮综合同步队列 (YkbSyncQueue)
         _buildQueueCard(
           theme: theme,
@@ -834,6 +893,23 @@ class _DeveloperPageState extends State<DeveloperPage>
                       mainTitle = '从医考帮拉取笔记: 题目 $qId';
                       subTitle =
                           '科目: ${act['subject_id'] ?? '-'}  |  时间: ${_formatTime(ts)}';
+                    } else if (title == 'FlashcardReview') {
+                      mainTitle =
+                          '闪卡复习: 卡片 $qId  |  评级: ${isRight ?? '-'}  |  用时 ${(duration / 1000).toStringAsFixed(1)}s';
+                      subTitle =
+                          '科目/题库: ${act['subject_id'] ?? act['bank_id'] ?? '-'}  |  时间: ${_formatTime(ts)}';
+                    } else if (title == 'ReviewMemory') {
+                      mainTitle = '记忆曲线复习: $qId  |  评级: ${isRight ?? '-'}';
+                      subTitle =
+                          '科目/题库: ${act['subject_id'] ?? act['bank_id'] ?? '-'}  |  时间: ${_formatTime(ts)}';
+                    } else if (title == '熟练斩卡' || title == '熟练斩题') {
+                      mainTitle = '$title: $qId';
+                      subTitle =
+                          '科目/题库: ${act['subject_id'] ?? act['bank_id'] ?? '-'}  |  时间: ${_formatTime(ts)}';
+                    } else if (title == 'Backfill') {
+                      mainTitle = '历史作答补记: 题目 $qId';
+                      subTitle =
+                          '题库: ${act['bank_id'] ?? '-'}  |  时间: ${_formatTime(ts)}';
                     } else {
                       mainTitle =
                           '做题提交: 题目 $qId  |  用时 ${(duration / 1000).toStringAsFixed(1)}s';
@@ -903,6 +979,311 @@ class _DeveloperPageState extends State<DeveloperPage>
         ),
       ],
     );
+  }
+
+  Widget _buildCloudOutboxCard(ThemeData theme) {
+    return _buildQueueCard(
+      theme: theme,
+      title: 'Cloudflare D1 增量同步队列 (CloudOutbox)',
+      badgeText: '${_cloudOutboxItems.length} 项待推送 · 游标 ${_cloudPullCursor ?? 0}',
+      badgeColor: _cloudOutboxItems.isEmpty
+          ? Colors.green
+          : theme.colorScheme.tertiary,
+      onProcess: () async {
+        if (_isSyncingCloud) return;
+        setState(() => _isSyncingCloud = true);
+        try {
+          final report = await CloudSyncService.instance.sync();
+          await _loadQueuesAndActivities();
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(report.toString()),
+                backgroundColor: report.success ? Colors.green : Colors.red,
+              ),
+            );
+          }
+        } catch (e) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Cloudflare 增量同步失败: $e'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+        } finally {
+          if (mounted) setState(() => _isSyncingCloud = false);
+        }
+      },
+      onClear: () => _confirmClearQueue('CloudOutbox'),
+      children: [
+        if (_cloudOutboxItems.isEmpty)
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Center(
+              child: Text(
+                'CloudOutbox 为空，本地题目、卡片、笔记、记忆项、做题流水均已同步到 D1 (Owner: ${_cloudSyncOwner ?? "未绑定"})',
+                style: const TextStyle(color: Colors.grey, fontSize: 13),
+              ),
+            ),
+          )
+        else
+          for (final item in _cloudOutboxItems)
+            _buildCloudOutboxTile(theme, item),
+      ],
+    );
+  }
+
+  Widget _buildCloudBackupCard(ThemeData theme) {
+    final enabled = _backupAutoEnabled;
+    final interval = _backupIntervalDays;
+    final retained = _backupMaxRetained;
+    final lastTime = _lastBackup != null
+        ? _formatTime(_lastBackup!.timestamp)
+        : '无快照记录';
+    final lastSize = _lastBackup != null ? _lastBackup!.sizeLabel : '';
+
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(
+          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.cloud_done_outlined, size: 20, color: theme.colorScheme.primary),
+                const SizedBox(width: 8),
+                const Text(
+                  'Cloudflare R2 整库冷备快照',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: (enabled ? Colors.green : Colors.grey).withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    enabled ? '自动备份已开启 ($interval天/次)' : '自动备份未开启',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: enabled ? Colors.green.shade700 : Colors.grey.shade600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(
+              '配置保留: 最近 $retained 份快照  |  最新快照: $lastTime ${lastSize.isNotEmpty ? '($lastSize)' : ''}',
+              style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                FilledButton.tonalIcon(
+                  onPressed: _isBackingUpCloud
+                      ? null
+                      : () async {
+                          setState(() => _isBackingUpCloud = true);
+                          try {
+                            final res = await CloudBackupService.instance.createBackup();
+                            await _loadQueuesAndActivities();
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(res.message),
+                                  backgroundColor: res.success ? Colors.green : Colors.red,
+                                ),
+                              );
+                            }
+                          } catch (e) {
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('冷备快照创建失败: $e'),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            }
+                          } finally {
+                            if (mounted) setState(() => _isBackingUpCloud = false);
+                          }
+                        },
+                  icon: _isBackingUpCloud
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.backup_outlined, size: 16),
+                  label: const Text('立即创建冷备'),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const CloudSyncPage()),
+                  ),
+                  icon: const Icon(Icons.settings_outlined, size: 16),
+                  label: const Text('云端设置'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCloudOutboxTile(ThemeData theme, Map<String, dynamic> item) {
+    final seq = item['seq']?.toString() ?? '0';
+    final kind = item['kind']?.toString() ?? '';
+    final id = item['id']?.toString() ?? '';
+    final createdAt = (item['created_at'] as num?)?.toInt() ?? 0;
+
+    String kindName;
+    Color kindColor;
+    switch (kind) {
+      case 'question':
+        kindName = '题目';
+        kindColor = Colors.orange;
+        break;
+      case 'flashcard':
+        kindName = '卡片';
+        kindColor = Colors.purple;
+        break;
+      case 'flashcard_delete':
+        kindName = '删卡';
+        kindColor = Colors.red;
+        break;
+      case 'spaced_item':
+        kindName = '记忆项';
+        kindColor = Colors.blue;
+        break;
+      case 'review_plan':
+        kindName = '计划';
+        kindColor = Colors.indigo;
+        break;
+      case 'note':
+        kindName = '笔记';
+        kindColor = Colors.teal;
+        break;
+      case 'activity':
+        kindName = '流水';
+        kindColor = Colors.green;
+        break;
+      default:
+        kindName = kind;
+        kindColor = Colors.grey;
+    }
+
+    return ListTile(
+      dense: true,
+      leading: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+        decoration: BoxDecoration(
+          color: kindColor.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: kindColor.withValues(alpha: 0.3)),
+        ),
+        child: Text(
+          kindName,
+          style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: kindColor),
+        ),
+      ),
+      title: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Text(
+              '#$seq',
+              style: const TextStyle(fontSize: 10, fontFamily: 'monospace'),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'ID: $id',
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+      ),
+      subtitle: Text(
+        '入队时间: ${_formatTime(createdAt)}  |  Stream: ${item['stream'] ?? '-'}',
+        style: const TextStyle(fontSize: 11),
+      ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            icon: const Icon(Icons.code, size: 18),
+            tooltip: '查看实体当前状态',
+            onPressed: () => _showOutboxEntityDialog(kind, id),
+          ),
+          IconButton(
+            icon: const Icon(Icons.close, size: 18),
+            tooltip: '移出 Outbox',
+            onPressed: () async {
+              final db = await UserDBHelper().database;
+              await db.delete('CloudOutbox', where: 'seq = ?', whereArgs: [item['seq']]);
+              await _loadQueuesAndActivities();
+              if (mounted) setState(() {});
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showOutboxEntityDialog(String kind, String id) async {
+    final db = await UserDBHelper().database;
+    Map<String, dynamic>? entity;
+    try {
+      if (kind == 'question') {
+        final rows = await db.query('Question', where: 'id = ?', whereArgs: [int.tryParse(id) ?? id]);
+        if (rows.isNotEmpty) entity = rows.first;
+      } else if (kind == 'flashcard') {
+        final rows = await db.query('CustomFlashcards', where: 'id = ?', whereArgs: [id]);
+        if (rows.isNotEmpty) entity = rows.first;
+      } else if (kind == 'flashcard_delete') {
+        final rows = await db.query('CloudDeletedFlashcards', where: 'id = ?', whereArgs: [id]);
+        if (rows.isNotEmpty) entity = rows.first;
+      } else if (kind == 'spaced_item') {
+        final rows = await db.query('SpacedReviewItem', where: 'id = ?', whereArgs: [id]);
+        if (rows.isNotEmpty) entity = rows.first;
+      } else if (kind == 'review_plan') {
+        final rows = await db.query('ReviewPlans', where: 'id = ?', whereArgs: [id]);
+        if (rows.isNotEmpty) entity = rows.first;
+      } else if (kind == 'note') {
+        final rows = await db.query('Notes', where: 'question_id = ?', whereArgs: [int.tryParse(id) ?? id]);
+        if (rows.isNotEmpty) entity = rows.first;
+      } else if (kind == 'activity') {
+        final rows = await db.query('Activities', where: 'id = ?', whereArgs: [id]);
+        if (rows.isNotEmpty) entity = rows.first;
+      }
+    } catch (e) {
+      entity = {'error': e.toString()};
+    }
+    final content = entity != null
+        ? const JsonEncoder.withIndent('  ').convert(entity)
+        : '实体记录在本地库中不存在或已被物理清理';
+    _showRawJsonDialog('变动实体详情: $kind #$id', content);
   }
 
   Widget _buildQueueCard({

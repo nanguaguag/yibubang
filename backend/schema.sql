@@ -111,3 +111,79 @@ END;
 CREATE TRIGGER IF NOT EXISTS sync_activity_no_resurrection BEFORE INSERT ON sync_activities
  WHEN EXISTS(SELECT 1 FROM sync_deleted_activities WHERE user_id=NEW.user_id AND id=NEW.id)
  BEGIN SELECT RAISE(IGNORE); END;
+
+-- 6. 自制闪卡表与删除墓碑
+CREATE TABLE IF NOT EXISTS sync_flashcards (
+    user_id TEXT NOT NULL,
+    id TEXT NOT NULL,
+    title TEXT NOT NULL DEFAULT '',
+    front TEXT NOT NULL,
+    back TEXT NOT NULL,
+    question_id TEXT,
+    tags TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (user_id, id)
+);
+CREATE INDEX IF NOT EXISTS idx_sync_flashcards_updated ON sync_flashcards(user_id, updated_at);
+CREATE TRIGGER IF NOT EXISTS sync_flashcard_insert AFTER INSERT ON sync_flashcards BEGIN
+  INSERT INTO sync_changes(user_id,kind,entity_id) VALUES(NEW.user_id,'flashcard',NEW.id);
+END;
+CREATE TRIGGER IF NOT EXISTS sync_flashcard_update AFTER UPDATE ON sync_flashcards BEGIN
+  INSERT INTO sync_changes(user_id,kind,entity_id) VALUES(NEW.user_id,'flashcard',NEW.id);
+END;
+
+CREATE TABLE IF NOT EXISTS sync_deleted_flashcards(user_id TEXT NOT NULL, id TEXT NOT NULL, PRIMARY KEY(user_id, id));
+CREATE TRIGGER IF NOT EXISTS sync_flashcard_tombstone AFTER INSERT ON sync_deleted_flashcards BEGIN
+  INSERT INTO sync_changes(user_id,kind,entity_id) VALUES(NEW.user_id,'flashcard_delete',NEW.id);
+END;
+CREATE TRIGGER IF NOT EXISTS sync_flashcard_no_resurrection BEFORE INSERT ON sync_flashcards
+  WHEN EXISTS(SELECT 1 FROM sync_deleted_flashcards WHERE user_id=NEW.user_id AND id=NEW.id)
+  BEGIN SELECT RAISE(IGNORE); END;
+
+-- 7. 记忆曲线进度表 (SpacedReviewItem)
+CREATE TABLE IF NOT EXISTS sync_spaced_items (
+    user_id TEXT NOT NULL,
+    item_id TEXT NOT NULL,
+    plan_id TEXT NOT NULL DEFAULT '',
+    item_type INTEGER NOT NULL DEFAULT 0,
+    state INTEGER NOT NULL DEFAULT 0,
+    step INTEGER NOT NULL DEFAULT 0,
+    reps INTEGER NOT NULL DEFAULT 0,
+    lapses INTEGER NOT NULL DEFAULT 0,
+    difficulty REAL NOT NULL DEFAULT 0,
+    stability REAL NOT NULL DEFAULT 0,
+    due_date INTEGER NOT NULL DEFAULT 0,
+    last_review_at INTEGER NOT NULL DEFAULT 0,
+    extra TEXT,
+    updated_at INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (user_id, item_id)
+);
+CREATE INDEX IF NOT EXISTS idx_sync_spaced_items_due ON sync_spaced_items(user_id, due_date);
+CREATE TRIGGER IF NOT EXISTS sync_spaced_item_insert AFTER INSERT ON sync_spaced_items BEGIN
+  INSERT INTO sync_changes(user_id,kind,entity_id) VALUES(NEW.user_id,'spaced_item',NEW.item_id);
+END;
+CREATE TRIGGER IF NOT EXISTS sync_spaced_item_update AFTER UPDATE ON sync_spaced_items BEGIN
+  INSERT INTO sync_changes(user_id,kind,entity_id) VALUES(NEW.user_id,'spaced_item',NEW.item_id);
+END;
+
+-- 8. 复习计划表 (ReviewPlans)
+CREATE TABLE IF NOT EXISTS sync_review_plans (
+    user_id TEXT NOT NULL,
+    id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    bank_id TEXT,
+    daily_new_target INTEGER NOT NULL DEFAULT 20,
+    daily_review_limit INTEGER NOT NULL DEFAULT 50,
+    source_types TEXT NOT NULL DEFAULT '["wrong","collected","note"]',
+    covered_subjects TEXT NOT NULL DEFAULT '[]',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (user_id, id)
+);
+CREATE TRIGGER IF NOT EXISTS sync_review_plan_insert AFTER INSERT ON sync_review_plans BEGIN
+  INSERT INTO sync_changes(user_id,kind,entity_id) VALUES(NEW.user_id,'review_plan',NEW.id);
+END;
+CREATE TRIGGER IF NOT EXISTS sync_review_plan_update AFTER UPDATE ON sync_review_plans BEGIN
+  INSERT INTO sync_changes(user_id,kind,entity_id) VALUES(NEW.user_id,'review_plan',NEW.id);
+END;

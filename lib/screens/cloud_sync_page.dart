@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../models/cloud_backup.dart';
+import '../services/cloud_backup_service.dart';
 import '../services/cloud_sync_service.dart';
 import '../widgets/common/info_card.dart';
 import '../widgets/common/styled_tile.dart';
@@ -27,6 +29,13 @@ class _CloudSyncPageState extends State<CloudSyncPage> {
   HealthCheckResult? _healthResult;
   bool _isCheckingHealth = false;
 
+  // R2 冷备份状态
+  bool _autoBackupEnabled = false;
+  int _backupIntervalDays = 7;
+  int _backupMaxRetained = 10;
+  int _lastBackupTime = 0;
+  bool _isCreatingBackup = false;
+
   @override
   void initState() {
     super.initState();
@@ -38,6 +47,18 @@ class _CloudSyncPageState extends State<CloudSyncPage> {
     await _syncService.init();
     _runHealthCheck();
     _restoreActivePairingCode();
+    final auto = await CloudBackupService.instance.getAutoEnabled();
+    final interval = await CloudBackupService.instance.getIntervalDays();
+    final retained = await CloudBackupService.instance.getMaxRetained();
+    final lastTime = await CloudBackupService.instance.getLastBackupTime();
+    if (mounted) {
+      setState(() {
+        _autoBackupEnabled = auto;
+        _backupIntervalDays = interval;
+        _backupMaxRetained = retained;
+        _lastBackupTime = lastTime;
+      });
+    }
   }
 
   @override
@@ -477,6 +498,8 @@ class _CloudSyncPageState extends State<CloudSyncPage> {
             _buildSetupGuide(colorScheme),
           ] else ...[
             _buildPairingSection(colorScheme),
+            const SizedBox(height: 20),
+            _buildR2BackupSection(colorScheme),
             const SizedBox(height: 20),
             _buildSettingsSection(colorScheme),
             const SizedBox(height: 20),
@@ -978,6 +1001,315 @@ class _CloudSyncPageState extends State<CloudSyncPage> {
           ),
         ),
       ],
+    );
+  }
+
+  /// R2 整库冷备快照设置区
+  Widget _buildR2BackupSection(ColorScheme colorScheme) {
+    final lastTimeStr = _lastBackupTime > 0
+        ? _formatTimeAgo(DateTime.fromMillisecondsSinceEpoch(_lastBackupTime))
+        : '从未备份';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                '云端冷备快照 (Cloudflare R2)',
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      color: colorScheme.primary,
+                      fontWeight: FontWeight.bold,
+                    ),
+              ),
+              Text(
+                '上次备份：$lastTimeStr',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+        InfoCard(
+          children: [
+            IconTile(
+              icon: Icons.cloud_upload_outlined,
+              label: '启用周期性自动冷备',
+              trailing: Switch(
+                value: _autoBackupEnabled,
+                onChanged: (v) async {
+                  await CloudBackupService.instance.setAutoEnabled(v);
+                  if (mounted) setState(() => _autoBackupEnabled = v);
+                },
+              ),
+            ),
+            IconTile(
+              icon: Icons.calendar_month_outlined,
+              label: '备份周期间隔',
+              value: '每 $_backupIntervalDays 天 (默认 7 天)',
+              onTap: () => _handleSelectBackupInterval(context),
+            ),
+            IconTile(
+              icon: Icons.inventory_2_outlined,
+              label: '快照保留上限',
+              value: '最多保留 $_backupMaxRetained 个 (默认 10 个)',
+              onTap: () => _handleSelectBackupMaxRetained(context),
+            ),
+            IconTile(
+              icon: Icons.backup_table_rounded,
+              label: '立即创建整库快照',
+              trailing: _isCreatingBackup
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.chevron_right),
+              onTap: _isCreatingBackup ? null : _handleCreateManualBackup,
+            ),
+            IconTile(
+              icon: Icons.history_rounded,
+              label: '管理快照历史与恢复',
+              value: '查看云端版本',
+              onTap: () => _showBackupSnapshotsSheet(context),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Future<void> _handleSelectBackupInterval(BuildContext context) async {
+    final intervals = [1, 3, 7, 14, 30];
+    final selected = await showDialog<int>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('选择自动备份周期'),
+        children: intervals.map((days) {
+          final label = days == 7 ? '7 天 (每周，默认)' : '$days 天';
+          return SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, days),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontWeight: days == _backupIntervalDays ? FontWeight.bold : FontWeight.normal,
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+
+    if (selected != null && mounted) {
+      await CloudBackupService.instance.setIntervalDays(selected);
+      setState(() => _backupIntervalDays = selected);
+    }
+  }
+
+  Future<void> _handleSelectBackupMaxRetained(BuildContext context) async {
+    final counts = [5, 10, 15, 20, 30];
+    final selected = await showDialog<int>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('选择快照最多保留数量'),
+        children: counts.map((count) {
+          final label = count == 10 ? '10 个 (默认)' : '$count 个';
+          return SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, count),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontWeight: count == _backupMaxRetained ? FontWeight.bold : FontWeight.normal,
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+
+    if (selected != null && mounted) {
+      await CloudBackupService.instance.setMaxRetained(selected);
+      setState(() => _backupMaxRetained = selected);
+    }
+  }
+
+  Future<void> _handleCreateManualBackup() async {
+    setState(() => _isCreatingBackup = true);
+    final res = await CloudBackupService.instance.createBackup();
+    if (!mounted) return;
+    setState(() {
+      _isCreatingBackup = false;
+      if (res.success && res.snapshot != null) {
+        _lastBackupTime = res.snapshot!.timestamp;
+      }
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(res.message)),
+    );
+  }
+
+  Future<void> _showBackupSnapshotsSheet(BuildContext context) async {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetCtx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            return FutureBuilder<List<BackupSnapshot>>(
+              future: CloudBackupService.instance.listBackups(),
+              builder: (ctx, snapshot) {
+                final loading = snapshot.connectionState == ConnectionState.waiting;
+                final backups = snapshot.data ?? [];
+
+                return DraggableScrollableSheet(
+                  initialChildSize: 0.6,
+                  minChildSize: 0.4,
+                  maxChildSize: 0.85,
+                  expand: false,
+                  builder: (_, scrollController) {
+                    return Column(
+                      children: [
+                        const SizedBox(height: 12),
+                        Container(
+                          width: 40,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: Colors.grey.withValues(alpha: 0.3),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                '云端冷备快照 (${backups.length})',
+                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.refresh, size: 20),
+                                onPressed: () => setSheetState(() {}),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Divider(height: 1),
+                        Expanded(
+                          child: loading
+                              ? const Center(child: CircularProgressIndicator())
+                              : backups.isEmpty
+                                  ? const Center(
+                                      child: Text(
+                                        '暂无云端快照，点击上方“立即创建”即可生成',
+                                        style: TextStyle(color: Colors.grey),
+                                      ),
+                                    )
+                                  : ListView.separated(
+                                      controller: scrollController,
+                                      padding: const EdgeInsets.all(16),
+                                      itemCount: backups.length,
+                                      separatorBuilder: (_, __) => const SizedBox(height: 8),
+                                      itemBuilder: (ctx, i) {
+                                        final item = backups[i];
+                                        return Card(
+                                          elevation: 0,
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(12),
+                                            side: BorderSide(
+                                              color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.4),
+                                            ),
+                                          ),
+                                          child: ListTile(
+                                            leading: const CircleAvatar(
+                                              child: Icon(Icons.inventory_2_outlined, size: 20),
+                                            ),
+                                            title: Text(
+                                              _formatTimeAgo(item.dateTime),
+                                              style: const TextStyle(fontWeight: FontWeight.w600),
+                                            ),
+                                            subtitle: Text(
+                                              '${item.sizeLabel} · ${item.filename}',
+                                              style: const TextStyle(fontSize: 12),
+                                            ),
+                                            trailing: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                IconButton(
+                                                  icon: const Icon(Icons.settings_backup_restore_rounded),
+                                                  tooltip: '恢复并覆盖本地',
+                                                  onPressed: () async {
+                                                    final confirm = await showDialog<bool>(
+                                                      context: context,
+                                                      builder: (c) => AlertDialog(
+                                                        title: const Text('从快照还原覆盖'),
+                                                        content: Text(
+                                                          '将从快照 (${item.filename}) 完整恢复 user_data.sqlite 并覆盖当前本地数据。确定执行吗？',
+                                                        ),
+                                                        actions: [
+                                                          TextButton(
+                                                            onPressed: () => Navigator.pop(c, false),
+                                                            child: const Text('取消'),
+                                                          ),
+                                                          FilledButton(
+                                                            onPressed: () => Navigator.pop(c, true),
+                                                            child: const Text('确认覆盖恢复'),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    );
+                                                    if (confirm == true) {
+                                                      final ok = await CloudBackupService.instance.restoreBackup(item.filename);
+                                                      if (context.mounted) {
+                                                        Navigator.pop(sheetCtx);
+                                                        ScaffoldMessenger.of(context).showSnackBar(
+                                                          SnackBar(content: Text(ok ? '已成功从快照恢复！' : '恢复失败')),
+                                                        );
+                                                      }
+                                                    }
+                                                  },
+                                                ),
+                                                IconButton(
+                                                  icon: const Icon(Icons.delete_outline, size: 20),
+                                                  tooltip: '删除快照',
+                                                  onPressed: () async {
+                                                    await CloudBackupService.instance.deleteBackup(item.filename);
+                                                    setSheetState(() {});
+                                                  },
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                        ),
+                      ],
+                    );
+                  },
+                );
+              },
+            );
+          },
+        );
+      },
     );
   }
 
