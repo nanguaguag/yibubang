@@ -14,7 +14,6 @@ import '../services/auth_service.dart';
 import 'api_playground_page.dart';
 import 'my_page.dart';
 import '../db/database_helper.dart';
-import '../models/cloud_backup.dart';
 import '../services/cloud_backup_service.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/note_service.dart';
@@ -53,12 +52,13 @@ class _DeveloperPageState extends State<DeveloperPage>
 
   // Cloudflare 同步与冷备队列
   List<Map<String, dynamic>> _cloudOutboxItems = [];
+  int _cloudOutboxTotalCount = 0;
   int? _cloudPullCursor;
   String? _cloudSyncOwner;
   bool _backupAutoEnabled = false;
   int _backupIntervalDays = 7;
   int _backupMaxRetained = 10;
-  BackupSnapshot? _lastBackup;
+  int _lastBackupTime = 0;
   bool _isSyncingCloud = false;
   bool _isBackingUpCloud = false;
 
@@ -111,17 +111,30 @@ class _DeveloperPageState extends State<DeveloperPage>
   }
 
   Future<void> _loadAllData() async {
-    setState(() => _loading = true);
-    await Future.wait([
-      _loadCredentials(),
-      _loadQueuesAndActivities(),
-      _loadDatabaseStats(),
-      _loadPrefs(),
-    ]);
+    if (mounted) {
+      setState(() => _loading = true);
+    } else {
+      _loading = true;
+    }
+    try {
+      await _loadCredentials();
+      await _loadPrefs();
+      await _loadQueuesAndActivities();
+      await _loadDatabaseStats();
+    } catch (e, stack) {
+      debugPrint('[DeveloperPage] _loadAllData error: $e\n$stack');
+    }
     if (mounted) {
       setState(() => _loading = false);
     }
   }
+
+  @visibleForTesting
+  Future<void> loadAllDataForTesting() => _loadAllData();
+  @visibleForTesting
+  List<Map<String, dynamic>> get cloudOutboxItemsForTesting => _cloudOutboxItems;
+  @visibleForTesting
+  int get cloudOutboxTotalCountForTesting => _cloudOutboxTotalCount;
 
   Future<void> _loadCredentials() async {
     final prefs = await SharedPreferences.getInstance();
@@ -140,7 +153,11 @@ class _DeveloperPageState extends State<DeveloperPage>
   Future<void> _loadQueuesAndActivities() async {
     final db = await UserDBHelper().database;
     try {
-      final ykbRows = await db.query('YkbSyncQueue', orderBy: 'created_at ASC');
+      final ykbRows = await db.query(
+        'YkbSyncQueue',
+        orderBy: 'created_at ASC',
+        limit: 50,
+      );
       _ykbQueueItems = List<Map<String, dynamic>>.from(ykbRows);
     } catch (_) {
       _ykbQueueItems = [];
@@ -150,6 +167,7 @@ class _DeveloperPageState extends State<DeveloperPage>
       final noteRows = await db.query(
         'NoteSyncQueue',
         orderBy: 'created_at ASC',
+        limit: 50,
       );
       _noteQueueItems = List<Map<String, dynamic>>.from(noteRows);
     } catch (_) {
@@ -168,9 +186,16 @@ class _DeveloperPageState extends State<DeveloperPage>
     }
 
     try {
-      final outboxRows = await db.query('CloudOutbox', orderBy: 'seq ASC');
+      final countRes = await db.rawQuery('SELECT COUNT(*) FROM CloudOutbox');
+      _cloudOutboxTotalCount = Sqflite.firstIntValue(countRes) ?? 0;
+      final outboxRows = await db.query(
+        'CloudOutbox',
+        orderBy: 'seq ASC',
+        limit: 50,
+      );
       _cloudOutboxItems = List<Map<String, dynamic>>.from(outboxRows);
     } catch (_) {
+      _cloudOutboxTotalCount = 0;
       _cloudOutboxItems = [];
     }
 
@@ -192,10 +217,9 @@ class _DeveloperPageState extends State<DeveloperPage>
       _backupAutoEnabled = await CloudBackupService.instance.getAutoEnabled();
       _backupIntervalDays = await CloudBackupService.instance.getIntervalDays();
       _backupMaxRetained = await CloudBackupService.instance.getMaxRetained();
-      final backups = await CloudBackupService.instance.listBackups();
-      _lastBackup = backups.isNotEmpty ? backups.first : null;
+      _lastBackupTime = await CloudBackupService.instance.getLastBackupTime();
     } catch (_) {
-      _lastBackup = null;
+      _lastBackupTime = 0;
     }
   }
 
@@ -982,11 +1006,14 @@ class _DeveloperPageState extends State<DeveloperPage>
   }
 
   Widget _buildCloudOutboxCard(ThemeData theme) {
+    final hasMore = _cloudOutboxTotalCount > _cloudOutboxItems.length;
     return _buildQueueCard(
       theme: theme,
       title: 'Cloudflare D1 增量同步队列 (CloudOutbox)',
-      badgeText: '${_cloudOutboxItems.length} 项待推送 · 游标 ${_cloudPullCursor ?? 0}',
-      badgeColor: _cloudOutboxItems.isEmpty
+      badgeText: hasMore
+          ? '共 $_cloudOutboxTotalCount 项 (展示前 ${_cloudOutboxItems.length} 条) · 游标 ${_cloudPullCursor ?? 0}'
+          : '${_cloudOutboxItems.length} 项待推送 · 游标 ${_cloudPullCursor ?? 0}',
+      badgeColor: _cloudOutboxTotalCount == 0
           ? Colors.green
           : theme.colorScheme.tertiary,
       onProcess: () async {
@@ -1028,9 +1055,20 @@ class _DeveloperPageState extends State<DeveloperPage>
               ),
             ),
           )
-        else
+        else ...[
           for (final item in _cloudOutboxItems)
             _buildCloudOutboxTile(theme, item),
+          if (hasMore)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+              child: Center(
+                child: Text(
+                  '还有 ${_cloudOutboxTotalCount - _cloudOutboxItems.length} 项待推送变动未在列表展开，点击“立即同步”推送到 D1',
+                  style: TextStyle(fontSize: 11, color: theme.colorScheme.onSurfaceVariant),
+                ),
+              ),
+            ),
+        ],
       ],
     );
   }
@@ -1039,10 +1077,9 @@ class _DeveloperPageState extends State<DeveloperPage>
     final enabled = _backupAutoEnabled;
     final interval = _backupIntervalDays;
     final retained = _backupMaxRetained;
-    final lastTime = _lastBackup != null
-        ? _formatTime(_lastBackup!.timestamp)
-        : '无快照记录';
-    final lastSize = _lastBackup != null ? _lastBackup!.sizeLabel : '';
+    final lastTime = _lastBackupTime > 0
+        ? _formatTime(_lastBackupTime)
+        : '无本地快照记录';
 
     return Card(
       elevation: 0,
@@ -1085,7 +1122,7 @@ class _DeveloperPageState extends State<DeveloperPage>
             ),
             const SizedBox(height: 10),
             Text(
-              '配置保留: 最近 $retained 份快照  |  最新快照: $lastTime ${lastSize.isNotEmpty ? '($lastSize)' : ''}',
+              '配置保留: 最近 $retained 份快照  |  上次本地备份: $lastTime',
               style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
             ),
             const SizedBox(height: 12),
@@ -1148,8 +1185,8 @@ class _DeveloperPageState extends State<DeveloperPage>
   Widget _buildCloudOutboxTile(ThemeData theme, Map<String, dynamic> item) {
     final seq = item['seq']?.toString() ?? '0';
     final kind = item['kind']?.toString() ?? '';
-    final id = item['id']?.toString() ?? '';
-    final createdAt = (item['created_at'] as num?)?.toInt() ?? 0;
+    final id = item['entity_id']?.toString() ?? item['id']?.toString() ?? '';
+    final updatedAt = (item['updated_at'] as num?)?.toInt() ?? 0;
 
     String kindName;
     Color kindColor;
@@ -1225,7 +1262,7 @@ class _DeveloperPageState extends State<DeveloperPage>
         ],
       ),
       subtitle: Text(
-        '入队时间: ${_formatTime(createdAt)}  |  Stream: ${item['stream'] ?? '-'}',
+        '变动时间: ${_formatTime(updatedAt)}  |  Owner: ${item['owner'] ?? '-'}',
         style: const TextStyle(fontSize: 11),
       ),
       trailing: Row(

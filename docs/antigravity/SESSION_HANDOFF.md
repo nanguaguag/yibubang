@@ -21,14 +21,20 @@
   3. **[官方图床接入] 闪卡编辑器接入医考帮官方图床**：
      - `lib/services/note_service.dart`：`uploadImage` 强化默认兜底；
      - `lib/widgets/flashcard_edit_dialog.dart`：正面与背面均增加「插入图片」按钮，选择本地图片后上传至医考帮官方图床并在光标处插入 Markdown 图片语法。
-  4. **[开发者模式接入与排障] 同步队列全量覆盖与流水类型纠偏**：
+  4. **[开发者模式接入与排障] 同步队列全量覆盖、流水类型纠偏与性能卡死修复**：
      - `lib/screens/developer_page.dart`：增加「Cloudflare D1 增量同步队列 (CloudOutbox)」与「Cloudflare R2 整库冷备快照」卡片，支持未决变动列表、游标监控、单项查看实体详情与移出队列；
+     - **排查修复进入同步队列卡死 Bug**：
+       1. 根因一：页面初始化主链路上直接 `await listBackups()` 触发 HTTP 网络轮询导致阻塞达 30 秒，已重构为纯本地读取时间戳，零网络延迟秒开；
+       2. 根因二：`CloudOutbox` 缺少 `limit` 并在非虚拟 `Column` 树中全量展开，当积压上千条变动时导致 UI 线程瞬间冻结卡死。已建立 `SELECT COUNT(*)` 总量监控与 `limit: 50` 保护，超过 50 条时给出展开引导提示；
+       3. 根因三：`Future.wait` 多线程竞争同一 SQLite 临界区引发争用排队，改为平滑顺序执行；
+       4. 根因四：修复 `CloudOutbox` 实体取值字段错误（`entity_id` / `updated_at`）；
      - 修复 `Activities` 本地流水渲染时将闪卡/记忆曲线复习误判为做题提交的展示 bug；
-     - 补齐 `_loadDatabaseStats()` 缺失的 6 张核心数据表统计计数（`CustomFlashcards`、`CloudDeletedFlashcards`、`SpacedReviewItem`、`ReviewPlans`、`CloudOutbox`、`CloudPullCursor`）。
+     - 补齐 `_loadDatabaseStats()` 缺失的 6 张核心数据表统计计数；
+     - 编写并通过 `test/developer_page_performance_test.dart` 性能限流回归测试。
 - **质量门禁验证**：
-  - `dart analyze lib/`：**0 issues, No issues found!**
+  - `dart analyze lib/ test/`：**0 issues, No issues found!**
   - 后端测试：`tsc --noEmit` 0 errors，`backend/test/*.mjs` 13/13 项全量通过；
-  - `flutter test`：**371 passed! 3 skipped (联网用例). 100% 全部通过**。
+  - `flutter test`：**372 passed! 3 skipped (联网用例). 100% 全部通过**。
 - **未完成项 / 下一次第一步**：
   - 下一次第一步：执行 `git status` 核对提交树，等待用户指示推送到远程仓库。
 
