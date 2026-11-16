@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 
 import '../common/app_shapes.dart';
 import '../models/daily_review_session.dart';
+import 'app_markdown.dart';
 
 /// 3D 物理翻牌动效闪卡组件（百词斩风格：轻触正面旋转 180° 翻至背面，背面揭晓后滑出自评）
 class FlashcardFlipCard extends StatefulWidget {
@@ -259,10 +260,10 @@ class FlashcardFlipCardState extends State<FlashcardFlipCard>
           // 正面核心提问/知识点文本
           ConstrainedBox(
             constraints: const BoxConstraints(minHeight: 140),
-            child: Center(
-              child: Text(
-                frontText,
-                textAlign: TextAlign.start,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: AppMarkdown(
+                text: frontText,
                 style: theme.textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.w600,
                   fontSize: 17,
@@ -376,9 +377,8 @@ class FlashcardFlipCardState extends State<FlashcardFlipCard>
           // 背面核心答案/解析文本
           ConstrainedBox(
             constraints: const BoxConstraints(minHeight: 140),
-            child: Text(
-              backText,
-              textAlign: TextAlign.start,
+            child: AppMarkdown(
+              text: backText,
               style: theme.textTheme.bodyLarge?.copyWith(
                 fontWeight: FontWeight.w500,
                 fontSize: 16,

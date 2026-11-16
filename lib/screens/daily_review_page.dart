@@ -15,6 +15,7 @@ import '../screens/settings_page.dart';
 import '../services/daily_review_service.dart';
 import '../services/note_service.dart';
 import '../services/spaced_repetition_engine.dart';
+import '../widgets/app_markdown.dart';
 import '../widgets/common/app_network_image.dart';
 import '../widgets/daily_review_celebration_dialog.dart';
 import '../widgets/daily_review_plan_dialog.dart';
@@ -786,8 +787,8 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
                   ),
                 ),
               ),
-            Text(
-              title,
+            AppMarkdown(
+              text: title,
               style: theme.textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.w600,
                 color: scheme.onSurface,
@@ -1141,8 +1142,8 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
             ],
           ),
           const SizedBox(height: 8),
-          Text(
-            answerText,
+          AppMarkdown(
+            text: answerText,
             style: theme.textTheme.bodyMedium?.copyWith(
               fontWeight: FontWeight.w600,
               height: 1.5,

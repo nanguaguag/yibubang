@@ -851,7 +851,7 @@ class _DeveloperPageState extends State<DeveloperPage>
                         size: 16,
                       ),
                       label: const Text(
-                        '清理响应缓存',
+                        '清理',
                         style: TextStyle(fontSize: 12),
                       ),
                     ),

@@ -6,6 +6,7 @@ import '../common/question_navigation.dart';
 import '../models/spaced_review_item.dart';
 import '../repositories/question_search_repository.dart';
 import '../repositories/spaced_review_repository.dart';
+import 'app_markdown.dart';
 import 'flashcard_edit_dialog.dart';
 
 /// 闪卡卡包管理页面与控制器（移动端作为全屏页面，桌面端自适应居中模态卡片）
@@ -832,11 +833,13 @@ class _FlashcardDetailView extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 10),
-                  SelectableText(
-                    card.front,
-                    style: theme.textTheme.bodyLarge?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      height: 1.6,
+                  SelectionArea(
+                    child: AppMarkdown(
+                      text: card.front,
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        height: 1.6,
+                      ),
                     ),
                   ),
                 ],
@@ -871,11 +874,13 @@ class _FlashcardDetailView extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 10),
-                  SelectableText(
-                    card.back,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      height: 1.6,
-                      color: scheme.onSurfaceVariant,
+                  SelectionArea(
+                    child: AppMarkdown(
+                      text: card.back,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        height: 1.6,
+                        color: scheme.onSurfaceVariant,
+                      ),
                     ),
                   ),
                 ],

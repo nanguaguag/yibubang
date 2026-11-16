@@ -8,6 +8,7 @@ import '../common/platform_adaptive.dart';
 import '../models/spaced_review_item.dart';
 import '../repositories/spaced_review_repository.dart';
 import '../services/note_service.dart';
+import 'app_markdown.dart';
 
 /// 闪卡创建与编辑组件（支持常规弹窗与下弹抽屉 BottomSheet 两种形态）
 class FlashcardEditDialog extends StatefulWidget {
@@ -131,6 +132,8 @@ class _FlashcardEditDialogState extends State<FlashcardEditDialog> {
   bool _saving = false;
   bool _uploadingFront = false;
   bool _uploadingBack = false;
+  bool _previewFront = false;
+  bool _previewBack = false;
 
   Future<void> _insertImageToController(
     TextEditingController controller,
@@ -401,6 +404,15 @@ class _FlashcardEditDialogState extends State<FlashcardEditDialog> {
             ),
             const Spacer(),
             TextButton.icon(
+              icon: Icon(
+                _previewFront ? Icons.edit_outlined : Icons.visibility_outlined,
+                size: 16,
+              ),
+              label: Text(_previewFront ? '编辑' : '预览', style: const TextStyle(fontSize: 12)),
+              onPressed: () => setState(() => _previewFront = !_previewFront),
+            ),
+            const SizedBox(width: 4),
+            TextButton.icon(
               icon: _uploadingFront
                   ? const SizedBox(
                       width: 12,
@@ -416,25 +428,46 @@ class _FlashcardEditDialogState extends State<FlashcardEditDialog> {
           ],
         ),
         const SizedBox(height: 6),
-        TextField(
-          controller: _frontController,
-          minLines: 2,
-          maxLines: 4,
-          decoration: InputDecoration(
-            hintText: '写下正面需要回忆或测试的知识点、题干或概念...',
-            hintStyle: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant.withValues(alpha: 0.6)),
-            filled: true,
-            fillColor: scheme.surfaceContainerHighest.withValues(alpha: 0.35),
-            border: OutlineInputBorder(
+        if (_previewFront)
+          Container(
+            width: double.infinity,
+            constraints: const BoxConstraints(minHeight: 80),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerHighest.withValues(alpha: 0.25),
               borderRadius: BorderRadius.circular(AppShapes.medium),
-              borderSide: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.4)),
+              border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.4)),
             ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(AppShapes.medium),
-              borderSide: BorderSide(color: scheme.primary, width: 1.5),
+            child: _frontController.text.trim().isEmpty
+                ? Text(
+                    '（正面暂无内容）',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: scheme.onSurfaceVariant.withValues(alpha: 0.5),
+                    ),
+                  )
+                : AppMarkdown(text: _frontController.text),
+          )
+        else
+          TextField(
+            controller: _frontController,
+            minLines: 2,
+            maxLines: 4,
+            decoration: InputDecoration(
+              hintText: '写下正面需要回忆或测试的知识点、题干或概念...',
+              hintStyle: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant.withValues(alpha: 0.6)),
+              filled: true,
+              fillColor: scheme.surfaceContainerHighest.withValues(alpha: 0.35),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(AppShapes.medium),
+                borderSide: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.4)),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(AppShapes.medium),
+                borderSide: BorderSide(color: scheme.primary, width: 1.5),
+              ),
             ),
           ),
-        ),
         const SizedBox(height: 14),
 
         // 背面（答案/解析）及一键引用工具栏
@@ -450,6 +483,15 @@ class _FlashcardEditDialogState extends State<FlashcardEditDialog> {
               ),
             ),
             const Spacer(),
+            TextButton.icon(
+              icon: Icon(
+                _previewBack ? Icons.edit_outlined : Icons.visibility_outlined,
+                size: 16,
+              ),
+              label: Text(_previewBack ? '编辑' : '预览', style: const TextStyle(fontSize: 12)),
+              onPressed: () => setState(() => _previewBack = !_previewBack),
+            ),
+            const SizedBox(width: 4),
             TextButton.icon(
               icon: _uploadingBack
                   ? const SizedBox(
@@ -494,25 +536,46 @@ class _FlashcardEditDialogState extends State<FlashcardEditDialog> {
           ),
         ],
         const SizedBox(height: 6),
-        TextField(
-          controller: _backController,
-          minLines: 6,
-          maxLines: 12,
-          decoration: InputDecoration(
-            hintText: '写下背面参考答案、核心记忆秘诀、精炼总结...',
-            hintStyle: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant.withValues(alpha: 0.6)),
-            filled: true,
-            fillColor: scheme.surfaceContainerHighest.withValues(alpha: 0.35),
-            border: OutlineInputBorder(
+        if (_previewBack)
+          Container(
+            width: double.infinity,
+            constraints: const BoxConstraints(minHeight: 120),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: scheme.secondaryContainer.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(AppShapes.medium),
-              borderSide: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.4)),
+              border: Border.all(color: scheme.secondary.withValues(alpha: 0.3)),
             ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(AppShapes.medium),
-              borderSide: BorderSide(color: scheme.secondary, width: 1.5),
+            child: _backController.text.trim().isEmpty
+                ? Text(
+                    '（背面暂无内容）',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: scheme.onSurfaceVariant.withValues(alpha: 0.5),
+                    ),
+                  )
+                : AppMarkdown(text: _backController.text),
+          )
+        else
+          TextField(
+            controller: _backController,
+            minLines: 6,
+            maxLines: 12,
+            decoration: InputDecoration(
+              hintText: '写下背面参考答案、核心记忆秘诀、精炼总结...',
+              hintStyle: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant.withValues(alpha: 0.6)),
+              filled: true,
+              fillColor: scheme.surfaceContainerHighest.withValues(alpha: 0.35),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(AppShapes.medium),
+                borderSide: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.4)),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(AppShapes.medium),
+                borderSide: BorderSide(color: scheme.secondary, width: 1.5),
+              ),
             ),
           ),
-        ),
         const SizedBox(height: 16),
 
         // 标签管理（已选标签 Chips + 快速选取已有标签 + 自定义输入）

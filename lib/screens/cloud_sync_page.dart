@@ -1051,13 +1051,13 @@ class _CloudSyncPageState extends State<CloudSyncPage> {
             IconTile(
               icon: Icons.calendar_month_outlined,
               label: '备份周期间隔',
-              value: '每 $_backupIntervalDays 天 (默认 7 天)',
+              value: '每 $_backupIntervalDays 天',
               onTap: () => _handleSelectBackupInterval(context),
             ),
             IconTile(
               icon: Icons.inventory_2_outlined,
               label: '快照保留上限',
-              value: '最多保留 $_backupMaxRetained 个 (默认 10 个)',
+              value: '最多保留 $_backupMaxRetained 个',
               onTap: () => _handleSelectBackupMaxRetained(context),
             ),
             IconTile(
@@ -1091,7 +1091,7 @@ class _CloudSyncPageState extends State<CloudSyncPage> {
       builder: (ctx) => SimpleDialog(
         title: const Text('选择自动备份周期'),
         children: intervals.map((days) {
-          final label = days == 7 ? '7 天 (每周，默认)' : '$days 天';
+          final label = days == 7 ? '7 天' : '$days 天';
           return SimpleDialogOption(
             onPressed: () => Navigator.pop(ctx, days),
             child: Padding(
@@ -1121,7 +1121,7 @@ class _CloudSyncPageState extends State<CloudSyncPage> {
       builder: (ctx) => SimpleDialog(
         title: const Text('选择快照最多保留数量'),
         children: counts.map((count) {
-          final label = count == 10 ? '10 个 (默认)' : '$count 个';
+          final label = count == 10 ? '10 个' : '$count 个';
           return SimpleDialogOption(
             onPressed: () => Navigator.pop(ctx, count),
             child: Padding(

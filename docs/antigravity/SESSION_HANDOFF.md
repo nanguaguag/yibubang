@@ -1,6 +1,32 @@
 # 跨会话交接
 
-## 最新交接：2026-11-16 Cloudflare D1+R2 混合冷热同步架构、官方图床接入与开发者模式同步队列完善
+## 最新交接：2026-11-16 卡片 Markdown 渲染支持、图片预览与全屏大图交互、闪卡编辑器实时预览
+
+- **用户授权与操作目标**：
+  1. 卡片（正面/背面、卡片详情弹窗、每日复习、卡片翻转复习）全面支持 Markdown 渲染（粗体、斜体、列表、代码、公式等）；
+  2. 彻底解决卡片中 Markdown 格式的图片 `![alt](url)` 无法预览的问题（显示图片缩略图，圆角/优雅占位/错误降级，并支持点击调用现有的 `FullScreenImageView` 全屏大图手势缩放浏览与保存）；
+  3. 复用 AI 搜索页面成熟的 Markdown 方案（GFM、CJK 粗体优化、LaTeX 公式 `flutter_math_fork`、滑动表格等），将其提取/重构成通用的 Markdown 渲染组件；
+  4. 制作/编辑闪卡弹窗（`FlashcardEditDialog`）支持在编辑时预览 Markdown 渲染效果；
+  5. 全量 `dart analyze`（0 issues）与全量 `flutter test`（376 passed）全绿，并按规范中文 commit。
+- **完成项**：
+  1. **[通用 Markdown 组件沉淀] `AppMarkdown` 组件封装 (`lib/widgets/app_markdown.dart`)**：
+     - 整合 GFM 全集语法、`_CjkStrongSyntax` 中文括号粗体边界扩展、`_InlineMathSyntax` 与 `_DisplayMathSyntax` LaTeX 公式原生渲染；
+     - 深度补齐图片渲染机制：自动适配网络图（`AppNetworkImage`）与本地图（`Image.file`），自适应宽高并限制最大高度，附带放大镜指示角标，点击直达 `FullScreenImageView` 支持多指缩放与相册保存；
+     - `AiAnswerText` (`lib/widgets/ai_answer_text.dart`) 统一重构为复用 `AppMarkdown`，保持原有语义与测试 100% 兼容。
+  2. **[卡片全场景渲染升级] 闪卡翻牌、详情弹窗与每日复习接入**：
+     - `lib/widgets/flashcard_flip_card.dart`：正面与背面文本由普通的 `Text` 升级为 `AppMarkdown`，支持富文本排版与图片查看（且点击图片优先触发图片手势，不误翻卡片）；
+     - `lib/widgets/flashcard_deck_dialog.dart`：`_FlashcardDetailView` 中的正面和背面升级为 `SelectionArea(child: AppMarkdown(...))`；
+     - `lib/screens/daily_review_page.dart`：题干与参考答案统一接入 `AppMarkdown` 渲染。
+  3. **[闪卡制作/编辑实时预览] `FlashcardEditDialog` 支持所见即所得**：
+     - `lib/widgets/flashcard_edit_dialog.dart`：正面与背面工具栏均新增「编辑 / 预览」切换按钮，用户输入 Markdown 文本或插入官方图床图片后可即时一键预览。
+  4. **[自动化测试与质量门禁]**：
+     - 新增 `test/app_markdown_test.dart`（覆盖基础 Markdown、LaTeX 公式、图片正常展示与 alt 降级）；
+     - `dart analyze lib/ test/`：**0 issues, No issues found!**
+     - 全量测试：`flutter test` **376 passed, 3 skipped, 0 failed. 100% 全部通过**。
+- **未完成项 / 下一次第一步**：
+  - 下一次第一步：等待用户进一步指令或推送到远端仓库。
+
+## 前次交接：2026-11-16 Cloudflare D1+R2 混合冷热同步架构、官方图床接入与开发者模式同步队列完善
 
 - **用户授权与操作目标**：
   1. 补齐 Cloudflare D1 同步真空（将自制闪卡、FSRS 记忆曲线、复习计划纳入 D1 增量同步）；
