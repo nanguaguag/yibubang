@@ -1,6 +1,6 @@
 import 'dart:convert';
-import 'dart:math' as math;
 import 'package:sqflite/sqflite.dart';
+import '../db/chunked_query_executor.dart';
 import '../db/database_helper.dart';
 import '../models/spaced_review_item.dart';
 
@@ -461,19 +461,16 @@ class SpacedReviewRepository {
     if (ids.isEmpty) return {};
     final db = await _getExecutor(executor);
     final map = <String, CustomFlashcard>{};
-    const chunkSize = 100;
-    for (var i = 0; i < ids.length; i += chunkSize) {
-      final end = math.min(i + chunkSize, ids.length);
-      final chunk = ids.sublist(i, end);
-      final rows = await db.query(
-        'CustomFlashcards',
-        where: 'id IN (${List.filled(chunk.length, '?').join(',')})',
-        whereArgs: chunk,
-      );
-      for (final r in rows) {
-        final card = CustomFlashcard.fromMap(r);
-        map[card.id] = card;
-      }
+    final rows = await ChunkedQueryExecutor.queryIn(
+      db: db,
+      table: 'CustomFlashcards',
+      column: 'id',
+      values: ids,
+      chunkSize: 100,
+    );
+    for (final r in rows) {
+      final card = CustomFlashcard.fromMap(r);
+      map[card.id] = card;
     }
     return map;
   }

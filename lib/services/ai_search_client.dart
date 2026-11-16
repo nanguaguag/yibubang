@@ -256,11 +256,15 @@ class AiSearchClient implements AiSearchGateway, AiModelGateway {
     final client = clientFactory();
     _active = client;
     try {
+      final windowSize = options.contextWindowTurns.clamp(
+        AiSearchOptions.minContextWindowTurns,
+        AiSearchOptions.maxContextWindowTurns,
+      );
       final context = history
           .where((t) => t.status == 'complete')
           .toList()
           .reversed
-          .take(3)
+          .take(windowSize)
           .toList()
           .reversed
           .map((t) => {'question': t.question, 'answer': t.answer})

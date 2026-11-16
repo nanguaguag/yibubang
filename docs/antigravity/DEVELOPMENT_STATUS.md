@@ -1,5 +1,29 @@
 # 当前开发状态
 
+## 2026-11-16 P1 修复推进与架构重构第二阶段（完成）
+
+用户指示推进 P1 级剩余项修复与专项重构，完成测试后中文 commit。
+1. **[M04 剩余项] `_countDueItems` 轻量化计数 (`lib/services/daily_review_service.dart`)**：
+   - 彻底消除了复习概览接口在计算 `remainingDue` 时调用 `_fetchDueReviewQueue` 反序列化完整 `Question`（大文本题干、选项、解析）与笔记的内存及磁盘开销；
+   - 新增 `_countDueItems`、`_countFilteredDuePage` 与 `_checkQuestionIdsExist`，概览纯走轻量 ID 校验，彻底不加载大实体。
+2. **[M03 剩余项] 启动期多题库按需懒加载 (`lib/repositories/question_bank_repository.dart` / `lib/screens/home_page.dart`)**：
+   - 抽象 `_initSingleBank`，新增 `initializeActiveBank({String? bankId})`；
+   - 首屏启动时仅优先就绪当前活跃题库（耗时从 300ms+ 降至 20~50ms），其余题库在后台静默完成扫描与校验；
+   - 用户切换题库或进入题库管理时平滑无缝。
+3. **[M10 / A14] 统一 SQLite >999 变量分片执行器 (`lib/db/chunked_query_executor.dart`)**：
+   - 封装通用安全的 `ChunkedQueryExecutor`（`runChunked`, `runChunkedVoid`, `queryIn`, `deleteIn`，默认分片 500），统一替代散落在 `question_search_repository.dart`、`spaced_review_repository.dart`、`daily_review_service.dart` 中的手动 `sublist` 分片与参数拼接；
+   - 新增 `test/chunked_query_executor_test.dart` 全面验证 1250+ 项的分片切分、平铺聚合、附加条件与删除行为。
+4. **AI 搜索多轮上下文 20 轮滑动窗口控制 (`lib/models/ai_search_options.dart` / `lib/services/ai_search_client.dart` / `lib/widgets/ai_search_settings.dart`)**：
+   - 废除原先硬编码的 3 轮截断，建立默认 20 轮上下文滑动窗口控制（支持在设置中 5~50 轮自定义调节），防止 Token 消耗不可控；
+   - 保持 60KB UTF-8 长度兜底防护，形成轮数与字节数的双重防御。
+5. **升级 Android 编译工具链与统一 CI Flutter SDK (`android/settings.gradle` / `gradle-wrapper.properties` / `.github/workflows/*.yml`)**：
+   - Android Gradle 插件 (AGP) 升级至 `9.1.1`，Gradle Wrapper 升级至 `gradle-9.5.0-all.zip`；
+   - 消除 CI 工作流中为了规避编译报错而钉死在 `3.44.6` 的版本分裂，统一对齐为 `channel: 'stable'`。
+6. **质量门禁**：
+   - Flutter 自动化测试：367 项全部 PASS（3 联网 skip，无 failure）；
+   - `dart analyze lib/` 与 `dart analyze test/`：0 errors, 0 warnings, 0 issues；
+   - 后端测试：11/11 项全部 PASS，`tsc --noEmit` 0 errors。
+
 ## 2026-11-16 P1 级架构优化与性能重构（完成）
 
 用户指示推进 P1 级 issue 修复与部分代码重构，完成测试后中文 commit。

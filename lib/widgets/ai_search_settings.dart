@@ -496,6 +496,115 @@ class _AiSearchSettingsGroupState extends State<AiSearchSettingsGroup>
     }
   }
 
+  Future<void> _contextWindowTurns() async {
+    var turns = options.contextWindowTurns;
+    final selected = await showDialog<int>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, update) {
+          final theme = Theme.of(context);
+          final scheme = theme.colorScheme;
+
+          return AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppShapes.extraLarge),
+            ),
+            title: const Text('多轮对话上下文窗口'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: scheme.surfaceContainerLow,
+                      borderRadius: BorderRadius.circular(AppShapes.medium),
+                      border: Border.all(
+                        color: scheme.outlineVariant.withValues(alpha: 0.4),
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        Text(
+                          '最近 $turns 轮问答',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: scheme.onSurface,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Slider(
+                          value: turns.toDouble(),
+                          min: AiSearchOptions.minContextWindowTurns.toDouble(),
+                          max: AiSearchOptions.maxContextWindowTurns.toDouble(),
+                          divisions: AiSearchOptions.maxContextWindowTurns -
+                              AiSearchOptions.minContextWindowTurns,
+                          label: '$turns 轮',
+                          onChanged: (value) => update(() => turns = value.round()),
+                        ),
+                        Text(
+                          '限制发往 AI 的历史问答轮数，防 Token 失控',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    alignment: WrapAlignment.center,
+                    children: [
+                      ActionChip(
+                        visualDensity: VisualDensity.compact,
+                        label: const Text('10 轮 (轻量)'),
+                        onPressed: () => update(() => turns = 10),
+                      ),
+                      ActionChip(
+                        visualDensity: VisualDensity.compact,
+                        avatar: const Icon(Icons.star_rounded, size: 14),
+                        label: const Text('恢复默认 (20 轮)'),
+                        onPressed: () => update(
+                          () => turns = AiSearchOptions.defaultContextWindowTurns,
+                        ),
+                      ),
+                      ActionChip(
+                        visualDensity: VisualDensity.compact,
+                        label: const Text('30 轮 (长文)'),
+                        onPressed: () => update(() => turns = 30),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  const InfoHintBanner(
+                    message:
+                        '多轮追问时，AI 会携带前置历史问答作为上下文。设置 20 轮滑动窗口控制，既能保障多轮推演与解答连贯性，又能杜绝 Token 消耗失控；单次请求仍受 60KB 长度上限保护。',
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('取消'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, turns),
+                child: const Text('保存'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    if (mounted && selected != null) {
+      await _saveOptions(options.copyWith(contextWindowTurns: selected));
+    }
+  }
+
   Future<void> _help() => showDialog<void>(
         context: context,
         builder: (context) {
@@ -526,6 +635,15 @@ class _AiSearchSettingsGroupState extends State<AiSearchSettingsGroup>
                     color: scheme.secondary,
                     desc:
                         '收到回答片段后立即显示。流式输出需要问题改写；开启流式会开启改写，关闭改写会同时关闭流式。',
+                  ),
+                  const SizedBox(height: 10),
+                  _buildHelpCard(
+                    context,
+                    icon: Icons.history_edu_rounded,
+                    title: '上下文滑动窗口',
+                    color: scheme.primary,
+                    desc:
+                        '多轮连续追问时，AI 保留最近 20 轮问答（可调 5~50 轮）作为上下文，兼顾推演连贯性与 Token 消耗控制。',
                   ),
                   const SizedBox(height: 10),
                   _buildHelpCard(
@@ -692,6 +810,12 @@ class _AiSearchSettingsGroupState extends State<AiSearchSettingsGroup>
           label: '教材与题目比例',
           trailing: _value(options.ratioLabel),
           onTap: canSave ? _ratio : null,
+        ),
+        IconTile(
+          icon: Icons.history_edu_rounded,
+          label: '上下文轮数',
+          trailing: _value('${options.contextWindowTurns} 轮'),
+          onTap: canSave ? _contextWindowTurns : null,
         ),
         IconTile(
           icon: Icons.info_outline_rounded,

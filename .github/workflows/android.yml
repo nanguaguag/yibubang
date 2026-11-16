@@ -20,9 +20,6 @@ jobs:
 
       - uses: subosito/flutter-action@v2
         with:
-          # Keep the Android toolchain compatible with AGP 8.11.1/Gradle 8.14.
-          # Flutter 3.50 requires AGP >= 9.1.1; migrate that toolchain together.
-          flutter-version: '3.44.6'
           channel: 'stable'
           cache: true
 

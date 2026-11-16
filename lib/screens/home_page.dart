@@ -59,12 +59,11 @@ class _HomePageState extends State<HomePage> {
       currentVersion = info.version;
     });
 
-    // 题库目录初始化可能正在 main() 的后台任务中执行，这里复用同一个 Future，
-    // 不会再次扫描和校验所有题库。
+    // 优先确保活跃题库就绪（其余题库在后台静默初始化），避免首屏长时间阻塞
     try {
-      await QuestionBankRepository().initialize();
+      await QuestionBankRepository().initializeActiveBank();
     } catch (error) {
-      debugPrint('题库目录初始化失败：$error');
+      debugPrint('活跃题库初始化失败：$error');
     }
     debugPrint('[startup] HomePage 题库目录初始化(${swInit.elapsedMilliseconds}ms)');
     if (!mounted) return;

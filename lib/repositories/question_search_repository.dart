@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:sqflite/sqflite.dart';
 
+import '../db/chunked_query_executor.dart';
 import '../db/database_helper.dart';
 import '../db/question_bank_manager.dart';
 import '../models/question.dart';
@@ -442,63 +443,63 @@ class QuestionSearchRepository {
       try {
         final db = await manager.openBank(bank.bankId);
         final currentBankBatch = remainingIds.toList();
-        for (var i = 0; i < currentBankBatch.length; i += 200) {
-          final batchIds = currentBankBatch.sublist(
-            i,
-            i + 200 > currentBankBatch.length ? currentBankBatch.length : i + 200,
-          );
-          final placeholders = List.filled(batchIds.length, '?').join(',');
-          final rows = await db.rawQuery('''
-            SELECT id, public_title, title, type, type_str, option, restore,
-                   explain, chapter_parent_id, year
-              FROM Question
-             WHERE id IN ($placeholders)
-          ''', batchIds);
+        await ChunkedQueryExecutor.runChunkedVoid<String>(
+          items: currentBankBatch,
+          chunkSize: 200,
+          action: (batchIds) async {
+            final placeholders = List.filled(batchIds.length, '?').join(',');
+            final rows = await db.rawQuery('''
+              SELECT id, public_title, title, type, type_str, option, restore,
+                     explain, chapter_parent_id, year
+                FROM Question
+               WHERE id IN ($placeholders)
+            ''', batchIds);
 
-          if (rows.isEmpty) continue;
+            if (rows.isEmpty) return;
 
-          final subjectIds = <String>{
-            for (final r in rows)
-              if ((r['chapter_parent_id'] as String?)?.isNotEmpty == true)
-                r['chapter_parent_id'] as String,
-          }.toList();
+            final subjectIds = <String>{
+              for (final r in rows)
+                if ((r['chapter_parent_id'] as String?)?.isNotEmpty == true)
+                  r['chapter_parent_id'] as String,
+            }.toList();
 
-          final subjectNames = <String, String>{};
-          if (subjectIds.isNotEmpty) {
-            final sPlaceholders = List.filled(subjectIds.length, '?').join(',');
-            final sRows = await db.query(
-              'Subject',
-              columns: ['id', 'name'],
-              where: 'id IN ($sPlaceholders)',
-              whereArgs: subjectIds,
-            );
-            for (final s in sRows) {
-              subjectNames[s['id'] as String] = s['name'] as String? ?? '';
+            final subjectNames = <String, String>{};
+            if (subjectIds.isNotEmpty) {
+              final sRows = await ChunkedQueryExecutor.queryIn(
+                db: db,
+                table: 'Subject',
+                column: 'id',
+                values: subjectIds,
+                columns: ['id', 'name'],
+              );
+              for (final s in sRows) {
+                subjectNames[s['id'] as String] = s['name'] as String? ?? '';
+              }
             }
-          }
 
-          for (final row in rows) {
-            final qid = row['id'] as String;
-            final userRow = userMap[qid];
-            final result = QuestionSearchResult.fromMap(
-              row,
-              bank.bankId,
-              bank.name,
-            );
-            if (result.subjectId != null) {
-              result.subjectName = subjectNames[result.subjectId];
+            for (final row in rows) {
+              final qid = row['id'] as String;
+              final userRow = userMap[qid];
+              final result = QuestionSearchResult.fromMap(
+                row,
+                bank.bankId,
+                bank.name,
+              );
+              if (result.subjectId != null) {
+                result.subjectName = subjectNames[result.subjectId];
+              }
+              if (userRow != null) {
+                result.collection = (userRow['collection'] as num? ?? 0) == 1;
+                final cut = userRow['cut_question']?.toString() ?? '0';
+                result.isCut = cut == '1' || cut == 'cutted';
+                result.status = (userRow['status'] as num? ?? 0).toInt();
+                result.updatedAt = (userRow['updated_at'] as num? ?? 0).toInt();
+              }
+              foundMap[qid] = result;
+              remainingIds.remove(qid);
             }
-            if (userRow != null) {
-              result.collection = (userRow['collection'] as num? ?? 0) == 1;
-              final cut = userRow['cut_question']?.toString() ?? '0';
-              result.isCut = cut == '1' || cut == 'cutted';
-              result.status = (userRow['status'] as num? ?? 0).toInt();
-              result.updatedAt = (userRow['updated_at'] as num? ?? 0).toInt();
-            }
-            foundMap[qid] = result;
-            remainingIds.remove(qid);
-          }
-        }
+          },
+        );
       } catch (e) {
         debugPrint('题库 ${bank.bankId} 查询题目失败: $e');
       }

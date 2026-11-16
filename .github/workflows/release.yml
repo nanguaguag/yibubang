@@ -62,8 +62,6 @@ jobs:
 
       - uses: subosito/flutter-action@v2
         with:
-          # Match android.yml: AGP 8.11.1/Gradle 8.14 use Flutter 3.44.6.
-          flutter-version: '3.44.6'
           channel: 'stable'
           cache: true
 

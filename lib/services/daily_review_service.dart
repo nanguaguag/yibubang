@@ -2,11 +2,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../db/user_database_coordinator.dart';
 import '../db/data_transfer.dart';
 import '../models/answer_statistics.dart';
+import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
+
+import '../db/chunked_query_executor.dart';
 
 import '../db/database_helper.dart';
 import '../db/question_bank_manager.dart';
@@ -593,12 +596,12 @@ class DailyReviewService {
     );
 
     final userDb = executor ?? await _userDbHelper.database;
-    final remainingDue = (await _fetchDueReviewQueue(
+    final remainingDue = await _countDueItems(
       plan: plan,
       limit: math.max(0, plan.dailyReviewLimit - completedReview),
       now: currentTime,
       executor: userDb,
-    )).length;
+    );
     final remainingNew = math.max(0, plan.dailyNewTarget - completedNew);
     final pools = await _scopePoolCounts(userDb, plan);
     final poolWrong = pools['wrong'] ?? 0;
@@ -741,6 +744,133 @@ class DailyReviewService {
     );
     // 升级前未保存事件类型，只对无事件的历史记忆项保留原估算；新记录完全按事件统计。
     return Sqflite.firstIntValue(rows) ?? 0;
+  }
+
+  /// 轻量化统计到期复习题目数量（概览专用，彻底不加载题干、选项、解析大实体）
+  Future<int> _countDueItems({
+    required ReviewPlan plan,
+    required int limit,
+    required DateTime now,
+    DatabaseExecutor? executor,
+  }) async {
+    if (limit <= 0) return 0;
+    int count = 0;
+    SpacedReviewItem? cursor;
+    while (count < limit) {
+      final page = await _spacedRepo.getDueItems(
+        planId: plan.id,
+        limit: 500,
+        now: now,
+        executor: executor,
+        after: cursor,
+      );
+      if (page.isEmpty) break;
+      cursor = page.last;
+      final added = await _countFilteredDuePage(
+        plan: plan,
+        limit: limit - count,
+        rawDueItems: page,
+        executor: executor,
+      );
+      count += added;
+      if (page.length < 500) break;
+    }
+    return count;
+  }
+
+  Future<int> _countFilteredDuePage({
+    required ReviewPlan plan,
+    required int limit,
+    required List<SpacedReviewItem> rawDueItems,
+    DatabaseExecutor? executor,
+  }) async {
+    if (rawDueItems.isEmpty || limit <= 0) return 0;
+
+    final userDb = executor ?? await _userDbHelper.database;
+    final itemIds = rawDueItems.map((e) => e.itemId).toList();
+
+    // 检查哪些闪卡存在
+    final flashcardIds = rawDueItems
+        .where((e) => e.itemType == ReviewItemType.flashcard)
+        .map((e) => e.itemId)
+        .toList();
+    final validFlashcardIds = <String>{};
+    if (flashcardIds.isNotEmpty) {
+      final rows = await ChunkedQueryExecutor.queryIn(
+        db: userDb,
+        table: 'CustomFlashcards',
+        column: 'id',
+        values: flashcardIds,
+        columns: ['id'],
+      );
+      for (final r in rows) {
+        final id = r['id']?.toString();
+        if (id != null && id.isNotEmpty) validFlashcardIds.add(id);
+      }
+    }
+
+    // 检查已斩题目
+    final cutIds = <String>{};
+    final userQRows = await ChunkedQueryExecutor.queryIn(
+      db: userDb,
+      table: 'Question',
+      column: 'id',
+      values: itemIds,
+      columns: ['id', 'cut_question'],
+    );
+    for (final r in userQRows) {
+      final cut = r['cut_question']?.toString() ?? '0';
+      if (cut == '1' || cut == 'cutted') {
+        final id = r['id']?.toString();
+        if (id != null) cutIds.add(id);
+      }
+    }
+
+    final questionIdsToCheck = rawDueItems
+        .where((e) => e.itemType != ReviewItemType.flashcard && !cutIds.contains(e.itemId))
+        .map((e) => e.itemId)
+        .toList();
+
+    final existingQuestionIds = await _checkQuestionIdsExist(
+      questionIdsToCheck,
+      plan: plan,
+      executor: userDb,
+    );
+
+    final sourceTypes = plan.sourceTypes;
+    final needFilterSource = !sourceTypes.contains('all');
+    final hasQuestionSource =
+        sourceTypes.contains('all') ||
+        sourceTypes.contains('wrong') ||
+        sourceTypes.contains('collected') ||
+        sourceTypes.contains('note');
+
+    int count = 0;
+    for (final it in rawDueItems) {
+      if (it.itemType == ReviewItemType.flashcard) {
+        if (!validFlashcardIds.contains(it.itemId)) continue;
+        if (needFilterSource && !sourceTypes.contains('flashcard')) continue;
+        count++;
+        if (count >= limit) break;
+        continue;
+      }
+
+      if (cutIds.contains(it.itemId)) {
+        // 若已斩，自动归档为 mastered
+        unawaited(_spacedRepo.saveItem(
+          it.copyWith(state: ReviewState.mastered),
+          executor,
+        ));
+        continue;
+      }
+
+      if (needFilterSource && !hasQuestionSource) continue;
+      if (!existingQuestionIds.contains(it.itemId)) continue;
+
+      count++;
+      if (count >= limit) break;
+    }
+    return count;
   }
 
   /// 拉取到期复习队列，过滤已斩题目，并按覆盖课程筛选
@@ -1355,6 +1485,45 @@ class DailyReviewService {
     return candidates.toList();
   }
 
+  /// 轻量级检测题目是否存在于目标题库且满足覆盖课程（不读取题干选项大字段）
+  Future<Set<String>> _checkQuestionIdsExist(
+    List<String> ids, {
+    required ReviewPlan plan,
+    DatabaseExecutor? executor,
+  }) async {
+    if (ids.isEmpty) return {};
+    final db = executor ?? await _userDbHelper.database;
+    final result = <String>{};
+    final banks = await _scopeBanks(plan);
+    for (final bank in banks.entries) {
+      await _withScopeBank(db, bank.value, plan, (
+        from,
+        filter,
+        args,
+        relations,
+      ) async {
+        await ChunkedQueryExecutor.runChunkedVoid<String>(
+          items: ids,
+          chunkSize: 500,
+          action: (chunk) async {
+            final placeholders = List.filled(chunk.length, '?').join(',');
+            final rows = await db.rawQuery(
+              "SELECT q.id FROM $from WHERE $filter AND q.id IN ($placeholders)",
+              [...args, ...chunk],
+            );
+            for (final row in rows) {
+              final id = row['id']?.toString();
+              if (id != null && id.isNotEmpty) {
+                result.add(id);
+              }
+            }
+          },
+        );
+      });
+    }
+    return result;
+  }
+
   /// 批量加载题目实体（严格通过 QuestionBankDatabaseManager 单例连接池复用，杜绝 macOS 6922 锁异常）
   Future<Map<String, Question>> _loadQuestionsByIds(
     List<String> ids, {
@@ -1372,25 +1541,29 @@ class DailyReviewService {
         args,
         relations,
       ) async {
-        for (var i = 0; i < ids.length; i += 500) {
-          final chunk = ids.sublist(i, math.min(i + 500, ids.length));
-          final contextColumns = relations
-              ? ',iq.subject_id AS scope_subject,iq.chapter_id AS scope_chapter,iq.identity_id AS scope_identity'
-              : '';
-          final rows = await db.rawQuery(
-            "SELECT q.* $contextColumns FROM $from WHERE $filter AND q.id IN (${List.filled(chunk.length, '?').join(',')}) ORDER BY q.id",
-            [...args, ...chunk],
-          );
-          for (final row in rows) {
-            final q = Question.fromMap(row)..sourceBankId = bank.key;
-            if (relations) {
-              q.chapterParentId = row['scope_subject'] as String?;
-              q.chapterId = row['scope_chapter'] as String?;
-              q.identityId = row['scope_identity'] as String?;
+        await ChunkedQueryExecutor.runChunkedVoid<String>(
+          items: ids,
+          chunkSize: 500,
+          action: (chunk) async {
+            final contextColumns = relations
+                ? ',iq.subject_id AS scope_subject,iq.chapter_id AS scope_chapter,iq.identity_id AS scope_identity'
+                : '';
+            final placeholders = List.filled(chunk.length, '?').join(',');
+            final rows = await db.rawQuery(
+              "SELECT q.* $contextColumns FROM $from WHERE $filter AND q.id IN ($placeholders) ORDER BY q.id",
+              [...args, ...chunk],
+            );
+            for (final row in rows) {
+              final q = Question.fromMap(row)..sourceBankId = bank.key;
+              if (relations) {
+                q.chapterParentId = row['scope_subject'] as String?;
+                q.chapterId = row['scope_chapter'] as String?;
+                q.identityId = row['scope_identity'] as String?;
+              }
+              result.putIfAbsent(q.id, () => q);
             }
-            result.putIfAbsent(q.id, () => q);
-          }
-        }
+          },
+        );
       });
     }
     return result;
@@ -1433,16 +1606,15 @@ class DailyReviewService {
     if (ids.isEmpty) return {};
     final userDb = executor ?? await _userDbHelper.database;
     final map = <String, UserQuestion>{};
-    for (var i = 0; i < ids.length; i += 500) {
-      final chunk = ids.sublist(i, math.min(i + 500, ids.length));
-      for (final row in await userDb.query(
-        'Question',
-        where: 'id IN (${List.filled(chunk.length, '?').join(',')})',
-        whereArgs: chunk,
-      )) {
-        final uq = UserQuestion.fromMap(row);
-        map[uq.id] = uq;
-      }
+    final rows = await ChunkedQueryExecutor.queryIn(
+      db: userDb,
+      table: 'Question',
+      column: 'id',
+      values: ids,
+    );
+    for (final row in rows) {
+      final uq = UserQuestion.fromMap(row);
+      map[uq.id] = uq;
     }
     return map;
   }
@@ -1467,19 +1639,13 @@ class DailyReviewService {
     DatabaseExecutor db,
     List<String> ids,
   ) async {
-    final rows = <Map<String, Object?>>[];
-    for (var i = 0; i < ids.length; i += 500) {
-      final chunk = ids.sublist(i, math.min(i + 500, ids.length));
-      rows.addAll(
-        await db.query(
-          'Notes',
-          columns: ['question_id'],
-          where: 'question_id IN (${List.filled(chunk.length, '?').join(',')})',
-          whereArgs: chunk,
-        ),
-      );
-    }
-    return rows;
+    return ChunkedQueryExecutor.queryIn(
+      db: db,
+      table: 'Notes',
+      column: 'question_id',
+      values: ids,
+      columns: ['question_id'],
+    );
   }
 
   Future<Map<String, int>> _scopePoolCounts(

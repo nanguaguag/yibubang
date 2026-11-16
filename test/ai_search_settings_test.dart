@@ -177,7 +177,7 @@ void main() {
             of: find.byType(AiSearchSettingsGroup),
             matching: find.byType(IconTile),
           ),
-          findsNWidgets(6),
+          findsNWidgets(7),
         );
         expect(find.textContaining('1+1+1=3'), findsNothing);
         Future<void> capture(String name) async {
@@ -254,6 +254,21 @@ void main() {
         expect(tester.widget<Slider>(find.byType(Slider)).max, 25);
         await tester.tap(find.text('取消'));
         await tester.pumpAndSettle();
+        await tester.tap(find.text('上下文轮数'));
+        await tester.pumpAndSettle();
+        expect(find.text('最近 20 轮问答'), findsOneWidget);
+        tester.widget<Slider>(find.byType(Slider)).onChanged!(30);
+        await tester.pumpAndSettle();
+        expect(find.text('最近 30 轮问答'), findsOneWidget);
+        await tester.tap(find.text('保存'));
+        await tester.pumpAndSettle();
+        expect(find.text('30 轮'), findsOneWidget);
+        expect(
+          (await SharedPreferences.getInstance()).getInt(
+            AiSearchOptions.contextWindowTurnsKey,
+          ),
+          30,
+        );
         await tester.tap(find.text('使用说明'));
         await tester.pumpAndSettle();
         await capture('help');
@@ -267,6 +282,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.text('13 : 12'), findsOneWidget);
         expect(find.text('25 条'), findsOneWidget);
+        expect(find.text('30 轮'), findsOneWidget);
         await tester.pumpWidget(const SizedBox.shrink());
       },
     );

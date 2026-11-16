@@ -1,5 +1,7 @@
-import '../db/user_database_coordinator.dart';
+import 'dart:async';
 import 'dart:io';
+
+import '../db/user_database_coordinator.dart';
 
 import 'package:flutter/foundation.dart';
 import 'package:archive/archive.dart';
@@ -81,7 +83,43 @@ class QuestionBankRepository {
   final QuestionBankDatabaseManager _databaseManager =
       QuestionBankDatabaseManager();
   Future<void>? _initializationFuture;
+  Future<void>? _activeBankInitFuture;
+  final Set<String> _initializedBankIds = {};
   final Set<String> _installing = {};
+
+  /// 启动期优先就绪当前活跃题库（按需懒加载，避免冷启动全量校验阻塞首屏交互）。
+  Future<void> initializeActiveBank({String? bankId}) {
+    if (_initializationFuture != null) {
+      return _activeBankInitFuture ?? _initializationFuture!;
+    }
+    return _activeBankInitFuture ??= _initializeActiveBankInternal(bankId).catchError((
+      Object error,
+      StackTrace stackTrace,
+    ) {
+      _activeBankInitFuture = null;
+      Error.throwWithStackTrace(error, stackTrace);
+    });
+  }
+
+  Future<void> _initializeActiveBankInternal(String? targetBankId) async {
+    await _backupLegacyFiles();
+    final userDb = await UserDBHelper().database;
+    final now = DateTime.now().millisecondsSinceEpoch;
+
+    String activeId = targetBankId ?? '';
+    if (activeId.isEmpty) {
+      final prefs = await SharedPreferences.getInstance();
+      activeId = prefs.getString('activeBankId') ?? QuestionBankDefaults.dental.bankId;
+    }
+
+    final spec = QuestionBankDefaults.byId(activeId) ?? QuestionBankDefaults.dental;
+    if (!_initializedBankIds.contains(spec.bankId)) {
+      await _initSingleBank(spec, userDb, now);
+    }
+
+    // 后台静默推进剩余题库全量初始化，不阻塞当前流程
+    unawaited(initialize());
+  }
 
   /// 初始化题库目录只允许同时执行一次，避免启动入口和页面重复扫描题库。
   /// 初始化失败时清空 Future，后续进入题库管理页面仍可以重试。
@@ -95,73 +133,85 @@ class QuestionBankRepository {
     });
   }
 
+  Future<void> _initSingleBank(
+    QuestionBankSpec spec,
+    Database userDb,
+    int now,
+  ) async {
+    final swBank = Stopwatch()..start();
+    final path = await _databaseManager.pathFor(spec.bankId);
+    final backupPath = '$path.bak';
+    var fileExists = await File(path).exists();
+    if (!fileExists && await File(backupPath).exists()) {
+      await File(backupPath).rename(path);
+      fileExists = true;
+    }
+    var validation = fileExists
+        ? await validatePath(path, expectedBankId: spec.bankId)
+        : null;
+    debugPrint(
+      '[bank-scan] 题库 ${spec.bankId} 校验阶段耗时 ${swBank.elapsedMilliseconds}ms',
+    );
+    if (fileExists &&
+        validation != null &&
+        !validation.isValid &&
+        await File(backupPath).exists()) {
+      final backupValidation = await validatePath(
+        backupPath,
+        expectedBankId: spec.bankId,
+      );
+      if (backupValidation.isValid) {
+        await File(path).delete();
+        await File(backupPath).rename(path);
+        validation = backupValidation;
+      }
+    }
+    final fileIsValid = validation?.isValid == true;
+    final existing = await userDb.query(
+      'QuestionBank',
+      where: 'bank_id = ?',
+      whereArgs: [spec.bankId],
+      limit: 1,
+    );
+    if (existing.isEmpty) {
+      await userDb.insert('QuestionBank', {
+        'bank_id': spec.bankId,
+        'name': spec.name,
+        'description': spec.description,
+        'version': fileIsValid ? '1.0.0' : '0.0.0',
+        'schema_version': fileIsValid ? 1 : 0,
+        'local_path': fileIsValid ? path : '',
+        'content_hash': '',
+        'size': 0,
+        'enabled': 1,
+        'built_in': 1,
+        'update_enabled': 1,
+        'install_state': fileIsValid ? 'installed' : 'available',
+        'remote_url': null,
+        'identity_id': spec.identityId,
+        'updated_at': now,
+      });
+    } else if (fileExists && !fileIsValid) {
+      await userDb.update(
+        'QuestionBank',
+        {'install_state': 'broken', 'local_path': path},
+        where: 'bank_id = ?',
+        whereArgs: [spec.bankId],
+      );
+    }
+    _initializedBankIds.add(spec.bankId);
+  }
+
   Future<void> _initializeInternal() async {
     await _backupLegacyFiles();
     final userDb = await UserDBHelper().database;
     final now = DateTime.now().millisecondsSinceEpoch;
     final swTotal = Stopwatch()..start();
     for (final spec in QuestionBankDefaults.all) {
-      final swBank = Stopwatch()..start();
-      final path = await _databaseManager.pathFor(spec.bankId);
-      final backupPath = '$path.bak';
-      var fileExists = await File(path).exists();
-      if (!fileExists && await File(backupPath).exists()) {
-        await File(backupPath).rename(path);
-        fileExists = true;
+      if (_initializedBankIds.contains(spec.bankId)) {
+        continue;
       }
-      var validation = fileExists
-          ? await validatePath(path, expectedBankId: spec.bankId)
-          : null;
-      debugPrint(
-        '[bank-scan] 题库 ${spec.bankId} 校验阶段耗时 ${swBank.elapsedMilliseconds}ms',
-      );
-      if (fileExists &&
-          validation != null &&
-          !validation.isValid &&
-          await File(backupPath).exists()) {
-        final backupValidation = await validatePath(
-          backupPath,
-          expectedBankId: spec.bankId,
-        );
-        if (backupValidation.isValid) {
-          await File(path).delete();
-          await File(backupPath).rename(path);
-          validation = backupValidation;
-        }
-      }
-      final fileIsValid = validation?.isValid == true;
-      final existing = await userDb.query(
-        'QuestionBank',
-        where: 'bank_id = ?',
-        whereArgs: [spec.bankId],
-        limit: 1,
-      );
-      if (existing.isEmpty) {
-        await userDb.insert('QuestionBank', {
-          'bank_id': spec.bankId,
-          'name': spec.name,
-          'description': spec.description,
-          'version': fileIsValid ? '1.0.0' : '0.0.0',
-          'schema_version': fileIsValid ? 1 : 0,
-          'local_path': fileIsValid ? path : '',
-          'content_hash': '',
-          'size': 0,
-          'enabled': 1,
-          'built_in': 1,
-          'update_enabled': 1,
-          'install_state': fileIsValid ? 'installed' : 'available',
-          'remote_url': null,
-          'identity_id': spec.identityId,
-          'updated_at': now,
-        });
-      } else if (fileExists && !fileIsValid) {
-        await userDb.update(
-          'QuestionBank',
-          {'install_state': 'broken', 'local_path': path},
-          where: 'bank_id = ?',
-          whereArgs: [spec.bankId],
-        );
-      }
+      await _initSingleBank(spec, userDb, now);
     }
 
     // 旧版本题库不删除。它是迁移失败时的只读安全回退，不会伪装成可删除的内置库。
