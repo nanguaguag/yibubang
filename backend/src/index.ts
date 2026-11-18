@@ -15,6 +15,13 @@ interface DeviceAuth {
 
 const app = new Hono<{ Bindings: Bindings }>();
 
+// 全局异常拦截，确保透传真实服务端错误详情（如 D1 缺表/约束/校验错误），避免黑盒 500
+app.onError((err, c) => {
+  const msg = err instanceof Error ? err.message : String(err);
+  console.error('[sync-server] Unhandled error:', msg, err);
+  return c.json({ code: 500, message: msg }, 500);
+});
+
 // 跨域支持
 app.use('*', cors());
 

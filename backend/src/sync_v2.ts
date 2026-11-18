@@ -21,12 +21,22 @@ export async function pushMutations(db: D1Database, user: string, device: string
     const q = mutation.payload;
     if (mutation.kind === 'question') {
       for (const f of ['chapter_id','chapter_parent_id']) {
-        if (Object.prototype.hasOwnProperty.call(q,f) && q[f] !== null && typeof q[f] !== 'string') throw new Error('Invalid question relation');
+        if (Object.prototype.hasOwnProperty.call(q,f) && q[f] !== null && typeof q[f] !== 'string') {
+          throw new Error(`Invalid question relation ${f}=${String(q[f])}`);
+        }
       }
+      // 兼容旧版客户端/历史迁移数据中可能存在的 NULL 字段，统一规范化为安全默认值
+      if ('user_answer' in q && q.user_answer === null) q.user_answer = '';
+      if ('cut_question' in q && q.cut_question === null) q.cut_question = '0';
+      if ('status' in q && q.status === null) q.status = 0;
+      if ('collection' in q && q.collection === null) q.collection = 0;
+
       if (('collection' in q && ![0,1].includes(q.collection)) ||
           ('status' in q && ![0,1,2,3,4].includes(q.status)) ||
           ('cut_question' in q && !['0','1'].includes(q.cut_question)) ||
-          ('user_answer' in q && typeof q.user_answer !== 'string')) throw new Error('Invalid question fields');
+          ('user_answer' in q && typeof q.user_answer !== 'string')) {
+        throw new Error(`Invalid question fields for ${mutation.id}: ${JSON.stringify(q)}`);
+      }
     }
   }
 

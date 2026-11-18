@@ -10,6 +10,9 @@
 
 | 问题 | 状态与验证 |
 | --- | --- |
+| 云同步万题上传单批 500 耗时 43s 报 HTTP 500 | 已修复；重构 `sync_v2.ts` 为并发幂等查重 + 多行 `ON CONFLICT DO UPDATE`（严格 $\le 91$ 参数守住 D1 100 参数上限），500 题耗时由 43s 降至 4.3s；客户端增加 >16KB 自动 GZip 压缩（压缩率 ~95%）、中间分片 `push_only` 及 500/超时自动缩减批次降级；MockClient 15/15 PASS，Worker 已上线 |
+| 云同步第 ~3400 条后稳定报黑盒 500 (Internal Server Error) | 已修复；Hono 原先缺失 `app.onError` 导致 D1 报错（如远程 D1 未执行最新 `schema.sql` 建表 `sync_flashcards`/`sync_spaced_items`）或旧迁移题目 `user_answer: null` 校验异常均被吞成 `"Internal Server Error"`；现已补全全局异常透传与历史 `NULL` 字段兼容默认值 |
+| AppMarkdown 图片加载时居中、加载后闪跳至左侧 | 已修复；`AppNetworkImage` 默认占位无尺寸导致加载时撑满全宽、加载后缩回配合 `Alignment.centerLeft` 闪跳；已改为 `Center` 居中与 `200×140` 固定占位尺寸，10/10 PASS |
 | 每日复习卡片主入口绕过已配置算法 (M13) | 已修复；`DailyReviewCard` 动态感知并加载设置中的算法引擎（如 `fsrs_lite`），`DailyReviewService` 提供 `createConfigured` 工厂，探针及 Widget 12/12 测试通过 |
 | 云同步 Worker pushMutations 串行处理 500 变动性能瓶颈 | 已修复；按 25 条切片批量查询 `seenMap` 并在单 D1 batch 事务中聚合提交，彻底消除 CPU 耗尽与子请求超限风险；后端 11/11 测试通过 |
 | Windows每日复习测试fixture超30秒/database_closed | 502题+502复习项逐条提交耗尽准备时间，timeout清理后写入已关闭库；改两批事务、保留501过滤/500首批与q_4翻页断言。3.44/3.50该文件各11 PASS，3.50全量357 PASS/3 skip；Windows runner修复后尚未重跑 |
