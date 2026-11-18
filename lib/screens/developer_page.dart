@@ -132,7 +132,8 @@ class _DeveloperPageState extends State<DeveloperPage>
   @visibleForTesting
   Future<void> loadAllDataForTesting() => _loadAllData();
   @visibleForTesting
-  List<Map<String, dynamic>> get cloudOutboxItemsForTesting => _cloudOutboxItems;
+  List<Map<String, dynamic>> get cloudOutboxItemsForTesting =>
+      _cloudOutboxItems;
   @visibleForTesting
   int get cloudOutboxTotalCountForTesting => _cloudOutboxTotalCount;
 
@@ -834,7 +835,7 @@ class _DeveloperPageState extends State<DeveloperPage>
                     const Icon(Icons.history, size: 20),
                     const SizedBox(width: 8),
                     const Text(
-                      '本地作答与同步流水 (最近 50 条)',
+                      '流水',
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                     const Spacer(),
@@ -850,10 +851,7 @@ class _DeveloperPageState extends State<DeveloperPage>
                         Icons.cleaning_services_outlined,
                         size: 16,
                       ),
-                      label: const Text(
-                        '清理',
-                        style: TextStyle(fontSize: 12),
-                      ),
+                      label: const Text('清理', style: TextStyle(fontSize: 12)),
                     ),
                     const SizedBox(width: 4),
                     Text(
@@ -1064,7 +1062,10 @@ class _DeveloperPageState extends State<DeveloperPage>
               child: Center(
                 child: Text(
                   '还有 ${_cloudOutboxTotalCount - _cloudOutboxItems.length} 项待推送变动未在列表展开，点击“立即同步”推送到 D1',
-                  style: TextStyle(fontSize: 11, color: theme.colorScheme.onSurfaceVariant),
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ),
             ),
@@ -1096,7 +1097,11 @@ class _DeveloperPageState extends State<DeveloperPage>
           children: [
             Row(
               children: [
-                Icon(Icons.cloud_done_outlined, size: 20, color: theme.colorScheme.primary),
+                Icon(
+                  Icons.cloud_done_outlined,
+                  size: 20,
+                  color: theme.colorScheme.primary,
+                ),
                 const SizedBox(width: 8),
                 const Text(
                   'Cloudflare R2 整库冷备快照',
@@ -1104,9 +1109,14 @@ class _DeveloperPageState extends State<DeveloperPage>
                 ),
                 const Spacer(),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
-                    color: (enabled ? Colors.green : Colors.grey).withValues(alpha: 0.15),
+                    color: (enabled ? Colors.green : Colors.grey).withValues(
+                      alpha: 0.15,
+                    ),
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Text(
@@ -1114,7 +1124,9 @@ class _DeveloperPageState extends State<DeveloperPage>
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
-                      color: enabled ? Colors.green.shade700 : Colors.grey.shade600,
+                      color: enabled
+                          ? Colors.green.shade700
+                          : Colors.grey.shade600,
                     ),
                   ),
                 ),
@@ -1123,7 +1135,10 @@ class _DeveloperPageState extends State<DeveloperPage>
             const SizedBox(height: 10),
             Text(
               '配置保留: 最近 $retained 份快照  |  上次本地备份: $lastTime',
-              style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
+              style: TextStyle(
+                fontSize: 12,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
             ),
             const SizedBox(height: 12),
             Row(
@@ -1134,13 +1149,16 @@ class _DeveloperPageState extends State<DeveloperPage>
                       : () async {
                           setState(() => _isBackingUpCloud = true);
                           try {
-                            final res = await CloudBackupService.instance.createBackup();
+                            final res = await CloudBackupService.instance
+                                .createBackup();
                             await _loadQueuesAndActivities();
                             if (mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
                                   content: Text(res.message),
-                                  backgroundColor: res.success ? Colors.green : Colors.red,
+                                  backgroundColor: res.success
+                                      ? Colors.green
+                                      : Colors.red,
                                 ),
                               );
                             }
@@ -1154,7 +1172,9 @@ class _DeveloperPageState extends State<DeveloperPage>
                               );
                             }
                           } finally {
-                            if (mounted) setState(() => _isBackingUpCloud = false);
+                            if (mounted) {
+                              setState(() => _isBackingUpCloud = false);
+                            }
                           }
                         },
                   icon: _isBackingUpCloud
@@ -1235,7 +1255,11 @@ class _DeveloperPageState extends State<DeveloperPage>
         ),
         child: Text(
           kindName,
-          style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: kindColor),
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.bold,
+            color: kindColor,
+          ),
         ),
       ),
       title: Row(
@@ -1278,7 +1302,11 @@ class _DeveloperPageState extends State<DeveloperPage>
             tooltip: '移出 Outbox',
             onPressed: () async {
               final db = await UserDBHelper().database;
-              await db.delete('CloudOutbox', where: 'seq = ?', whereArgs: [item['seq']]);
+              await db.delete(
+                'CloudOutbox',
+                where: 'seq = ?',
+                whereArgs: [item['seq']],
+              );
               await _loadQueuesAndActivities();
               if (mounted) setState(() {});
             },
@@ -1293,25 +1321,53 @@ class _DeveloperPageState extends State<DeveloperPage>
     Map<String, dynamic>? entity;
     try {
       if (kind == 'question') {
-        final rows = await db.query('Question', where: 'id = ?', whereArgs: [int.tryParse(id) ?? id]);
+        final rows = await db.query(
+          'Question',
+          where: 'id = ?',
+          whereArgs: [int.tryParse(id) ?? id],
+        );
         if (rows.isNotEmpty) entity = rows.first;
       } else if (kind == 'flashcard') {
-        final rows = await db.query('CustomFlashcards', where: 'id = ?', whereArgs: [id]);
+        final rows = await db.query(
+          'CustomFlashcards',
+          where: 'id = ?',
+          whereArgs: [id],
+        );
         if (rows.isNotEmpty) entity = rows.first;
       } else if (kind == 'flashcard_delete') {
-        final rows = await db.query('CloudDeletedFlashcards', where: 'id = ?', whereArgs: [id]);
+        final rows = await db.query(
+          'CloudDeletedFlashcards',
+          where: 'id = ?',
+          whereArgs: [id],
+        );
         if (rows.isNotEmpty) entity = rows.first;
       } else if (kind == 'spaced_item') {
-        final rows = await db.query('SpacedReviewItem', where: 'id = ?', whereArgs: [id]);
+        final rows = await db.query(
+          'SpacedReviewItem',
+          where: 'id = ?',
+          whereArgs: [id],
+        );
         if (rows.isNotEmpty) entity = rows.first;
       } else if (kind == 'review_plan') {
-        final rows = await db.query('ReviewPlans', where: 'id = ?', whereArgs: [id]);
+        final rows = await db.query(
+          'ReviewPlans',
+          where: 'id = ?',
+          whereArgs: [id],
+        );
         if (rows.isNotEmpty) entity = rows.first;
       } else if (kind == 'note') {
-        final rows = await db.query('Notes', where: 'question_id = ?', whereArgs: [int.tryParse(id) ?? id]);
+        final rows = await db.query(
+          'Notes',
+          where: 'question_id = ?',
+          whereArgs: [int.tryParse(id) ?? id],
+        );
         if (rows.isNotEmpty) entity = rows.first;
       } else if (kind == 'activity') {
-        final rows = await db.query('Activities', where: 'id = ?', whereArgs: [id]);
+        final rows = await db.query(
+          'Activities',
+          where: 'id = ?',
+          whereArgs: [id],
+        );
         if (rows.isNotEmpty) entity = rows.first;
       }
     } catch (e) {

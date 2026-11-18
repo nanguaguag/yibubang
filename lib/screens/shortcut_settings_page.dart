@@ -172,8 +172,7 @@ class _ShortcutSettingsPageState extends State<ShortcutSettingsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final ColorScheme colorScheme = theme.colorScheme;
+    Theme.of(context);
 
     return Scaffold(
       appBar: AppBar(title: const Text('快捷键')),
@@ -214,15 +213,10 @@ class _ShortcutSettingsPageState extends State<ShortcutSettingsPage> {
             ],
           ),
           const SizedBox(height: 10),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Text(
-              '「翻页步长」控制 PgUp / PgDn 每次滚动的距离；'
-              '「连续滚动步长」控制 ↑ / ↓（长按可连续滚动）每次滚动的距离。',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-              ),
-            ),
+          const InfoHintBanner(
+            message:
+                '「翻页步长」控制 PgUp / PgDn 每次滚动的距离；'
+                '「连续滚动步长」控制 ↑ / ↓（长按可连续滚动）每次滚动的距离。',
           ),
           const SizedBox(height: 14),
           _sectionTitle('功能快捷键'),
@@ -237,19 +231,15 @@ class _ShortcutSettingsPageState extends State<ShortcutSettingsPage> {
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Text(
-              '← / → 切换上一题 / 下一题；PgUp / PgDn 在当前题目内上下翻页；'
-              '↑ / ↓ 连续滚动（可长按）。F11 在应用内切换全屏，可在上方改键。'
-              '其余快捷键仅在刷题页面生效，输入笔记、评论时让位给输入框。'
-              '选项键优先于刷题功能快捷键。',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-              ),
-            ),
+          const SizedBox(height: 10),
+          const InfoHintBanner(
+            message:
+                '← / → 切换上一题 / 下一题；PgUp / PgDn 在当前题目内上下翻页；'
+                '↑ / ↓ 连续滚动（可长按）。F11 在应用内切换全屏，可在上方改键。'
+                '其余快捷键仅在刷题页面生效，输入笔记、评论时让位给输入框。'
+                '选项键优先于刷题功能快捷键。',
           ),
+          const SizedBox(height: 14),
         ],
       ),
     );
