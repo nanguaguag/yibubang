@@ -1,6 +1,39 @@
 # 跨会话交接
 
-## 最新交接：2026-11-17 修复 Android CI 编译 checkReleaseAarMetadata 失败（统一 subprojects compileSdk 36）
+## 最新交接：2026-11-18 Cloudflare D1 万题大批量同步前后端性能优化上线与 Markdown 图片居中防闪跳修复
+
+- **用户授权与操作目标**：
+  1. 解决万题同步报错 `HTTP 500 (耗时 43181ms)`：前后端联动实施 GZip 压缩 + 多行批量 SQL Upsert + `push_only` 跳过中间拉取 + 客户端自适应批次降级；
+  2. 修复 `AppMarkdown` 图片从居中闪跳到左对齐的视觉问题；
+  3. 部署 Worker 至 Cloudflare，完善项目记忆/架构/数据库/交接文档并完成规范中文 git commit。
+- **遇到的问题与根因**：
+  1. **500 超时（43181ms）**：`backend/src/sync_v2.ts` 原按 25 条分片循环，500 题产生 2000+ 条逐行 SQL 与 40 次串行 D1 往返，且每片均执行 `pullChanges` 全库查询，触碰 Workers 执行寿命上限；
+  2. **图片渲染闪跳**：`AppNetworkImage` 默认占位符未固定宽高，加载时撑满宽度居中，图片解码缩放后缩回实际宽度并被外层 `Alignment.centerLeft` 拽至左侧。
+- **完成项**：
+  1. **[服务端多行批量 SQL 重构 (`backend/src/sync_v2.ts`)]**：
+     - 幂等查重阶段重构为最多 45 项/片并发 `Promise.all` 查询；
+     - 严格遵守 D1 100 参数上限，采用连续同构多行 `VALUES (...), ... ON CONFLICT DO UPDATE` 批量语句（500 条仅需 ~92 条 SQL、1 次 `db.batch`）。
+  2. **[服务端 GZip 解压与 `push_only` 支持 (`backend/src/index.ts`)]**：
+     - `/api/sync` 原生支持 `Content-Encoding: gzip` 请求体通过 `DecompressionStream('gzip')` 解压；
+     - 支持 `push_only: true` 跳过中间 `pullChanges` 全量扫描；
+     - 已通过 `npx wrangler deploy` 成功部署上线（Version ID `e715415d-ef86-40b8-b346-9525a9084955`，R2 存储桶 `yibubang-user-backups` 已创建并绑定）。
+  3. **[客户端 GZip 压缩、`push_only` 流水线与自适应降级 (`lib/services/cloud_sync_service.dart`, `lib/db/cloud_outbox.dart`)]**：
+     - `CloudOutbox.page` 支持动态 `limit`；
+     - 大于 16KB 的分片自动 GZip 压缩上传（500 题载荷由 ~61.8KB 压至 ~2.9KB，压缩率 95%）；
+     - 存在后续分片时携带 `push_only: true`，最后一片统一拉取合并；
+     - 遭遇 500/502/503/504 或超时自动缩减单批上限（500 -> 150 -> 50）断点重试。
+  4. **[Markdown 图片居中与防闪跳 (`lib/widgets/app_markdown.dart`)]**：
+     - `_buildImageBlock` 改为 `Center` 居中展示，并为 `AppNetworkImage` 指定 `200×140` 固定加载占位尺寸。
+  5. **[记忆与文档沉淀]**：
+     - 已同步更新 `PROJECT_MEMORY.md`、`database_current.md`、`ARCHITECTURE.md` 与 `SESSION_HANDOFF.md`。
+- **质量门禁验证**：
+  - `backend` TypeScript 类型检查：`npm run typecheck` (`tsc --noEmit`) 0 errors；
+  - `dart analyze` 修改文件：No issues found；
+  - 单元测试：`test/cloud_outbox_test.dart`、`test/cloud_outbox_extensions_test.dart`、`test/developer_page_performance_test.dart`（15/15 PASS）以及 `test/app_markdown_test.dart`、`test/ai_markdown_test.dart`（10/10 PASS）。
+- **未完成项 / 下一次第一步**：
+  - 下一次第一步：在手机端/电脑端实际运行验证万题增量同步与 R2 冷备还原效果。
+
+## 前次交接：2026-11-17 修复 Android CI 编译 checkReleaseAarMetadata 失败（统一 subprojects compileSdk 36）
 
 - **用户授权与操作目标**：
   - 修复 Github Android CI 编译错误：`:file_picker:checkReleaseAarMetadata` 报错 `:flutter_plugin_android_lifecycle` 要求依赖它的库与应用 `compileSdk >= 36`，而 `:file_picker` 自身声明为 `android-34`。

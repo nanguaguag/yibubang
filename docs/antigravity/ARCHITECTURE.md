@@ -6,7 +6,18 @@
 
 [database_helper.dart](../../lib/db/database_helper.dart)管理用户库升级；题库正式文件物理只读，安装/合并使用暂存替换。Question.id跨库共享，作答/Activities/笔记留用户库；[data_transfer.dart](../../lib/db/data_transfer.dart)执行ATTACH聚合。桌面/移动文件选择和Dialog/抽屉须保持原适配。
 
-首页M02真实路径指纹、M01精准revision刷新与M03隐藏Tab延迟挂载切片已完成；未把目录检查、迁移和所有调度阶段整体重构。云同步协议v2及ACK/outbox已完成；2026-11-15正式D1/Worker发布及独立账号HTTP/实际客户端链路验证通过，见[发布记录](audits/SYNC_V2_DEPLOYMENT.md)。真实用户多端及目标网络仍待验收。
+首页M02真实路径指纹、M01精准revision刷新与M03隐藏Tab延迟挂载切片已完成；未把目录检查、迁移和所有调度阶段整体重构。云同步协议v2及ACK/outbox已完成；2026-11-18 完成 D1+R2 冷热混合同步上线及万题大批量性能重构（GZip 请求体压缩 + `push_only` 跳过中间拉取 + 并发查重 + 多行 `ON CONFLICT DO UPDATE` 批量写入 + 客户端自适应退避），线上 `yibubang-sync-server` Worker 与 `yibubang-user-backups` R2 存储桶已部署上线。
+
+## 云同步协议 v2 与混合冷热架构
+
+- **增量同步链路（Cloudflare D1）**：[cloud_outbox.dart](../../lib/db/cloud_outbox.dart) 本地触发器实时捕获 `Question`、`Activities`、`CustomFlashcards`、`SpacedReviewItem`、`ReviewPlans` 变更，经 [cloud_sync_service.dart](../../lib/services/cloud_sync_service.dart) 分片上传至 Worker `/api/sync`。
+- **万题高速传输优化**：
+  1. 当待发送 JSON 字节 > 16KB 时自动 GZip 压缩（`Content-Encoding: gzip`），Worker 使用 `DecompressionStream('gzip')` 解压；
+  2. 中间分片附带 `push_only: true`，跳过 `pullChanges` 全表扫描，最后分片统一拉取合并；
+  3. 服务端 [sync_v2.ts](../../backend/src/sync_v2.ts) 采用并发 `Promise.all` 幂等查重与多行 `ON CONFLICT DO UPDATE`（每条 SQL 参数 $\le 91$，严守 D1 100 参数上限），500 题仅需 ~92 条 SQL + 1 次 `db.batch`；
+  4. 若遇极端情况返回 500/超时，客户端自动将批次由 500 降级为 150/50 断点续传。
+- **整库冷备链路（Cloudflare R2）**：[cloud_backup_service.dart](../../lib/services/cloud_backup_service.dart) 将 `user_data.sqlite` 执行 WAL checkpoint 截断并 GZip 压缩后上传 R2（`/api/backup/*`），还原时带 `.restore_bak` 回滚保护。
+- **通用 Markdown 与图片预览**：[app_markdown.dart](../../lib/widgets/app_markdown.dart) 统一承载 AI 搜索、闪卡、每日复习的 GFM/LaTeX/图片渲染（图片统一居中、固定占位防闪跳、点击直达 `FullScreenImageView`）。
 
 ## AI与教材
 

@@ -382,8 +382,17 @@ void main() {
         expect((await CloudSyncService.instance.sync()).success, true);
       },
       () => MockClient((req) async {
-        final body = jsonDecode(req.body) as Map<String, dynamic>;
+        final rawJson =
+            req.headers['Content-Encoding'] == 'gzip' ||
+                req.headers['content-encoding'] == 'gzip'
+            ? utf8.decode(gzip.decode(req.bodyBytes))
+            : req.body;
+        final body = jsonDecode(rawJson) as Map<String, dynamic>;
         lengths.add((body['mutations'] as List).length);
+        if (calls == 0) {
+          expect(body['push_only'], true);
+          expect(req.headers['Content-Encoding'] ?? req.headers['content-encoding'], 'gzip');
+        }
         if (++calls == 2) return http.Response('failed', 500);
         return response(body);
       }),
@@ -401,5 +410,35 @@ void main() {
       ),
     );
     expect((await db.query('CloudOutbox')).length, 1);
+  });
+  test('大包返回500时自动缩减单批大小重试并全部同步成功', () async {
+    final batch = db.batch();
+    for (var i = 0; i < 300; i++) {
+      batch.insert('Question', {'id': 'adapt_$i', 'status': 1});
+    }
+    await batch.commit(noResult: true);
+    final batchSizes = <int>[];
+    await http.runWithClient(
+      () async {
+        expect((await CloudSyncService.instance.sync()).success, true);
+        expect(await db.query('CloudOutbox'), isEmpty);
+      },
+      () => MockClient((req) async {
+        final rawJson =
+            req.headers['Content-Encoding'] == 'gzip' ||
+                req.headers['content-encoding'] == 'gzip'
+            ? utf8.decode(gzip.decode(req.bodyBytes))
+            : req.body;
+        final body = jsonDecode(rawJson) as Map<String, dynamic>;
+        final len = (body['mutations'] as List).length;
+        batchSizes.add(len);
+        if (len > 150) {
+          return http.Response('Internal Server Error', 500);
+        }
+        return response(body);
+      }),
+    );
+    // 第一次尝试 300 失败后，缩减为 150 + 150 成功上传
+    expect(batchSizes, [300, 150, 150]);
   });
 }

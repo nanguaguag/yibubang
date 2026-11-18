@@ -212,13 +212,14 @@ class CloudOutbox {
     Database db,
     String owner,
     int after,
-    int through,
-  ) => db.query(
+    int through, {
+    int limit = 500,
+  }) => db.query(
     'CloudOutbox',
     where: 'owner=? AND seq>? AND seq<=?',
     whereArgs: [owner, after, through],
     orderBy: 'seq',
-    limit: 500,
+    limit: limit,
   );
 
   static Future<Map<String, Object?>> mutation(

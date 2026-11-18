@@ -377,8 +377,7 @@ class AppMarkdown extends StatelessWidget {
   Widget _buildImageBlock(BuildContext context, String src, String alt) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Align(
-        alignment: Alignment.centerLeft,
+      child: Center(
         child: _buildImageWidget(
           context,
           src,
@@ -407,6 +406,20 @@ class AppMarkdown extends StatelessWidget {
         imageUrl: cleanSrc,
         fit: BoxFit.contain,
         borderRadius: BorderRadius.circular(8),
+        placeholder: (ctx, url) => Container(
+          width: 200,
+          height: 140,
+          alignment: Alignment.center,
+          color: Theme.of(ctx)
+              .colorScheme
+              .surfaceContainerHighest
+              .withValues(alpha: 0.35),
+          child: const SizedBox(
+            width: 24,
+            height: 24,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
       );
     } else {
       final file = File(cleanSrc);

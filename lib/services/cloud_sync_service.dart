@@ -398,19 +398,52 @@ class CloudSyncService extends ChangeNotifier {
       }
 
       int serverTime = 0;
+      int batchLimit = 500;
       do {
-        final chunk = await CloudOutbox.page(userDb, owner, after, through);
+        final chunk = await CloudOutbox.page(
+          userDb,
+          owner,
+          after,
+          through,
+          limit: batchLimit,
+        );
         final mutations = <Map<String, Object?>>[];
         for (final entry in chunk) {
           mutations.add(await CloudOutbox.mutation(userDb, entry));
         }
-        final res = await _request(
-          '/api/sync',
-          method: 'POST',
-          auth: true,
-          timeout: const Duration(seconds: 45),
-          body: {'protocol': 2, 'pull_cursor': cursor, 'mutations': mutations},
-        );
+        final hasMorePush =
+            chunk.isNotEmpty && (chunk.last['seq'] as int) < through;
+        final Map<String, dynamic> res;
+        try {
+          res = await _request(
+            '/api/sync',
+            method: 'POST',
+            auth: true,
+            timeout: const Duration(seconds: 45),
+            body: {
+              'protocol': 2,
+              'pull_cursor': cursor,
+              'mutations': mutations,
+              if (hasMorePush) 'push_only': true,
+            },
+          );
+        } catch (e) {
+          final isRetryableBatchError =
+              e is TimeoutException ||
+              (e is HttpException &&
+                  (e.message.contains('HTTP 500') ||
+                      e.message.contains('HTTP 502') ||
+                      e.message.contains('HTTP 503') ||
+                      e.message.contains('HTTP 504')));
+          if (isRetryableBatchError && chunk.length > 100 && batchLimit > 100) {
+            batchLimit = batchLimit >= 400 ? 150 : 50;
+            debugPrint(
+              '[cloud-sync] 批次过大触发服务端限制，自动缩减单批大小至 $batchLimit 条重试...',
+            );
+            continue;
+          }
+          rethrow;
+        }
         final data = res['data'] as Map<String, dynamic>;
         if (data['protocol'] != 2 || data['accepted_seqs'] is! List) {
           throw const FormatException('云同步服务需升级至协议 v2，待上传数据已保留');
@@ -424,30 +457,32 @@ class CloudSyncService extends ChangeNotifier {
             data['accepted_seqs'] as List,
           ),
         );
-        await CloudOutbox.mergePage(userDb, owner, data, cursor);
-        trackCommittedData(data);
-        cursor = data['next_cursor'] as int;
-        while (data['has_more'] == true) {
-          final response = await _request(
-            '/api/sync',
-            method: 'POST',
-            auth: true,
-            timeout: const Duration(seconds: 45),
-            body: {
-              'protocol': 2,
-              'mutations': [],
-              'pull_cursor': cursor,
-              'high_watermark': data['high_watermark'],
-            },
-          );
-          final page = response['data'] as Map<String, dynamic>;
-          await CloudOutbox.mergePage(userDb, owner, page, cursor);
-          trackCommittedData(page);
-          cursor = page['next_cursor'] as int;
-          trackPage(page);
-          data['has_more'] = page['has_more'];
+        if (data['push_only'] != true && data['next_cursor'] != null) {
+          await CloudOutbox.mergePage(userDb, owner, data, cursor);
+          trackCommittedData(data);
+          cursor = data['next_cursor'] as int;
+          while (data['has_more'] == true) {
+            final response = await _request(
+              '/api/sync',
+              method: 'POST',
+              auth: true,
+              timeout: const Duration(seconds: 45),
+              body: {
+                'protocol': 2,
+                'mutations': [],
+                'pull_cursor': cursor,
+                'high_watermark': data['high_watermark'],
+              },
+            );
+            final page = response['data'] as Map<String, dynamic>;
+            await CloudOutbox.mergePage(userDb, owner, page, cursor);
+            trackCommittedData(page);
+            cursor = page['next_cursor'] as int;
+            trackPage(page);
+            data['has_more'] = page['has_more'];
+          }
+          trackPage(data);
         }
-        trackPage(data);
         totalQuestions += chunk.where((e) => e['kind'] == 'question').length;
         totalActivities += chunk.where((e) => e['kind'] == 'activity').length;
         after = chunk.isEmpty ? through : chunk.last['seq'] as int;
@@ -587,11 +622,25 @@ class CloudSyncService extends ChangeNotifier {
         final client = http.Client();
         try {
           if (method == 'POST') {
+            Object? requestBody;
+            if (body != null) {
+              final rawBytes = utf8.encode(jsonEncode(body));
+              if (rawBytes.length > 16 * 1024) {
+                final compressed = gzip.encode(rawBytes);
+                headers['Content-Encoding'] = 'gzip';
+                requestBody = compressed;
+                debugPrint(
+                  '[cloud-sync] 启用 GZip 压缩: ${rawBytes.length}B -> ${compressed.length}B',
+                );
+              } else {
+                requestBody = rawBytes;
+              }
+            }
             res = await client
                 .post(
                   uri,
                   headers: headers,
-                  body: body != null ? jsonEncode(body) : null,
+                  body: requestBody,
                 )
                 .timeout(timeout);
           } else {

@@ -299,7 +299,7 @@ app.post('/api/pair/claim', async (c) => {
   });
 });
 
-// 5. 核心增量同步接口 (Push & Pull)
+// 5. 核心增量同步接口 (Push & Pull，支持 GZip 请求体压缩与 push_only 批处理加速)
 app.post('/api/sync', async (c) => {
   const db = c.env.DB;
   const auth = await authenticateDevice(db, c.req.header('Authorization'));
@@ -307,7 +307,21 @@ app.post('/api/sync', async (c) => {
     return c.json({ code: 401, message: 'Unauthorized device' }, 401);
   }
 
-  const body = await c.req.json().catch(() => ({}));
+  let body: Record<string, any> = {};
+  try {
+    const contentEncoding = (c.req.header('Content-Encoding') || '').toLowerCase();
+    if (contentEncoding.includes('gzip') && c.req.raw.body) {
+      const ds = new DecompressionStream('gzip');
+      const decompressed = c.req.raw.body.pipeThrough(ds);
+      const text = await new Response(decompressed).text();
+      body = JSON.parse(text);
+    } else {
+      body = await c.req.json();
+    }
+  } catch {
+    body = {};
+  }
+
   if (body.protocol !== 2) {
     return c.json({ code: 426, message: 'Please upgrade the client to sync protocol v2' }, 426);
   }
@@ -319,6 +333,22 @@ app.post('/api/sync', async (c) => {
       db.prepare('UPDATE devices SET last_sync_at=? WHERE device_id=? AND last_sync_at<?').bind(now,auth.deviceId,now-60000),
       db.prepare('UPDATE users SET last_sync_at=? WHERE user_id=? AND last_sync_at<?').bind(now,auth.userId,now-60000),
     ]);
+  }
+
+  // 批量上传中间分片启用 push_only=true，跳过 pullChanges 全量扫描，最后一片再统一拉取合并。
+  if (body.push_only === true) {
+    return c.json({
+      code: 0,
+      message: 'Synced successfully',
+      data: {
+        protocol: 2,
+        accepted_seqs: accepted,
+        server_time: now,
+        push_only: true,
+        has_more: false,
+        accepted_count: accepted.length,
+      },
+    });
   }
 
   const page = await pullChanges(db, auth.userId, Number(body.pull_cursor) || 0,

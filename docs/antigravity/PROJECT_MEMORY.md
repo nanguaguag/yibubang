@@ -13,5 +13,8 @@
 - 可迁移知识库的资产是本地规范文字、稳定ID/来源、页号/坐标和图片键；不是Google内部向量。换Embedding模型重算向量但无需重做OCR清洗。
 - 原PDF留本地，Google仅导清洗文本/来源，页图另存R2；医学符号/版次和冲突仍需审核。免费资料额度/赠金抵扣不作免扣费保证。
 - 版本发布与在线更新契约：客户端检测升级始终读取 `yibubang_update.json`，发布或递增版本时必须同步更新 `pubspec.yaml` 与 `yibubang_update.json`（包含 `latest_app`、`latest_app_url`、`update_info` 及各平台 Release 资产直链），缺一不可。
+- 混合冷热云同步契约：D1（`yibubang-sync-db`）负责高频细粒度增量同步（作答、流水、自制闪卡、FSRS 记忆曲线、复习计划），R2（`yibubang-user-backups`）负责按需/每周 SQLite 整库 GZip 冷备快照（两者物理隔离，R2 仅快照本地库，不能替代 D1 增量提交）。
+- D1 同步性能与参数限制：Cloudflare D1 单条 SQL 绑定参数硬上限为 **100**（非普通 SQLite 的 999）；大批量上传须使用多行合并 `ON CONFLICT DO UPDATE` + 并发查重 + `push_only` 跳过中间 Pull + GZip（>16KB 自动压缩）；客户端在遇到 500/超时时自动缩减单批上限（500 -> 150 -> 50）。
+- 卡片图片与 Markdown 渲染契约：卡片与每日复习统一复用 `AppMarkdown`；Markdown 图片统一居中显示且占位尺寸固定（200×140），防止加载后跳变，点击直达 `FullScreenImageView`；图片上传直连医考帮官方图床。
 
 版本、数量、部署与验证更新[开发状态](DEVELOPMENT_STATUS.md)；代理工作规则见[AGENT_RULES](AGENT_RULES.md)。
