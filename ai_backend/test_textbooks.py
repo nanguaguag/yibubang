@@ -1,6 +1,6 @@
 from unittest.mock import patch
 import unittest
-from textbook_support import citation, evidence, image_quota, resolve_page, signed_page, search_snippet
+from textbook_support import citation, evidence, image_quota, resolve_page, signed_page, signed_session, search_snippet
 from policy import PolicyError, day_key
 import test_backend as base
 from test_backend import HEADERS, ID, NOW
@@ -40,6 +40,11 @@ class TextbookPolicyTests(unittest.TestCase):
             url=signed_page('textbooks/book/page.webp')
             self.assertIn('expires='+str(int(NOW)+300),url)
             self.assertIn('signature=',url)
+            session=signed_session(86400)
+            self.assertEqual(session['endpoint'],'https://pages.example')
+            self.assertEqual(session['expires'],int(NOW)+86400)
+            self.assertEqual(session['expires_in'],86400)
+            self.assertTrue(len(session['signature'])==64)
 
 
 class TextbookEndpointTests(unittest.TestCase):
@@ -62,6 +67,14 @@ class TextbookEndpointTests(unittest.TestCase):
             response=self.client.get(path,headers=HEADERS)
             self.assertEqual(response.status_code,200)
             self.assertEqual(self.db.data[('ai_devices',ID)]['image_used'],1)
+            self.assertNotIn('used',self.db.data[('ai_devices',ID)])
+    def test_session_endpoint_requires_auth_and_does_not_spend_quota(self):
+        import app
+        with patch.object(app,'signed_session',return_value={'endpoint':'https://pages.example','expires':int(NOW)+86400,'signature':'sig','expires_in':86400}):
+            self.assertEqual(self.client.get('/v1/textbooks/session').status_code,401)
+            response=self.client.get('/v1/textbooks/session',headers=HEADERS)
+            self.assertEqual(response.status_code,200)
+            self.assertEqual(response.json()['expires_in'],86400)
             self.assertNotIn('used',self.db.data[('ai_devices',ID)])
 
 

@@ -18,7 +18,7 @@ import httpx
 from policy import (PolicyError, authenticate, day_key, generation_body,
                     DAILY_LIMIT, generation_options, quota_info, reserve_device, retrieval_query, secret_hash,
                     validate_identity, validate_question)
-from textbook_support import catalog, evidence as make_evidence, resolve_page, image_quota, signed_page, search_snippet
+from textbook_support import catalog, evidence as make_evidence, resolve_page, image_quota, signed_page, signed_session, search_snippet
 from retrieval import retrieve, textbook_count, result_count
 from answer_models import AnswerModelCatalog
 from builtin_answer import answer_body, answer_packets, cited_answer
@@ -241,6 +241,13 @@ def image_transaction(transaction, device_id, secret, now):
     device=ref.get(transaction=transaction).to_dict()
     authenticate(device,secret)
     transaction.update(ref,image_quota(device,now))
+
+
+@app.get("/v1/textbooks/session")
+async def page_session(request: Request):
+    await authenticated_device(request)
+    session = await asyncio.to_thread(signed_session, 86400)
+    return JSONResponse(session, headers={"Cache-Control": "private, no-store"})
 
 
 @app.get("/v1/textbooks/{book_id}/{version}/pages/{page}")

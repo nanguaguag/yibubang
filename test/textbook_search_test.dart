@@ -8,6 +8,8 @@ import 'package:yibubang/widgets/textbook_thumbnail.dart';
 class FakeTextbooks implements TextbookGateway {
   final requests = <String>[];
   @override
+  void invalidateSession() {}
+  @override
   Future<List<Map<String, dynamic>>> books() async => [
     {'book_id': 'tb_123456789abc', 'title': '生理学'},
   ];

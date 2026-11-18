@@ -34,9 +34,16 @@ export default {
     if (!env.SIGNING_KEY) return new Response('Service unavailable',{status:503});
     const now = Math.floor(Date.now()/1000);
     const expires = url.searchParams.get('expires');
-    if (!/^\d{10}$/.test(expires || '') || Number(expires)<now || Number(expires)>now+310) return new Response('Expired link',{status:403});
-    const expected = await signature(env.SIGNING_KEY,key+'\n'+expires);
-    if (!equal(url.searchParams.get('signature'),expected)) return new Response('Invalid signature',{status:403});
+    const scope = url.searchParams.get('scope');
+    if (scope === 'session') {
+      if (!/^\d{10}$/.test(expires || '') || Number(expires)<now || Number(expires)>now+86460) return new Response('Expired link',{status:403});
+      const expected = await signature(env.SIGNING_KEY,'session\n'+expires);
+      if (!equal(url.searchParams.get('signature'),expected)) return new Response('Invalid signature',{status:403});
+    } else {
+      if (!/^\d{10}$/.test(expires || '') || Number(expires)<now || Number(expires)>now+310) return new Response('Expired link',{status:403});
+      const expected = await signature(env.SIGNING_KEY,key+'\n'+expires);
+      if (!equal(url.searchParams.get('signature'),expected)) return new Response('Invalid signature',{status:403});
+    }
     // Authenticate first; cache by immutable object key, never by rotating token.
     const cache = globalThis.caches?.default;
     const cacheKey = new Request(url.origin+'/'+key);

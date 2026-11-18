@@ -70,6 +70,17 @@ def image_quota(device, now):
     return {"image_day":day,"image_used":used+1,"image_minute":minute,"image_minute_used":minute_used+1}
 
 
+def signed_session(ttl=86400):
+    endpoint = os.environ.get("TEXTBOOK_IMAGE_ENDPOINT", "").rstrip("/")
+    signing_key = os.environ.get("TEXTBOOK_IMAGE_SIGNING_KEY", "")
+    if not endpoint or not signing_key:
+        raise PolicyError("教材页图正在准备中，请稍后再打开", 503)
+    expires = int(time.time()) + ttl
+    signature = hmac.new(signing_key.encode(),
+        ("session\n" + str(expires)).encode(), hashlib.sha256).hexdigest()
+    return {"endpoint": endpoint, "expires": expires, "signature": signature, "expires_in": ttl}
+
+
 def signed_page(key):
     if os.environ.get("TEXTBOOK_IMAGE_ENDPOINT") and os.environ.get("TEXTBOOK_IMAGE_SIGNING_KEY"):
         expires = int(time.time()) + 300

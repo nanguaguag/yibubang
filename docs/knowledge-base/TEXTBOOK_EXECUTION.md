@@ -77,3 +77,19 @@ R2全量20669页/7336669280 bytes上传完成，进程正常结束；《医学�
 ## 2026-11-13 检索与页图速度修订
 
 页图正式地址改为https://textbooks.melonhu.com，仍为同一私有R2和签名Worker；鉴权后才允许命中边缘缓存。全部20669缩略图已从现有WebP本地生成/上传，377590170bytes，本地SHA与R2成功回执完整匹配；查询卡片使用独立小图/300图本地缓存，不下载整张页图作预览。增加关键词底色高亮。具体测试、独立教材优先检索、Markdown和模型费用说明见[SEARCH_IMPROVEMENTS.md](../ai-search/SEARCH_IMPROVEMENTS.md)。
+
+## 2026-11-18 口腔教材扩充（70本）与24小时会话级页图签名
+
+1. **口腔教材并入知识库**：
+   - 来源 `/Volumes/My PSSD/书籍/口腔教科书全套/`（17 本、4,967 页）；`textbooks.py` 新增 `parse_title_edition` 剥离 `J01：` 前缀与后缀、拆出 `第X版` 至 `edition`，并过滤 macOS `._*` 元数据文件；
+   - 与原 53 本合并为 **70 本 / 25,636 页**；`build.py` 增量构建全库 **175,084** 文档、**177,020** 检索块（新增 **5,557** 条口腔教材块，`deleted_chunks: 0`），已同步至 Google AI Search `yibubang-medical-v1`（operation `import-documents-8293321359334584749`）。
+2. **R2 10 GB 免费额度控制与存储选型踩坑**：
+   - 原 2400px/q85 渲染 17 本口腔页图达 2.002 GB，与原 53 本合并后 `yibubang-textbooks` 达 9.822 GB，且同账号另有冷备桶 `yibubang-user-backups`（R2 免费额度按**全账号 10 GB/月**核算），极易超限；
+   - 改用长边 `2000px` / WebP `quality=75` 重压缩 17 本口腔页图后降至 **1.214 GB**，全库 51,272 对象（25,636 页图 + 25,636 缩略图）合计 **9,034,170,996 bytes（9.034 GB / 8.414 GiB）**；
+   - 实测对比（同一批 10 张 ~325 KB 原图）：未备案域名 `melonhu.com` 绑七牛云只能使用海外新加坡桶 `yibubang-outsea`，冷/热均耗时 **2,922 ms / 2,319 ms**，反而慢于 CF 直连（**2,586 ms / 1,660 ms**），且七牛每月仅 10 GB 免费 HTTP 流量（R2 流量免费）。故最终放弃七牛，全部留存 Cloudflare R2。
+3. **24 小时会话级签名优化（消除翻页 7.4s 东京签名延迟）**：
+   - 实测原方案每次翻页先请求东京 Cloud Run 签名平均耗时 **7,416 ms**（总耗时 **14,803 ms**）；
+   - `ai_backend` 新增 `GET /v1/textbooks/session`（部署版本 `yibubang-ai-search-00019-mdm`），`worker.js` 支持 `scope=session`（24 小时有效期），App 端 `TextbookClient` 持久化会话令牌至 `SharedPreferences`，翻页与缩略图直接走 `https://textbooks.melonhu.com`，遇到 403/过期时自动静默续签并重试一次。
+4. **环境踩坑记录**：
+   - `gcloud` 存在多账号时，`cloud.py sync` 需确认激活账号为 `melondoon@gmail.com`（否则 GCS 返回 403）；
+   - 外置硬盘 `/Volumes/My PSSD` 休眠断连会引发 `OSError: [Errno 6] Device not configured`，重新挂载后重跑 `validate_textbook_images.py` 与 `r2_pages.py upload` 即可断点续传。

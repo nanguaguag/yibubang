@@ -1,6 +1,36 @@
 # 跨会话交接
 
-## 最新交接：2026-11-18 Cloudflare D1 万题大批量同步前后端性能优化上线与 Markdown 图片居中防闪跳修复
+## 最新交接：2026-11-18 口腔教材知识库全量入库与 24 小时会话级页图签名上线
+
+- **用户授权与操作目标**：
+  1. 将 `/Volumes/My PSSD/书籍/口腔教科书全套/`（17 本口腔教材、4,967 页）并入医不帮知识库与 Google AI Search；
+  2. 将 17 本口腔教材页图压缩使 Cloudflare R2 总容量控制在 10 GB 免费额度内，并完成全量上传；
+  3. 优化教材页图加载速度：在 Cloudflare Worker、Cloud Run 与 Flutter 客户端落地 **24 小时会话级签名 + 失效静默续签**，消除翻页时每次请求东京 Cloud Run 签名的延迟。
+- **完成项**：
+  1. **[口腔教材提取与知识库构建 (`scripts/knowledge_base/textbooks.py`, `scripts/knowledge_base/config.json`)]**：
+     - `textbooks.py` 新增 `parse_title_edition` 支持 `J01：` 前缀、`-第X版` 版次拆分与后缀清洗，并过滤 macOS `._*` 文件；
+     - 17 本口腔教材（4,967 页）提取完成，与原 53 本合并为 **70 本 / 25,636 页**，写入 `/Volumes/My PSSD/书籍/医不帮教材知识库/textbooks.sqlite` 与 `catalog.json`；
+     - `build.py` 与 `validate.py` 通过：全库 **175,084** 文档、**177,020** 检索块（新增 **5,557** 条口腔教材块，`deleted_chunks: 0`）。
+  2. **[口腔页图压缩与 R2 全量上传]**：
+     - 17 本口腔教材页图按长边 2000px、WebP quality=75 重压缩，体积由 2.002 GB 降至 **1.214 GB**；
+     - `validate_textbook_images.py` 通过（70 本、25,636 页、缺页 0）；
+     - 全部上传至 Cloudflare R2 `yibubang-textbooks`：共 **51,272** 个对象（25,636 页图 + 25,636 缩略图），总计 **9,034,170,996 bytes（9.034 GB / 8.414 GiB）**，稳妥控制在 10 GB 免费额度内。
+  3. **[Google AI Search 同步与 Cloud Run 部署 (`ai_backend/textbook_catalog.json`, `ai_backend/textbook_support.py`, `ai_backend/app.py`)]**：
+     - 5,557 条口腔教材块成功增量导入 `yibubang-medical-v1`（operation `import-documents-8293321359334584749`）；
+     - `ai_backend` 新增 `/v1/textbooks/session`（24 小时会话级 HMAC 签名），更新 70 本书目录并部署至 Cloud Run（`yibubang-ai-search-00019-mdm`）。
+  4. **[Cloudflare Worker 与 Flutter 客户端优化 (`textbook_worker/worker.js`, `lib/services/textbook_client.dart`, `lib/screens/textbook_reader_page.dart`, `lib/widgets/textbook_thumbnail.dart`, `test/textbook_search_test.dart`)]**：
+     - `worker.js` 支持 `scope=session`（24 小时校验）并保留单页签名向后兼容，已部署至 `https://textbooks.melonhu.com`；
+     - `TextbookClient` 本地缓存与 `SharedPreferences` 持久化 24 小时会话令牌，翻页/缩略图直连 `textbooks.melonhu.com`，遇到 403/失效时自动静默续签并重试一次。
+- **质量门禁与线上验证**：
+  - `scripts/knowledge_base` 单元测试：18/18 PASS；
+  - `ai_backend` 单元测试：40/40 PASS；
+  - Flutter 教材相关：`dart analyze` 0 issues，`flutter test test/textbook_search_test.dart test/textbook_reader_gestures_test.dart` 6/6 PASS；
+  - 线上端到端实测：检索《牙体牙髓病学》命中第 5 版 PDF 第 215 页，携带 24 小时会话令牌从 `textbooks.melonhu.com` 下载页图（242,570 B）与缩略图（21,908 B）SHA-256 与本地完全一致，篡改签名返回 403。
+- **未完成项 / 下一次第一步**：
+  - 本地代码变更尚未 git commit（等待用户确认后提交）；
+  - 下一次第一步：在真机/客户端重新编译运行最新 Flutter 代码，体验口腔教材检索与 24 小时直连翻页速度。
+
+## 前次交接：2026-11-18 Cloudflare D1 万题大批量同步前后端性能优化上线与 Markdown 图片居中防闪跳修复
 
 - **用户授权与操作目标**：
   1. 解决万题同步报错 `HTTP 500 (耗时 43181ms)`：前后端联动实施 GZip 压缩 + 多行批量 SQL Upsert + `push_only` 跳过中间拉取 + 客户端自适应批次降级；

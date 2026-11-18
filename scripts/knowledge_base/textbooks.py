@@ -111,11 +111,23 @@ def extract_page(page):
             "width": page.rect.width, "height": page.rect.height, "rotation": page.rotation}
 
 
+def parse_title_edition(stem):
+    title = re.sub(r"^\d+\.", "", stem)
+    title = re.sub(r"^J\d+[：:]\s*", "", title)
+    title = re.sub(r"[（(]\s*可复制\s*[）)]", "", title)
+    title = re.sub(r"(?:[-_\s]+(?:自制书签|全书签|高清|彩图))+\s*$", "", title).strip()
+    edition = ""
+    m = re.search(r"[-_\s]+(第\d+版)\s*$", title)
+    if m:
+        edition = m.group(1)
+        title = title[:m.start()].strip()
+    return title, edition
+
+
 def process_book(job):
     path, output = map(Path, job)
     sha = file_hash(path)
-    title = re.sub(r"^\d+\.", "", path.stem)
-    title = re.sub(r"[（(]\s*可复制\s*[）)]", "", title).strip()
+    title, edition = parse_title_edition(path.stem)
     bid = "tb_" + hashlib.sha256(title.encode()).hexdigest()[:12]
     version = sha[:16]
     folder = output / "books" / bid / version
@@ -156,7 +168,7 @@ def process_book(job):
             count += 1
     (folder / "pages.jsonl.part").rename(folder / "pages.jsonl")
     book = {"book_id": bid, "source_version": version, "source_sha256": sha,
-            "source_path": str(path), "title": title, "edition": "", "isbn": "",
+            "source_path": str(path), "title": title, "edition": edition, "isbn": "",
             "page_count": count, "pipeline": PIPELINE, "quality_counts": dict(quality),
             "pages_path": str(folder / "pages.jsonl")}
     completed.write_text(dumps(book)+"\n")
@@ -257,7 +269,7 @@ def main():
     args=p.parse_args()
     args.output.mkdir(parents=True,exist_ok=True)
     if args.action=="extract":
-        files=sorted(args.source.glob("*.pdf"))
+        files=sorted(f for f in args.source.glob("*.pdf") if not f.name.startswith("._"))
         with ProcessPoolExecutor(max_workers=args.workers) as pool:
             list(pool.map(process_book,[(str(f),str(args.output)) for f in files]))
         finalize(args.output)

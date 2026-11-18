@@ -54,7 +54,13 @@ class _TextbookReaderPageState extends State<TextbookReaderPage> {
     final existing = await pageCache.getFileFromCache(key);
     if (existing != null && await existing.file.exists()) return existing.file;
     final signed = await gateway.page(citation, page);
-    return pageCache.getSingleFile(signed['url'] as String, key: key);
+    try {
+      return await pageCache.getSingleFile(signed['url'] as String, key: key);
+    } catch (_) {
+      gateway.invalidateSession();
+      final refreshed = await gateway.page(citation, page);
+      return pageCache.getSingleFile(refreshed['url'] as String, key: key);
+    }
   });
   void _move(int delta) {
     if (current + delta < 1 || current + delta > citation.pageCount) return;

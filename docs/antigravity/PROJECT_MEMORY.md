@@ -16,5 +16,6 @@
 - 混合冷热云同步契约：D1（`yibubang-sync-db`）负责高频细粒度增量同步（作答、流水、自制闪卡、FSRS 记忆曲线、复习计划），R2（`yibubang-user-backups`）负责按需/每周 SQLite 整库 GZip 冷备快照（两者物理隔离，R2 仅快照本地库，不能替代 D1 增量提交）。
 - D1 同步性能与参数限制：Cloudflare D1 单条 SQL 绑定参数硬上限为 **100**（非普通 SQLite 的 999）；大批量上传须使用多行合并 `ON CONFLICT DO UPDATE` + 并发查重 + `push_only` 跳过中间 Pull + GZip（>16KB 自动压缩）；客户端在遇到 500/超时时自动缩减单批上限（500 -> 150 -> 50）。
 - 卡片图片与 Markdown 渲染契约：卡片与每日复习统一复用 `AppMarkdown`；Markdown 图片统一居中显示且占位尺寸固定（200×140），防止加载后跳变，点击直达 `FullScreenImageView`；图片上传直连医考帮官方图床。
+- 教材页图存储与 24 小时会话签名契约：Cloudflare R2 免费额度（10 GB/月）按**全账号**所有桶合计（含 `yibubang-textbooks` 与 `yibubang-user-backups`），新增教材须先本地核算总容量再上传；`textbooks.melonhu.com` Worker 支持 24 小时会话级 HMAC 令牌（`scope=session`），App 本地持久化后直连下载，遇 403 自动静默续签（仍保留单页签名向后兼容）；未备案域名无法使用国内七牛桶，海外七牛实测慢于 CF 直连。
 
 版本、数量、部署与验证更新[开发状态](DEVELOPMENT_STATUS.md)；代理工作规则见[AGENT_RULES](AGENT_RULES.md)。

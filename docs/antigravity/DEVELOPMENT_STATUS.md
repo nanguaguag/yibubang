@@ -1,5 +1,16 @@
 # 当前开发状态
 
+## 2026-11-18 口腔教材并入知识库（70 本）与 24 小时会话级页图签名上线（完成）
+
+1. **17 本口腔教材提取与语料入库 (`scripts/knowledge_base/textbooks.py` / `config.json`)**：
+   - 适配 `J01：` 前缀、`-第X版` 版次拆解与 macOS `._*` 过滤，提取 `/Volumes/My PSSD/书籍/口腔教科书全套/` 共 17 本 / 4,967 页，与原 53 本合并为 **70 本 / 25,636 页**；
+   - `build.py` / `validate.py` 通过：全库 **175,084** 文档、**177,020** 检索块（新增 **5,557** 条口腔教材块），并完成 Google AI Search `yibubang-medical-v1` 增量导入。
+2. **口腔页图压缩与 Cloudflare R2 全量上传**：
+   - 将 17 本口腔教材页图压缩为长边 `2000px` / WebP `quality=75`（1.214 GB），70 本合计 51,272 对象（25,636 页图 + 25,636 缩略图），总计 **9.034 GB (8.414 GiB)**，控制在 R2 10 GB 免费额度内。
+3. **24 小时会话级页图签名与静默续签 (`textbook_worker/worker.js` / `ai_backend/` / `lib/`)**：
+   - `ai_backend` 新增 `GET /v1/textbooks/session`（部署版本 `yibubang-ai-search-00019-mdm`，含 70 本书目录）；
+   - `worker.js` 支持 `scope=session` 24 小时鉴权；Flutter `TextbookClient` 持久化会话令牌至 `SharedPreferences`，翻页与缩略图直连 `textbooks.melonhu.com`，遇 403 自动静默续签重试。
+
 ## 2026-11-16 P1 修复推进与架构重构第二阶段（完成）
 
 用户指示推进 P1 级剩余项修复与专项重构，完成测试后中文 commit。

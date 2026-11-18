@@ -53,7 +53,14 @@ class _TextbookThumbnailState extends State<TextbookThumbnail> {
     if (cached != null && await cached.file.exists()) return cached.file;
     final signed = await widget.gateway.thumbnail(c);
     if (signed['url'] is! String) return null;
-    return cache.getSingleFile(signed['url'], key: key);
+    try {
+      return await cache.getSingleFile(signed['url'], key: key);
+    } catch (_) {
+      widget.gateway.invalidateSession();
+      final refreshed = await widget.gateway.thumbnail(c);
+      if (refreshed['url'] is! String) return null;
+      return cache.getSingleFile(refreshed['url'], key: key);
+    }
   }
 
   @override

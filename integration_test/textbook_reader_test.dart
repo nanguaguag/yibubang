@@ -32,6 +32,8 @@ const citation = AiCitation(
 class OfflineGateway implements TextbookGateway {
   int requests = 0;
   @override
+  void invalidateSession() {}
+  @override
   Future<List<Map<String, dynamic>>> books() async => [];
   @override
   Future<TextbookResults> search(

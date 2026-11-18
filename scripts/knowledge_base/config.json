@@ -65,6 +65,16 @@
       "page_count": 417
     },
     {
+      "id": "tb_1112a24d416e_5ab053d8152af53f",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_1112a24d416e/5ab053d8152af53f/pages.jsonl",
+      "title": "牙体牙髓病学",
+      "edition": "第5版",
+      "book_id": "tb_1112a24d416e",
+      "source_version": "5ab053d8152af53f",
+      "page_count": 380
+    },
+    {
       "id": "tb_12247f66b86c_0d5c51b703c8a7c1",
       "type": "pages_jsonl",
       "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_12247f66b86c/0d5c51b703c8a7c1/pages.jsonl",
@@ -135,6 +145,46 @@
       "page_count": 400
     },
     {
+      "id": "tb_2b0bae37b7c5_2360564d354adae4",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_2b0bae37b7c5/2360564d354adae4/pages.jsonl",
+      "title": "口腔种植学",
+      "edition": "第1版",
+      "book_id": "tb_2b0bae37b7c5",
+      "source_version": "2360564d354adae4",
+      "page_count": 178
+    },
+    {
+      "id": "tb_2c807ce05450_308e66e7db1fe336",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_2c807ce05450/308e66e7db1fe336/pages.jsonl",
+      "title": "口腔预防医学",
+      "edition": "第7版",
+      "book_id": "tb_2c807ce05450",
+      "source_version": "308e66e7db1fe336",
+      "page_count": 210
+    },
+    {
+      "id": "tb_2f8c3e4a8d11_c900b5af16b9a425",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_2f8c3e4a8d11/c900b5af16b9a425/pages.jsonl",
+      "title": "牙合学",
+      "edition": "第4版",
+      "book_id": "tb_2f8c3e4a8d11",
+      "source_version": "c900b5af16b9a425",
+      "page_count": 256
+    },
+    {
+      "id": "tb_38108bae2b01_8132f9bb80becb85",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_38108bae2b01/8132f9bb80becb85/pages.jsonl",
+      "title": "口腔解剖生理学",
+      "edition": "第8版",
+      "book_id": "tb_38108bae2b01",
+      "source_version": "8132f9bb80becb85",
+      "page_count": 362
+    },
+    {
       "id": "tb_388bb8c60e7b_7de1afda39ef7161",
       "type": "pages_jsonl",
       "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_388bb8c60e7b/7de1afda39ef7161/pages.jsonl",
@@ -143,6 +193,16 @@
       "book_id": "tb_388bb8c60e7b",
       "source_version": "7de1afda39ef7161",
       "page_count": 368
+    },
+    {
+      "id": "tb_38bcb8b295c9_2e7cb82f8646e78d",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_38bcb8b295c9/2e7cb82f8646e78d/pages.jsonl",
+      "title": "口腔颌面外科学",
+      "edition": "第8版",
+      "book_id": "tb_38bcb8b295c9",
+      "source_version": "2e7cb82f8646e78d",
+      "page_count": 449
     },
     {
       "id": "tb_3959064769a0_e35646c916ddc494",
@@ -163,6 +223,16 @@
       "book_id": "tb_3dcf3b398259",
       "source_version": "cb43772266a81238",
       "page_count": 322
+    },
+    {
+      "id": "tb_40b55177dd45_b12e68ee8b5ce278",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_40b55177dd45/b12e68ee8b5ce278/pages.jsonl",
+      "title": "口腔材料学",
+      "edition": "第6版",
+      "book_id": "tb_40b55177dd45",
+      "source_version": "b12e68ee8b5ce278",
+      "page_count": 256
     },
     {
       "id": "tb_41ad86b052c6_8c9efd5c3e479cb1",
@@ -255,6 +325,36 @@
       "page_count": 514
     },
     {
+      "id": "tb_6e566f95637b_5fb9c06264819f83",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_6e566f95637b/5fb9c06264819f83/pages.jsonl",
+      "title": "口腔组织病理学",
+      "edition": "第8版",
+      "book_id": "tb_6e566f95637b",
+      "source_version": "5fb9c06264819f83",
+      "page_count": 398
+    },
+    {
+      "id": "tb_6fbfbf7ca0e2_7c5dcd35ff3af66b",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_6fbfbf7ca0e2/7c5dcd35ff3af66b/pages.jsonl",
+      "title": "口腔正畸学",
+      "edition": "第7版",
+      "book_id": "tb_6fbfbf7ca0e2",
+      "source_version": "7c5dcd35ff3af66b",
+      "page_count": 318
+    },
+    {
+      "id": "tb_791d433bf9f8_ad36dd1445cdad5c",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_791d433bf9f8/ad36dd1445cdad5c/pages.jsonl",
+      "title": "口腔生物学",
+      "edition": "第5版",
+      "book_id": "tb_791d433bf9f8",
+      "source_version": "ad36dd1445cdad5c",
+      "page_count": 207
+    },
+    {
       "id": "tb_7946206e46c1_b0945331e7b85141",
       "type": "pages_jsonl",
       "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_7946206e46c1/b0945331e7b85141/pages.jsonl",
@@ -273,6 +373,16 @@
       "book_id": "tb_7970dc097a8f",
       "source_version": "51e75880d38d445b",
       "page_count": 466
+    },
+    {
+      "id": "tb_7f8904b1c7cc_86e3ab712c5765d7",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_7f8904b1c7cc/86e3ab712c5765d7/pages.jsonl",
+      "title": "口腔颌面医学影像诊断学",
+      "edition": "第7版",
+      "book_id": "tb_7f8904b1c7cc",
+      "source_version": "86e3ab712c5765d7",
+      "page_count": 226
     },
     {
       "id": "tb_83293cd2fb57_f114887e5d663192",
@@ -305,6 +415,16 @@
       "page_count": 850
     },
     {
+      "id": "tb_8f290cefe999_9b5257a3729b0289",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_8f290cefe999/9b5257a3729b0289/pages.jsonl",
+      "title": "口腔医学人文",
+      "edition": "第1版",
+      "book_id": "tb_8f290cefe999",
+      "source_version": "9b5257a3729b0289",
+      "page_count": 233
+    },
+    {
       "id": "tb_901d3f8b3efd_2ce9e214ce896665",
       "type": "pages_jsonl",
       "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_901d3f8b3efd/2ce9e214ce896665/pages.jsonl",
@@ -335,6 +455,16 @@
       "page_count": 450
     },
     {
+      "id": "tb_a3e4f738589c_3df39097296efa17",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_a3e4f738589c/3df39097296efa17/pages.jsonl",
+      "title": "口腔临床药物学",
+      "edition": "第5版",
+      "book_id": "tb_a3e4f738589c",
+      "source_version": "3df39097296efa17",
+      "page_count": 225
+    },
+    {
       "id": "tb_a3f8c2edaa49_6f82c5973d123886",
       "type": "pages_jsonl",
       "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_a3f8c2edaa49/6f82c5973d123886/pages.jsonl",
@@ -363,6 +493,16 @@
       "book_id": "tb_acf0aea52426",
       "source_version": "5801b5ce0a117c33",
       "page_count": 432
+    },
+    {
+      "id": "tb_afc178693768_5b92e543bc371e36",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_afc178693768/5b92e543bc371e36/pages.jsonl",
+      "title": "牙周病学",
+      "edition": "第5版",
+      "book_id": "tb_afc178693768",
+      "source_version": "5b92e543bc371e36",
+      "page_count": 353
     },
     {
       "id": "tb_b77b893e4150_a1d790237b9880d9",
@@ -515,6 +655,16 @@
       "page_count": 982
     },
     {
+      "id": "tb_ea73d27cf849_da202400399c03be",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_ea73d27cf849/da202400399c03be/pages.jsonl",
+      "title": "口腔黏膜病学",
+      "edition": "第5版",
+      "book_id": "tb_ea73d27cf849",
+      "source_version": "da202400399c03be",
+      "page_count": 227
+    },
+    {
       "id": "tb_ef7be5be3c13_d8cff9d3abe6f557",
       "type": "pages_jsonl",
       "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_ef7be5be3c13/d8cff9d3abe6f557/pages.jsonl",
@@ -563,6 +713,26 @@
       "book_id": "tb_fd1f47039dcf",
       "source_version": "396e9692b94d2d00",
       "page_count": 242
+    },
+    {
+      "id": "tb_fe768f0a1a90_6d8f7fc98ccf055c",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_fe768f0a1a90/6d8f7fc98ccf055c/pages.jsonl",
+      "title": "儿童口腔医学",
+      "edition": "第5版",
+      "book_id": "tb_fe768f0a1a90",
+      "source_version": "6d8f7fc98ccf055c",
+      "page_count": 290
+    },
+    {
+      "id": "tb_ff98004537b2_182c45519069088f",
+      "type": "pages_jsonl",
+      "path": "/Volumes/My PSSD/书籍/医不帮教材知识库/books/tb_ff98004537b2/182c45519069088f/pages.jsonl",
+      "title": "口腔修复学",
+      "edition": "第8版",
+      "book_id": "tb_ff98004537b2",
+      "source_version": "182c45519069088f",
+      "page_count": 399
     }
   ],
   "google": {
