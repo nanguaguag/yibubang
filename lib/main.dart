@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math';
+import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'services/ykb_bank_smart_sync_service.dart';
 import 'package:flutter/cupertino.dart';
@@ -25,11 +26,45 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:sqflite_common_ffi_web/sqflite_ffi_web.dart';
 
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
+bool _windowsFontLoaded = false;
+
+Future<void> _loadWindowsFonts() async {
+  if (kIsWeb || !Platform.isWindows) return;
+  try {
+    final exeDir = p.dirname(Platform.resolvedExecutable);
+    final fontsDir = Directory(p.join(exeDir, 'data', 'fonts'));
+    if (!await fontsDir.exists()) return;
+
+    const files = [
+      'NotoSansSC-Regular.ttf',
+      'NotoSansSC-Medium.ttf',
+      'NotoSansSC-Bold.ttf',
+    ];
+    final loader = FontLoader('NotoSansSC');
+    var count = 0;
+    for (final name in files) {
+      final file = File(p.join(fontsDir.path, name));
+      if (await file.exists()) {
+        loader.addFont(
+          file.readAsBytes().then((bytes) => ByteData.sublistView(bytes)),
+        );
+        count++;
+      }
+    }
+    if (count > 0) {
+      await loader.load();
+      _windowsFontLoaded = true;
+    }
+  } catch (e) {
+    debugPrint('[startup] 加载 Windows 字体失败: $e');
+  }
+}
 
 Future main() async {
   final swStartup = Stopwatch()..start();
   // Use sqflite on MacOS/iOS/Android.
   WidgetsFlutterBinding.ensureInitialized();
+  await _loadWindowsFonts();
   if (kIsWeb) {
     // Use web implementation on the web.
     databaseFactory = databaseFactoryFfiWeb;
@@ -131,8 +166,12 @@ ThemeData _buildTheme(Brightness brightness) {
     seedColor: seedColor,
     brightness: brightness,
   );
+  final String? fontFamily = _windowsFontLoaded
+      ? 'NotoSansSC'
+      : (!kIsWeb && Platform.isWindows ? 'Microsoft YaHei UI' : null);
   return ThemeData(
     useMaterial3: true,
+    fontFamily: fontFamily,
     // 统一页面转场为 Material 3，去除 iOS 风格滑入
     pageTransitionsTheme: const PageTransitionsTheme(
       builders: {

@@ -89,17 +89,35 @@
 | **Linux** | ✅ 稳定支持 | 提供压缩包 / AppImage |
 | **iOS / iPadOS** | 🚧 适配中 | 正在积极适配与调试中 |
 
+#### ⚠️ Windows 常见问题：下载题库报 `CERTIFICATE_VERIFY_FAILED`
+
+Windows 端在「题库管理 → 下载题库」时，如果遇到如下报错：
+
+```text
+HandshakeException: Handshake error in client (OS Error: CERTIFICATE_VERIFY_FAILED: unable to get local issuer certificate ...)
+```
+
+**原因**：官方题库包托管在 Gitee，其证书链依赖的根证书（`Certum Trusted Network CA`）在 Windows 上采用**按需懒加载**机制；而 Flutter/Dart 仅读取本机已落盘的证书存储区，若系统此前未通过原生应用访问过相关站点，就会因本地缺少该根证书而握手失败。
+
+**解决方法**：打开 **PowerShell** 运行以下命令触发 Windows 自动补齐根证书（或用系统自带 **Edge 浏览器**打开一次 `https://gitee.com`），随后**重启医不帮**再点击下载即可：
+
+```powershell
+Invoke-WebRequest -Uri "https://gitee.com" -Method Head
+```
+
+> 若执行后仍报错，请检查是否开启了杀毒软件的 HTTPS 扫描或代理/抓包工具的证书拦截。
+
 ---
 
 ### 📸 界面预览
 
 <p align="center">
-  <img src="assets/images/app_image.png" alt="桌面端题库主界面" width="48%">
-  <img src="assets/images/mobile_image.png" alt="移动端答题界面" width="48%">
+  <img src="docs/imgs/app_image.png" alt="桌面端题库主界面" width="48%">
+  <img src="docs/imgs/mobile_image.png" alt="移动端答题界面" width="48%">
 </p>
 <p align="center">
-  <img src="assets/images/windows_snipshot1.png" alt="Windows 端答题详情" width="48%">
-  <img src="assets/images/windows_snipshot2.png" alt="Windows 端复习统计" width="48%">
+  <img src="docs/imgs/windows_snipshot1.png" alt="Windows 端答题详情" width="48%">
+  <img src="docs/imgs/windows_snipshot2.png" alt="Windows 端复习统计" width="48%">
 </p>
 
 ---

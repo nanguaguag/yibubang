@@ -169,6 +169,24 @@ flowchart TD
 - 📦 **GitHub Releases**: [https://github.com/nanguaguag/yibubang/releases](https://github.com/nanguaguag/yibubang/releases)
 - 🚀 **Gitee Mirror (Fast Mainland China Download)**: [https://gitee.com/pumpkin_melon/yibubang/releases](https://gitee.com/pumpkin_melon/yibubang/releases)
 
+#### ⚠️ Windows Troubleshooting: `CERTIFICATE_VERIFY_FAILED` when Downloading Banks
+
+If downloading a question bank on Windows fails with:
+
+```text
+HandshakeException: Handshake error in client (OS Error: CERTIFICATE_VERIFY_FAILED: unable to get local issuer certificate ...)
+```
+
+**Cause**: Built-in question banks are hosted on Gitee, whose TLS chain relies on a root CA (`Certum Trusted Network CA`) that Windows fetches lazily on demand. Because Dart's BoringSSL only reads certificates already persisted in the local Windows store, the handshake fails if the machine has not previously accessed a site under that root via a native Windows client.
+
+**Fix**: Run the following command in **PowerShell** to trigger Windows' automatic root certificate update (or visit `https://gitee.com` once in **Microsoft Edge**), then **restart Yibubang**:
+
+```powershell
+Invoke-WebRequest -Uri "https://gitee.com" -Method Head
+```
+
+> If the error persists, check whether an antivirus HTTPS scanner or local proxy/MITM tool is intercepting TLS traffic without a trusted root CA installed in Windows.
+
 ---
 
 ### 🛠 Getting Started & Build Guide
@@ -232,12 +250,12 @@ Local verification with the CI SDK, Flutter 3.50.0 / Dart 3.14.0: 357 Flutter te
 ### 📸 Snapshots
 
 <p align="center">
-  <img src="assets/images/app_image.png" alt="Desktop Question Bank Dashboard" width="48%">
-  <img src="assets/images/mobile_image.png" alt="Mobile Question Interface" width="48%">
+  <img src="docs/imgs/app_image.png" alt="Desktop Question Bank Dashboard" width="48%">
+  <img src="docs/imgs/mobile_image.png" alt="Mobile Question Interface" width="48%">
 </p>
 <p align="center">
-  <img src="assets/images/windows_snipshot1.png" alt="Windows Question Detail View" width="48%">
-  <img src="assets/images/windows_snipshot2.png" alt="Windows Study Statistics" width="48%">
+  <img src="docs/imgs/windows_snipshot1.png" alt="Windows Question Detail View" width="48%">
+  <img src="docs/imgs/windows_snipshot2.png" alt="Windows Study Statistics" width="48%">
 </p>
 
 ---

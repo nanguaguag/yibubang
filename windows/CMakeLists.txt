@@ -106,3 +106,11 @@ install(DIRECTORY "${PROJECT_BUILD_DIR}/${FLUTTER_ASSET_DIR_NAME}"
 install(FILES "${AOT_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
   CONFIGURATIONS Profile;Release
   COMPONENT Runtime)
+
+# Bundle Windows-only UI fonts without bloating mobile/other platform packages.
+set(WINDOWS_FONTS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/fonts")
+if(EXISTS "${WINDOWS_FONTS_DIR}")
+  install(DIRECTORY "${WINDOWS_FONTS_DIR}"
+    DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
+    COMPONENT Runtime)
+endif()
