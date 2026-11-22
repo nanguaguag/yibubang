@@ -68,3 +68,5 @@ docs/**/artifacts/
 docs/**/__pycache__/
 docs/**/*.sqlite*
 AGENTS.md
+
+yibubang-web/

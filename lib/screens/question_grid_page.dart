@@ -84,7 +84,7 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
     // 初始化 Future 在 initState 中，这样可以访问 widget
     allQuestions = getQuestionsFromChapter(_currentChapter);
     allUserQuestions = getUserQuestions(allQuestions);
-    _chapterStats = _loadChapterStats(_currentChapter);
+    _chapterStats = _loadChapterStats(_currentChapter, allUserQuestions);
     _loadSettings();
     _jump2Question();
     _updatePrevNextChapters();
@@ -225,7 +225,7 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
 
     final questionsFuture = getQuestionsFromChapter(targetChapter);
     final userQuestionsFuture = getUserQuestions(questionsFuture);
-    final statsFuture = _loadChapterStats(targetChapter);
+    final statsFuture = _loadChapterStats(targetChapter, userQuestionsFuture);
 
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -267,16 +267,40 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
     });
   }
 
-  Future<PeriodStats> _loadChapterStats([Chapter? chapter]) async {
+  Future<PeriodStats> _loadChapterStats([
+    Chapter? chapter,
+    Future<List<UserQuestion>>? userQuestionsFuture,
+  ]) async {
     final target = chapter ?? _currentChapter;
+    final uqFuture = userQuestionsFuture ?? allUserQuestions;
     try {
       final bankId = await activeBankId();
-      return await getChapterPeriodStats(
-        subjectId: target.subjectId,
-        chapterId: target.id,
-        bankId: bankId,
-        startMs: 0,
-        endMs: DateTime.now().millisecondsSinceEpoch,
+      final results = await Future.wait([
+        uqFuture,
+        getChapterPeriodStats(
+          subjectId: target.subjectId,
+          chapterId: target.id,
+          bankId: bankId,
+          startMs: 0,
+          endMs: DateTime.now().millisecondsSinceEpoch,
+        ),
+      ]);
+      final userQuestions = results[0] as List<UserQuestion>;
+      final activityStats = results[1] as PeriodStats;
+
+      int correct = 0;
+      int wrong = 0;
+      for (final uq in userQuestions) {
+        if (uq.status == 1) {
+          correct++;
+        } else if (uq.status == 2) {
+          wrong++;
+        }
+      }
+      return PeriodStats(
+        totalDuration: activityStats.totalDuration,
+        answeredCount: correct + wrong,
+        correctCount: correct,
       );
     } catch (error) {
       debugPrint('本章节统计加载失败：$error');
@@ -307,7 +331,7 @@ class _QuestionGridPageState extends State<QuestionGridPage> {
     setState(() {
       allQuestions = questions;
       allUserQuestions = userQuestions;
-      _chapterStats = _loadChapterStats(target);
+      _chapterStats = _loadChapterStats(target, userQuestions);
     });
 
     await questions;
