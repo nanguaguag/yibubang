@@ -1,5 +1,24 @@
 # 当前开发状态
 
+## 2026-11-23 医考帮我的点赞/我的评论归纳同步、评论四维排序页、卡片池联动及闪卡导航修复（完成）
+
+1. **医考帮「我的点赞」与「我的评论」拉取、本地归纳保存及云同步 ([lib/models/comment.dart](../../lib/models/comment.dart) / [lib/services/comment_service.dart](../../lib/services/comment_service.dart) / [lib/screens/my_saved_comments_page.dart](../../lib/screens/my_saved_comments_page.dart) / [lib/screens/my_page.dart](../../lib/screens/my_page.dart))**：
+   - 新增 `SavedComment` 数据模型与 `user_data.sqlite` 的 `SavedComments` / `CloudDeletedSavedComments` 表（按 `category` 区分 `'praise'` 我的点赞与 `'my_comment'` 我的评论）；
+   - 实现与 `NoteService` 完全一致的流程：在题目详情页打开评论区时，自动后台调用 `CommentService.instance.syncCommentsForQuestion` 请求 `POST /Comment/Main/list`（`func=mypraise` 与 `func=mycomment`）拉取并合并落库；在浏览普通评论或四维排序评论时，自动采集 `is_praise == '1'` 与本人评论归档入库；
+   - 点赞评论（`POST /Comment/Main/praise`）或发表评论（`POST /Comment/Main/publish`）成功后实时落入 `SavedComments`；
+   - 在「我的」页新增「我的点赞」与「我的评论」两大卡片入口，进入 `MySavedCommentsPage` 支持关键词高亮搜索、按所在课程筛选、右侧时间轴快速拖动、一键转笔记、一键制闪卡、复制、移除、查看详情（`SavedCommentDetailPage`）与跳转原题，并支持一键批量扫描已做/收藏题库同步；
+   - 接入 `CloudOutbox` 与 Cloudflare D1（`sync_saved_comments` / `sync_deleted_saved_comments`），支持跨设备增量同步与删除防复活。
+2. **独立题目评论四维排序看板页面 ([lib/screens/question_comments_page.dart](../../lib/screens/question_comments_page.dart) / [lib/screens/comment_page.dart](../../lib/screens/comment_page.dart))**：
+   - 对接 `POST /comment/main/hot` 接口，通过 4 个 Tab 分别展示：`最多点赞` (`type=''`)、`最高热度` (`type='recommend'`)、`最多回复` (`type='replies'`)、`最新发布` (`type='newst'`)；
+   - 题目详情页评论区顶部新增「写评论」与「四维排序」入口，底部提供进入四维排序看板的快捷按钮，且评论区内联支持直接切换查看本题「最热 / 最新 / 我的点赞 / 我的评论」。
+3. **关于医不帮页面新增 Telegram 群入口 ([lib/screens/about_page.dart](../../lib/screens/about_page.dart))**：
+   - 在官方网站下方新增「Telegram 交流群」（`t.me/yibubang`）外链卡片。
+4. **修复闪卡详情点击编辑后返回两级的问题 ([lib/widgets/flashcard_deck_dialog.dart](../../lib/widgets/flashcard_deck_dialog.dart))**：
+   - 根因：原 `_viewCardDetails` 的 `onEdit` / `onToggleMastered` / `onDelete` 回调在打开编辑弹窗前先执行了 `Navigator.of(ctx).pop()` 把 `_FlashcardDetailView` 弹出，导致编辑结束返回时直接退回卡包管理页；
+   - 修复：将 `_FlashcardDetailView` 升级为 `StatefulWidget`，在详情页内直接弹出 `FlashcardEditDialog`，保存或取消后仅返回一级回到「闪卡详情」并实时刷新卡片内容，仅在确认删除后才退出详情页。
+5. **每日复习计划「卡片池」五板块全部可点击跳转 ([lib/screens/daily_plan_page.dart](../../lib/screens/daily_plan_page.dart))**：
+   - 「错题攻克」、「星标收藏」、「速记笔记」、「自制闪卡」、「熟练斩题」五个统计胶囊全部绑定点击事件，直接复用「我的」页的 `UserQuestionsListPage`、`MyNotesPage` 与 `FlashcardDeckPage`，返回后自动刷新卡片池统计。
+
 ## 2026-11-23 医不帮 ↔ 医考帮官方双向同步深度审计与全链路修复（完成）
 
 1. **新建笔记 `pushNote` 空 `data: {}` 闭环与防重认领 ([lib/services/note_service.dart](../../lib/services/note_service.dart))**：

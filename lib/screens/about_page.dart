@@ -27,6 +27,7 @@ class _AboutPageState extends State<AboutPage> {
 
   static const String repoUrl = 'https://github.com/nanguaguag/yibubang';
   static const String websiteUrl = 'https://yibubang.vercel.app';
+  static const String telegramUrl = 'https://t.me/yibubang';
 
   @override
   void initState() {
@@ -346,6 +347,36 @@ class _AboutPageState extends State<AboutPage> {
                   ),
                   trailing: const Icon(Icons.open_in_new, size: 18),
                   onTap: () => _openUrl(websiteUrl),
+                ),
+                const Divider(height: 1, indent: 16, endIndent: 16),
+                ListTile(
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 4,
+                  ),
+                  leading: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: Colors.lightBlue.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(
+                      Icons.send_rounded,
+                      color: Colors.lightBlue,
+                      size: 22,
+                    ),
+                  ),
+                  title: const Text(
+                    'Telegram 交流群',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  subtitle: const Text(
+                    't.me/yibubang',
+                    style: TextStyle(fontSize: 12),
+                  ),
+                  trailing: const Icon(Icons.open_in_new, size: 18),
+                  onTap: () => _openUrl(telegramUrl),
                 ),
                 const Divider(height: 1, indent: 16, endIndent: 16),
                 ListTile(

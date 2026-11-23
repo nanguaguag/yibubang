@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
 
 import '../common/app_shapes.dart';
+import '../common/platform_adaptive.dart';
 import '../models/daily_review_session.dart';
+import '../repositories/question_search_repository.dart';
 import '../repositories/spaced_review_repository.dart';
 import '../services/daily_review_service.dart';
 import '../widgets/daily_retention_analytics_dialog.dart';
 import '../widgets/daily_review_card.dart';
 import '../widgets/daily_review_plan_dialog.dart';
 import '../widgets/flashcard_deck_dialog.dart';
+import 'my_notes_page.dart';
+import 'user_questions_list_page.dart';
 
 /// 独立的“每日复习计划”导航页（新 Tab）
 class DailyPlanPage extends StatefulWidget {
@@ -240,15 +244,54 @@ class _DailyPlanPageState extends State<DailyPlanPage> with WidgetsBindingObserv
             const SizedBox(height: 12),
             Row(
               children: [
-                _buildStatPill('错题攻克', '${summary.poolWrongCount}', Colors.red.shade700, scheme),
+                _buildStatPill(
+                  '错题攻克',
+                  '${summary.poolWrongCount}',
+                  Colors.red.shade700,
+                  scheme,
+                  onTap: () => _openUserQuestions(
+                    context,
+                    UserQuestionsType.mistake,
+                  ),
+                ),
                 const SizedBox(width: 6),
-                _buildStatPill('星标收藏', '${summary.poolCollectedCount}', Colors.amber.shade800, scheme),
+                _buildStatPill(
+                  '星标收藏',
+                  '${summary.poolCollectedCount}',
+                  Colors.amber.shade800,
+                  scheme,
+                  onTap: () => _openUserQuestions(
+                    context,
+                    UserQuestionsType.collection,
+                  ),
+                ),
                 const SizedBox(width: 6),
-                _buildStatPill('速记笔记', '${summary.poolNoteCount}', Colors.blue.shade700, scheme),
+                _buildStatPill(
+                  '速记笔记',
+                  '${summary.poolNoteCount}',
+                  Colors.blue.shade700,
+                  scheme,
+                  onTap: () => _openMyNotes(context),
+                ),
                 const SizedBox(width: 6),
-                _buildStatPill('自制闪卡', '${summary.poolFlashcardCount}', Colors.purple.shade700, scheme, onTap: () => _openFlashcardDeck(context)),
+                _buildStatPill(
+                  '自制闪卡',
+                  '${summary.poolFlashcardCount}',
+                  Colors.purple.shade700,
+                  scheme,
+                  onTap: () => _openFlashcardDeck(context),
+                ),
                 const SizedBox(width: 6),
-                _buildStatPill('熟练斩题', '${summary.poolMasteredCount}', Colors.teal.shade700, scheme),
+                _buildStatPill(
+                  '熟练斩题',
+                  '${summary.poolMasteredCount}',
+                  Colors.teal.shade700,
+                  scheme,
+                  onTap: () => _openUserQuestions(
+                    context,
+                    UserQuestionsType.cut,
+                  ),
+                ),
               ],
             ),
           ],
@@ -305,7 +348,30 @@ class _DailyPlanPageState extends State<DailyPlanPage> with WidgetsBindingObserv
 
   Future<void> _openFlashcardDeck(BuildContext context) async {
     final modified = await FlashcardDeckDialog.show(context);
-    if (modified == true) {
+    if (modified == true && mounted) {
+      _loadData();
+    }
+  }
+
+  Future<void> _openUserQuestions(
+    BuildContext context,
+    UserQuestionsType type,
+  ) async {
+    await pushAdaptiveModalPage(
+      context,
+      builder: (_) => UserQuestionsListPage(type: type),
+    );
+    if (mounted) {
+      _loadData();
+    }
+  }
+
+  Future<void> _openMyNotes(BuildContext context) async {
+    await pushAdaptiveModalPage(
+      context,
+      builder: (_) => const MyNotesPage(),
+    );
+    if (mounted) {
       _loadData();
     }
   }

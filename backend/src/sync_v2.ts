@@ -4,7 +4,7 @@ interface MutationInput {
   seq: number;
   stream: string;
   id: string;
-  kind: 'question' | 'activity' | 'activity_delete' | 'flashcard' | 'flashcard_delete' | 'spaced_item' | 'review_plan' | 'note' | 'note_delete';
+  kind: 'question' | 'activity' | 'activity_delete' | 'flashcard' | 'flashcard_delete' | 'spaced_item' | 'review_plan' | 'note' | 'note_delete' | 'saved_comment' | 'saved_comment_delete';
   payload: Record<string, any>;
 }
 
@@ -38,6 +38,42 @@ async function ensureNotesSchema(db: D1Database): Promise<void> {
     db.prepare(`CREATE TRIGGER IF NOT EXISTS sync_note_no_resurrection BEFORE INSERT ON sync_notes
       WHEN EXISTS(SELECT 1 FROM sync_deleted_notes WHERE user_id=NEW.user_id AND id=NEW.id)
       BEGIN SELECT RAISE(IGNORE); END`).bind(),
+    db.prepare(`CREATE TABLE IF NOT EXISTS sync_saved_comments (
+      user_id TEXT NOT NULL,
+      id TEXT NOT NULL,
+      comment_id TEXT NOT NULL DEFAULT '',
+      question_id TEXT NOT NULL,
+      category TEXT NOT NULL DEFAULT 'praise',
+      author_user_id TEXT NOT NULL DEFAULT '',
+      nickname TEXT NOT NULL DEFAULT '',
+      avatar TEXT NOT NULL DEFAULT '',
+      school TEXT NOT NULL DEFAULT '',
+      content TEXT NOT NULL DEFAULT '',
+      praise_num INTEGER NOT NULL DEFAULT 0,
+      oppose_num INTEGER NOT NULL DEFAULT 0,
+      replies INTEGER NOT NULL DEFAULT 0,
+      floor_num TEXT NOT NULL DEFAULT '1',
+      ctime TEXT NOT NULL DEFAULT '',
+      img_watermark TEXT NOT NULL DEFAULT '',
+      reply_json TEXT NOT NULL DEFAULT '[]',
+      timestamp INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (user_id, id)
+    )`).bind(),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_sync_saved_comments_q_cat ON sync_saved_comments(user_id, question_id, category)`).bind(),
+    db.prepare(`CREATE TRIGGER IF NOT EXISTS sync_saved_comment_insert AFTER INSERT ON sync_saved_comments BEGIN
+      INSERT INTO sync_changes(user_id,kind,entity_id) VALUES(NEW.user_id,'saved_comment',NEW.id);
+    END`).bind(),
+    db.prepare(`CREATE TRIGGER IF NOT EXISTS sync_saved_comment_update AFTER UPDATE ON sync_saved_comments BEGIN
+      INSERT INTO sync_changes(user_id,kind,entity_id) VALUES(NEW.user_id,'saved_comment',NEW.id);
+    END`).bind(),
+    db.prepare(`CREATE TABLE IF NOT EXISTS sync_deleted_saved_comments(user_id TEXT NOT NULL, id TEXT NOT NULL, PRIMARY KEY(user_id, id))`).bind(),
+    db.prepare(`CREATE TRIGGER IF NOT EXISTS sync_saved_comment_tombstone AFTER INSERT ON sync_deleted_saved_comments BEGIN
+      INSERT INTO sync_changes(user_id,kind,entity_id) VALUES(NEW.user_id,'saved_comment_delete',NEW.id);
+    END`).bind(),
+    db.prepare(`CREATE TRIGGER IF NOT EXISTS sync_saved_comment_no_resurrection BEFORE INSERT ON sync_saved_comments
+      WHEN EXISTS(SELECT 1 FROM sync_deleted_saved_comments WHERE user_id=NEW.user_id AND id=NEW.id)
+      BEGIN SELECT RAISE(IGNORE); END`).bind(),
   ]);
   ensuredDbs.add(db);
 }
@@ -51,7 +87,7 @@ export async function pushMutations(db: D1Database, user: string, device: string
     if (!mutation || !Number.isSafeInteger(mutation.seq) || mutation.seq <= 0 ||
         typeof mutation.stream !== 'string' || !/^[a-f0-9]{32}$/.test(mutation.stream) ||
         typeof mutation.id !== 'string' || !mutation.id ||
-        !['question', 'activity', 'activity_delete', 'flashcard', 'flashcard_delete', 'spaced_item', 'review_plan', 'note', 'note_delete'].includes(mutation.kind) ||
+        !['question', 'activity', 'activity_delete', 'flashcard', 'flashcard_delete', 'spaced_item', 'review_plan', 'note', 'note_delete', 'saved_comment', 'saved_comment_delete'].includes(mutation.kind) ||
         !mutation.payload || typeof mutation.payload !== 'object') throw new Error('Invalid mutation');
     const q = mutation.payload;
     if (mutation.kind === 'question') {
@@ -386,6 +422,61 @@ export async function pushMutations(db: D1Database, user: string, device: string
       }
       continue;
     }
+
+    if (first.kind === 'saved_comment_delete') {
+      const group: MutationInput[] = [first];
+      idx++;
+      while (idx < freshMutations.length && freshMutations[idx].mutation.kind === 'saved_comment_delete') {
+        group.push(freshMutations[idx].mutation);
+        idx++;
+      }
+      for (let g = 0; g < group.length; g += 45) {
+        const slice = group.slice(g, g + 45);
+        const placeholders = slice.map(() => '(?,?)').join(',');
+        const insParams: unknown[] = [];
+        for (const m of slice) insParams.push(user, m.id);
+        statements.push(db.prepare(`INSERT OR IGNORE INTO sync_deleted_saved_comments(user_id,id) VALUES ${placeholders}`).bind(...insParams));
+        const inPh = slice.map(() => '?').join(',');
+        statements.push(db.prepare(`DELETE FROM sync_saved_comments WHERE user_id=? AND id IN (${inPh})`).bind(user, ...slice.map(m => m.id)));
+      }
+      continue;
+    }
+
+    if (first.kind === 'saved_comment') {
+      const group: MutationInput[] = [first];
+      idx++;
+      while (idx < freshMutations.length && freshMutations[idx].mutation.kind === 'saved_comment') {
+        group.push(freshMutations[idx].mutation);
+        idx++;
+      }
+      // 19 个参数/行 -> 5 行一组 = 95 参数 <= 100
+      for (let g = 0; g < group.length; g += 5) {
+        const slice = group.slice(g, g + 5);
+        const placeholders = slice.map(() => '(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').join(',');
+        const params: unknown[] = [];
+        for (const m of slice) {
+          const q = m.payload;
+          params.push(
+            user, m.id, String(q.comment_id ?? ''), String(q.question_id ?? ''),
+            String(q.category ?? 'praise'), String(q.user_id ?? ''),
+            String(q.nickname ?? ''), String(q.avatar ?? ''), String(q.school ?? ''),
+            String(q.content ?? ''), Number(q.praise_num) || 0, Number(q.oppose_num) || 0,
+            Number(q.replies) || 0, String(q.floor_num ?? '1'), String(q.ctime ?? ''),
+            String(q.img_watermark ?? ''),
+            typeof q.reply_json === 'string' ? q.reply_json : JSON.stringify(q.reply_json ?? []),
+            Number(q.timestamp) || now, Number(q.updated_at) || now
+          );
+        }
+        statements.push(
+          db.prepare(
+            `INSERT INTO sync_saved_comments(user_id,id,comment_id,question_id,category,author_user_id,nickname,avatar,school,content,praise_num,oppose_num,replies,floor_num,ctime,img_watermark,reply_json,timestamp,updated_at) VALUES ${placeholders} ` +
+            `ON CONFLICT(user_id,id) DO UPDATE SET comment_id=excluded.comment_id, question_id=excluded.question_id, category=excluded.category, author_user_id=excluded.author_user_id, nickname=excluded.nickname, avatar=excluded.avatar, school=excluded.school, content=excluded.content, praise_num=excluded.praise_num, oppose_num=excluded.oppose_num, replies=excluded.replies, floor_num=excluded.floor_num, ctime=excluded.ctime, img_watermark=excluded.img_watermark, reply_json=excluded.reply_json, timestamp=excluded.timestamp, updated_at=excluded.updated_at ` +
+            `WHERE sync_saved_comments.updated_at <= excluded.updated_at`
+          ).bind(...params)
+        );
+      }
+      continue;
+    }
   }
 
   // 4. 分片执行 db.batch (500 条题目的 statements 总共只有 ~95 条，单次 batch 原子提交)
@@ -430,6 +521,10 @@ export async function pullChanges(db: D1Database, user: string, cursor: number, 
     FROM sync_changes c JOIN sync_notes n ON n.user_id=c.user_id AND n.id=c.entity_id
     WHERE c.user_id=? AND c.kind='note' AND c.seq>? AND c.seq<=? ORDER BY c.seq`).bind(user,cursor,next).all();
   const deletedNotes = await db.prepare(`SELECT DISTINCT d.id FROM sync_changes c JOIN sync_deleted_notes d ON d.user_id=c.user_id AND d.id=c.entity_id WHERE c.user_id=? AND c.kind='note_delete' AND c.seq>? AND c.seq<=? ORDER BY c.seq`).bind(user,cursor,next).all<{id:string}>();
+  const savedComments = await db.prepare(`SELECT DISTINCT sc.id, sc.comment_id, sc.question_id, sc.category, sc.author_user_id AS user_id, sc.nickname, sc.avatar, sc.school, sc.content, sc.praise_num, sc.oppose_num, sc.replies, sc.floor_num, sc.ctime, sc.img_watermark, sc.reply_json, sc.timestamp, sc.updated_at
+    FROM sync_changes c JOIN sync_saved_comments sc ON sc.user_id=c.user_id AND sc.id=c.entity_id
+    WHERE c.user_id=? AND c.kind='saved_comment' AND c.seq>? AND c.seq<=? ORDER BY c.seq`).bind(user,cursor,next).all();
+  const deletedSavedComments = await db.prepare(`SELECT DISTINCT d.id FROM sync_changes c JOIN sync_deleted_saved_comments d ON d.user_id=c.user_id AND d.id=c.entity_id WHERE c.user_id=? AND c.kind='saved_comment_delete' AND c.seq>? AND c.seq<=? ORDER BY c.seq`).bind(user,cursor,next).all<{id:string}>();
 
   return {
     pull_deleted_activities: deleted.results.map(d=>d.id),
@@ -441,6 +536,8 @@ export async function pullChanges(db: D1Database, user: string, cursor: number, 
     pull_review_plans: reviewPlans.results,
     pull_notes: notes.results,
     pull_deleted_notes: deletedNotes.results.map(d=>d.id),
+    pull_saved_comments: savedComments.results,
+    pull_deleted_saved_comments: deletedSavedComments.results.map(d=>d.id),
     next_cursor: next,
     high_watermark: high,
     has_more: rows.results.length > 500,

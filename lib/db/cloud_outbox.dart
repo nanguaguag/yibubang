@@ -180,6 +180,64 @@ class CloudOutbox {
         END""",
       );
     }
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS SavedComments (
+        id TEXT PRIMARY KEY,
+        comment_id TEXT NOT NULL,
+        question_id TEXT NOT NULL,
+        category TEXT NOT NULL,
+        user_id TEXT NOT NULL DEFAULT '',
+        nickname TEXT NOT NULL DEFAULT '',
+        avatar TEXT NOT NULL DEFAULT '',
+        school TEXT NOT NULL DEFAULT '',
+        content TEXT NOT NULL DEFAULT '',
+        praise_num INTEGER NOT NULL DEFAULT 0,
+        oppose_num INTEGER NOT NULL DEFAULT 0,
+        replies INTEGER NOT NULL DEFAULT 0,
+        floor_num TEXT NOT NULL DEFAULT '1',
+        ctime TEXT NOT NULL DEFAULT '',
+        img_watermark TEXT NOT NULL DEFAULT '',
+        reply_json TEXT NOT NULL DEFAULT '[]',
+        timestamp INTEGER NOT NULL DEFAULT 0,
+        updated_at INTEGER NOT NULL DEFAULT 0,
+        sync_status INTEGER NOT NULL DEFAULT 0
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_saved_comments_question_cat ON SavedComments(question_id, category)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_saved_comments_cat_time ON SavedComments(category, timestamp DESC)',
+    );
+    await db.execute(
+      'CREATE TABLE IF NOT EXISTS CloudDeletedSavedComments(id TEXT PRIMARY KEY)',
+    );
+    for (final event in ['INSERT', 'UPDATE']) {
+      await db.execute(
+        '''CREATE TRIGGER IF NOT EXISTS cloud_saved_comment_${event.toLowerCase()}
+        AFTER $event ON SavedComments
+        WHEN (SELECT applying FROM CloudSyncContext WHERE id=1)=0
+        BEGIN
+          DELETE FROM CloudOutbox WHERE kind='saved_comment' AND entity_id=NEW.id AND owner=(SELECT owner FROM CloudSyncContext WHERE id=1);
+          INSERT INTO CloudOutbox(owner, kind, entity_id, updated_at)
+          SELECT owner, 'saved_comment', NEW.id, NEW.updated_at FROM CloudSyncContext WHERE id=1;
+        END''',
+      );
+    }
+    await db.execute(
+      """CREATE TRIGGER IF NOT EXISTS cloud_saved_comment_no_resurrection BEFORE INSERT ON SavedComments
+      WHEN (SELECT applying FROM CloudSyncContext WHERE id=1)=1 AND EXISTS(SELECT 1 FROM CloudDeletedSavedComments WHERE id=NEW.id)
+      BEGIN SELECT RAISE(IGNORE); END""",
+    );
+    await db.execute(
+      """CREATE TRIGGER IF NOT EXISTS cloud_saved_comment_delete AFTER DELETE ON SavedComments
+      BEGIN
+        INSERT OR IGNORE INTO CloudDeletedSavedComments(id) VALUES(OLD.id);
+        DELETE FROM CloudOutbox WHERE kind='saved_comment' AND entity_id=OLD.id;
+        INSERT INTO CloudOutbox(owner,kind,entity_id)
+          SELECT owner,'saved_comment_delete',OLD.id FROM CloudSyncContext WHERE id=1 AND applying=0;
+      END""",
+    );
   }
 
   static Future<void> bind(Database db, String owner) => db.transaction((
@@ -192,11 +250,17 @@ class CloudOutbox {
       where: 'owner=?',
       whereArgs: [owner],
     );
-    // 增量补齐本地已有但尚未进入过 Outbox 的笔记（兼容老版本已绑定账号升级后首次同步笔记）
+    // 增量补齐本地已有但尚未进入过 Outbox 的笔记与归纳评论（兼容老版本已绑定账号升级后首次同步）
     await tx.rawInsert(
       '''INSERT INTO CloudOutbox(owner, kind, entity_id, updated_at)
       SELECT ?, 'note', id, updated_at FROM Notes n
       WHERE NOT EXISTS (SELECT 1 FROM CloudOutbox o WHERE o.owner=? AND o.kind='note' AND o.entity_id=n.id)''',
+      [owner, owner],
+    );
+    await tx.rawInsert(
+      '''INSERT INTO CloudOutbox(owner, kind, entity_id, updated_at)
+      SELECT ?, 'saved_comment', id, updated_at FROM SavedComments sc
+      WHERE NOT EXISTS (SELECT 1 FROM CloudOutbox o WHERE o.owner=? AND o.kind='saved_comment' AND o.entity_id=sc.id)''',
       [owner, owner],
     );
     if (known.isNotEmpty) return;
@@ -279,11 +343,19 @@ class CloudOutbox {
       payload['updated_at'] = row['updated_at'];
     } else if (row['kind'] == 'activity_delete' ||
         row['kind'] == 'flashcard_delete' ||
-        row['kind'] == 'note_delete') {
+        row['kind'] == 'note_delete' ||
+        row['kind'] == 'saved_comment_delete') {
       // 不可变实体ID的删除意图无需读取已删除实体。
     } else if (row['kind'] == 'note') {
       final rows = await db.query(
         'Notes',
+        where: 'id=?',
+        whereArgs: [row['entity_id']],
+      );
+      if (rows.isNotEmpty) payload.addAll(rows.single);
+    } else if (row['kind'] == 'saved_comment') {
+      final rows = await db.query(
+        'SavedComments',
         where: 'id=?',
         whereArgs: [row['entity_id']],
       );
@@ -509,6 +581,71 @@ class CloudOutbox {
             'content': note['content']?.toString() ?? '',
             'imgs': note['imgs']?.toString() ?? '[]',
             'timestamp': (note['timestamp'] as num?)?.toInt() ?? remoteUpdated,
+            'updated_at': remoteUpdated,
+            'sync_status': 0,
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+      for (final id in (data['pull_deleted_saved_comments'] as List? ?? const [])) {
+        if (id is! String || id.isEmpty) continue;
+        await tx.insert(
+          'CloudDeletedSavedComments',
+          {'id': id},
+          conflictAlgorithm: ConflictAlgorithm.ignore,
+        );
+        await tx.delete(
+          'CloudOutbox',
+          where: "kind='saved_comment' AND entity_id=?",
+          whereArgs: [id],
+        );
+        await tx.delete('SavedComments', where: 'id=?', whereArgs: [id]);
+      }
+      for (final value in (data['pull_saved_comments'] as List? ?? const [])) {
+        final sc = Map<String, dynamic>.from(value as Map);
+        final scId = sc['id']?.toString();
+        final qId = sc['question_id']?.toString();
+        if (scId == null || scId.isEmpty || qId == null || qId.isEmpty) {
+          continue;
+        }
+        await tx.insert(
+          'Question',
+          {'id': qId, 'chapter_id': '', 'chapter_parent_id': ''},
+          conflictAlgorithm: ConflictAlgorithm.ignore,
+        );
+        final localRows = await tx.query(
+          'SavedComments',
+          columns: ['updated_at'],
+          where: 'id=?',
+          whereArgs: [scId],
+          limit: 1,
+        );
+        final remoteUpdated = (sc['updated_at'] as num?)?.toInt() ?? 0;
+        if (localRows.isNotEmpty) {
+          final localUpdated =
+              (localRows.first['updated_at'] as num?)?.toInt() ?? 0;
+          if (localUpdated > remoteUpdated) continue;
+        }
+        await tx.insert(
+          'SavedComments',
+          {
+            'id': scId,
+            'comment_id': sc['comment_id']?.toString() ?? '',
+            'question_id': qId,
+            'category': sc['category']?.toString() ?? 'praise',
+            'user_id': sc['user_id']?.toString() ?? '',
+            'nickname': sc['nickname']?.toString() ?? '',
+            'avatar': sc['avatar']?.toString() ?? '',
+            'school': sc['school']?.toString() ?? '',
+            'content': sc['content']?.toString() ?? '',
+            'praise_num': (sc['praise_num'] as num?)?.toInt() ?? 0,
+            'oppose_num': (sc['oppose_num'] as num?)?.toInt() ?? 0,
+            'replies': (sc['replies'] as num?)?.toInt() ?? 0,
+            'floor_num': sc['floor_num']?.toString() ?? '1',
+            'ctime': sc['ctime']?.toString() ?? '',
+            'img_watermark': sc['img_watermark']?.toString() ?? '',
+            'reply_json': sc['reply_json']?.toString() ?? '[]',
+            'timestamp': (sc['timestamp'] as num?)?.toInt() ?? remoteUpdated,
             'updated_at': remoteUpdated,
             'sync_status': 0,
           },

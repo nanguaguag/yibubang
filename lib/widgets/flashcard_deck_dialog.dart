@@ -217,19 +217,12 @@ class _FlashcardDeckPageState extends State<FlashcardDeckPage> {
       context,
       desktopConstraints: const BoxConstraints(maxWidth: 620, maxHeight: 720),
       builder: (ctx) => _FlashcardDetailView(
-        card: card,
-        reviewItem: _reviewItemMap[card.id],
-        onEdit: () {
-          Navigator.of(ctx).pop();
-          _editCard(card);
-        },
-        onToggleMastered: () {
-          Navigator.of(ctx).pop();
-          _toggleMastered(card);
-        },
-        onDelete: () {
-          Navigator.of(ctx).pop();
-          _deleteCard(card);
+        initialCard: card,
+        initialReviewItem: _reviewItemMap[card.id],
+        spacedRepo: _spacedRepo,
+        onChanged: () {
+          _hasModified = true;
+          _loadCards();
         },
       ),
     );
@@ -684,27 +677,109 @@ class _FlashcardDeckPageState extends State<FlashcardDeckPage> {
 }
 
 /// 点击闪卡卡片打开的详情视图（支持全文无截断阅读、状态管理与编辑/斩卡/删除操作）(反馈 4)
-class _FlashcardDetailView extends StatelessWidget {
-  final CustomFlashcard card;
-  final SpacedReviewItem? reviewItem;
-  final VoidCallback onEdit;
-  final VoidCallback onToggleMastered;
-  final VoidCallback onDelete;
+class _FlashcardDetailView extends StatefulWidget {
+  final CustomFlashcard initialCard;
+  final SpacedReviewItem? initialReviewItem;
+  final SpacedReviewRepository spacedRepo;
+  final VoidCallback onChanged;
 
   const _FlashcardDetailView({
-    required this.card,
-    required this.reviewItem,
-    required this.onEdit,
-    required this.onToggleMastered,
-    required this.onDelete,
+    required this.initialCard,
+    required this.initialReviewItem,
+    required this.spacedRepo,
+    required this.onChanged,
   });
 
   @override
+  State<_FlashcardDetailView> createState() => _FlashcardDetailViewState();
+}
+
+class _FlashcardDetailViewState extends State<_FlashcardDetailView> {
+  late CustomFlashcard _card;
+  SpacedReviewItem? _reviewItem;
+
+  @override
+  void initState() {
+    super.initState();
+    _card = widget.initialCard;
+    _reviewItem = widget.initialReviewItem;
+  }
+
+  Future<void> _handleEdit() async {
+    final result = await FlashcardEditDialog.show(
+      context,
+      existingCard: _card,
+      dialogTitle: '编辑闪卡',
+    );
+    if (result != null && mounted) {
+      setState(() {
+        _card = result;
+      });
+      widget.onChanged();
+    }
+  }
+
+  Future<void> _handleToggleMastered() async {
+    final isMastered = _reviewItem?.state == ReviewState.mastered;
+    await widget.spacedRepo.toggleFlashcardMastered(_card.id);
+    final updatedItem = await widget.spacedRepo.getItem(_card.id);
+    widget.onChanged();
+    if (mounted) {
+      setState(() {
+        _reviewItem = updatedItem;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(isMastered ? '已恢复该闪卡至复习计划' : '已斩卡！该卡片将不再出现在每日复习中'),
+          duration: const Duration(seconds: 1),
+        ),
+      );
+    }
+  }
+
+  Future<void> _handleDelete() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('删除闪卡确认'),
+        content: Text('确定要删除闪卡「${_card.title}」吗？\n删除后复习进度与自制内容将无法找回。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('确定删除'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      await widget.spacedRepo.deleteFlashcard(_card.id);
+      widget.onChanged();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('闪卡已删除'),
+            duration: Duration(seconds: 1),
+          ),
+        );
+        Navigator.of(context).pop();
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final card = _card;
+    final reviewItem = _reviewItem;
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final isMastered = reviewItem?.state == ReviewState.mastered;
-    final isNew = reviewItem == null || reviewItem?.state == ReviewState.new_;
+    final isNew = reviewItem == null || reviewItem.state == ReviewState.new_;
     final interval = reviewItem?.interval ?? 0;
     final reps = reviewItem?.reps ?? 0;
 
@@ -719,17 +794,17 @@ class _FlashcardDetailView extends StatelessWidget {
           IconButton(
             tooltip: '编辑',
             icon: const Icon(Icons.edit_outlined),
-            onPressed: onEdit,
+            onPressed: _handleEdit,
           ),
           IconButton(
             tooltip: isMastered ? '恢复进入复习' : '斩卡',
             icon: Icon(isMastered ? Icons.undo_rounded : Icons.content_cut_rounded),
-            onPressed: onToggleMastered,
+            onPressed: _handleToggleMastered,
           ),
           IconButton(
             tooltip: '删除',
             icon: const Icon(Icons.delete_outline, color: Colors.red),
-            onPressed: onDelete,
+            onPressed: _handleDelete,
           ),
         ],
       ),
@@ -917,7 +992,7 @@ class _FlashcardDetailView extends StatelessWidget {
                     ),
                     icon: Icon(isMastered ? Icons.undo_rounded : Icons.content_cut_rounded, size: 18),
                     label: Text(isMastered ? '恢复进入复习' : '熟练斩卡'),
-                    onPressed: onToggleMastered,
+                    onPressed: _handleToggleMastered,
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -928,7 +1003,7 @@ class _FlashcardDetailView extends StatelessWidget {
                     ),
                     icon: const Icon(Icons.edit_outlined, size: 18),
                     label: const Text('编辑闪卡'),
-                    onPressed: onEdit,
+                    onPressed: _handleEdit,
                   ),
                 ),
               ],

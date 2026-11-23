@@ -5,8 +5,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:yibubang/db/settings.dart';
 
 import '../common/request.dart';
+import '../models/comment.dart';
 import '../repositories/question_bank_repository.dart';
 import '../repositories/question_search_repository.dart';
+import '../services/comment_service.dart';
 import '../services/note_service.dart';
 import '../services/ykb_bank_smart_sync_service.dart';
 import '../services/ykb_bank_sync_service.dart';
@@ -18,6 +20,7 @@ import '../widgets/common/styled_tile.dart';
 import '../common/platform_adaptive.dart';
 import '../widgets/flashcard_deck_dialog.dart';
 import './my_notes_page.dart';
+import './my_saved_comments_page.dart';
 import './settings_page.dart';
 import './user_questions_list_page.dart';
 
@@ -52,6 +55,8 @@ class _MyPageState extends State<MyPage> {
   int _collectionCount = 0;
   int _mistakeCount = 0;
   int _notesCount = 0;
+  int _praisedCommentsCount = 0;
+  int _myCommentsCount = 0;
   int _cutCount = 0;
   int _flashcardsCount = 0;
   bool _loadingCounts = true;
@@ -61,11 +66,14 @@ class _MyPageState extends State<MyPage> {
     super.initState();
     _loadData();
     NoteService.instance.noteSyncEventNotifier.addListener(_onNoteEvent);
+    CommentService.instance.commentSyncEventNotifier.addListener(_onNoteEvent);
   }
 
   @override
   void dispose() {
     NoteService.instance.noteSyncEventNotifier.removeListener(_onNoteEvent);
+    CommentService.instance.commentSyncEventNotifier
+        .removeListener(_onNoteEvent);
     super.dispose();
   }
 
@@ -87,6 +95,8 @@ class _MyPageState extends State<MyPage> {
       _collectionCount = counts['collection'] ?? 0;
       _mistakeCount = counts['mistake'] ?? 0;
       _notesCount = counts['notes'] ?? 0;
+      _praisedCommentsCount = counts['praised_comments'] ?? 0;
+      _myCommentsCount = counts['my_comments'] ?? 0;
       _cutCount = counts['cut'] ?? 0;
       _flashcardsCount = counts['flashcards'] ?? 0;
       _loadingCounts = false;
@@ -321,6 +331,44 @@ class _MyPageState extends State<MyPage> {
               await pushAdaptiveModalPage(
                 context,
                 builder: (_) => const MyNotesPage(),
+              );
+              _loadData();
+            },
+          ),
+          _buildModuleCard(
+            context: context,
+            title: '我的点赞',
+            subtitle: '精选高赞评论，归纳考友神仙口诀',
+            count: _praisedCommentsCount,
+            unit: '条评论',
+            icon: Icons.thumb_up_alt_rounded,
+            iconColor: const Color(0xFFD81B60),
+            iconBgColor: const Color(0xFFFCE4EC),
+            onTap: () async {
+              await pushAdaptiveModalPage(
+                context,
+                builder: (_) => const MySavedCommentsPage(
+                  category: SavedCommentCategory.praise,
+                ),
+              );
+              _loadData();
+            },
+          ),
+          _buildModuleCard(
+            context: context,
+            title: '我的评论',
+            subtitle: '个人发言足迹，回顾探讨与心得',
+            count: _myCommentsCount,
+            unit: '条评论',
+            icon: Icons.forum_rounded,
+            iconColor: const Color(0xFF00ACC1),
+            iconBgColor: const Color(0xFFE0F7FA),
+            onTap: () async {
+              await pushAdaptiveModalPage(
+                context,
+                builder: (_) => const MySavedCommentsPage(
+                  category: SavedCommentCategory.myComment,
+                ),
               );
               _loadData();
             },

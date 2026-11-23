@@ -216,3 +216,42 @@ END;
 CREATE TRIGGER IF NOT EXISTS sync_note_no_resurrection BEFORE INSERT ON sync_notes
   WHEN EXISTS(SELECT 1 FROM sync_deleted_notes WHERE user_id=NEW.user_id AND id=NEW.id)
   BEGIN SELECT RAISE(IGNORE); END;
+
+-- 10. 归纳保存的点赞评论与个人评论表 (SavedComments)
+CREATE TABLE IF NOT EXISTS sync_saved_comments (
+    user_id TEXT NOT NULL,
+    id TEXT NOT NULL,
+    comment_id TEXT NOT NULL DEFAULT '',
+    question_id TEXT NOT NULL,
+    category TEXT NOT NULL DEFAULT 'praise',
+    author_user_id TEXT NOT NULL DEFAULT '',
+    nickname TEXT NOT NULL DEFAULT '',
+    avatar TEXT NOT NULL DEFAULT '',
+    school TEXT NOT NULL DEFAULT '',
+    content TEXT NOT NULL DEFAULT '',
+    praise_num INTEGER NOT NULL DEFAULT 0,
+    oppose_num INTEGER NOT NULL DEFAULT 0,
+    replies INTEGER NOT NULL DEFAULT 0,
+    floor_num TEXT NOT NULL DEFAULT '1',
+    ctime TEXT NOT NULL DEFAULT '',
+    img_watermark TEXT NOT NULL DEFAULT '',
+    reply_json TEXT NOT NULL DEFAULT '[]',
+    timestamp INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (user_id, id)
+);
+CREATE INDEX IF NOT EXISTS idx_sync_saved_comments_q_cat ON sync_saved_comments(user_id, question_id, category);
+CREATE TRIGGER IF NOT EXISTS sync_saved_comment_insert AFTER INSERT ON sync_saved_comments BEGIN
+  INSERT INTO sync_changes(user_id,kind,entity_id) VALUES(NEW.user_id,'saved_comment',NEW.id);
+END;
+CREATE TRIGGER IF NOT EXISTS sync_saved_comment_update AFTER UPDATE ON sync_saved_comments BEGIN
+  INSERT INTO sync_changes(user_id,kind,entity_id) VALUES(NEW.user_id,'saved_comment',NEW.id);
+END;
+
+CREATE TABLE IF NOT EXISTS sync_deleted_saved_comments(user_id TEXT NOT NULL, id TEXT NOT NULL, PRIMARY KEY(user_id, id));
+CREATE TRIGGER IF NOT EXISTS sync_saved_comment_tombstone AFTER INSERT ON sync_deleted_saved_comments BEGIN
+  INSERT INTO sync_changes(user_id,kind,entity_id) VALUES(NEW.user_id,'saved_comment_delete',NEW.id);
+END;
+CREATE TRIGGER IF NOT EXISTS sync_saved_comment_no_resurrection BEFORE INSERT ON sync_saved_comments
+  WHEN EXISTS(SELECT 1 FROM sync_deleted_saved_comments WHERE user_id=NEW.user_id AND id=NEW.id)
+  BEGIN SELECT RAISE(IGNORE); END;

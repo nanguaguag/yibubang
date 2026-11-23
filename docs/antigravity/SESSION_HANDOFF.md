@@ -1,6 +1,34 @@
 # 跨会话交接
 
-## 最新交接：2026-11-23 医不帮 ↔ 医考帮官方双向同步白盒审计与全链路修复
+## 最新交接：2026-11-23 医考帮我的点赞/我的评论归纳同步、评论四维排序页、卡片池联动及闪卡导航修复
+
+- **用户授权与操作目标**：
+  1. 先对上一轮医考帮双向同步修复执行中文 Git commit（已提交 `4844952`）；
+  2. 开发 Issue #24「我的点赞」与「我的评论」读取、本地归纳保存及云端同步（与笔记走相同流程）；
+  3. 开发独立的题目评论四维排序页面（最多点赞、最高热度、最多回复、最新发布 4 个 Tab，可从题目页评论区进入）；
+  4. 「设置 - 关于医不帮」加入 Telegram 群链接（`t.me/yibubang`）；
+  5. 排查并修复「闪卡详情 -> 编辑闪卡」返回时连退两级回到卡包管理页面的问题；
+  6. 「每日复习计划 - 卡片池」五个板块（错题攻克、星标收藏、速记笔记、自制闪卡、熟练斩题）全部支持点击并复用「我的」页对应页面。
+- **完成项**：
+  1. **[我的点赞 & 我的评论拉取、归纳与 D1 云同步 (`lib/models/comment.dart`, `lib/services/comment_service.dart`, `lib/screens/my_saved_comments_page.dart`, `lib/screens/my_page.dart`, `lib/db/cloud_outbox.dart`, `backend/`)]**：
+     - 对接 `POST /Comment/Main/list`（`func=mypraise` / `func=mycomment`）、`POST /Comment/Main/praise`、`POST /Comment/Main/publish`；
+     - 在用户库新增 `SavedComments` 与 `CloudDeletedSavedComments` 表，并在 `CloudOutbox` 与 Cloudflare D1 `sync_v2.ts` 中新增 `saved_comment` / `saved_comment_delete` 增量同步；
+     - 在「我的」页新增「我的点赞」与「我的评论」入口，支持搜索高亮、课程筛选、右侧时间轴拖动、转笔记、制闪卡、复制、移除、查看详情与跳转原题。
+  2. **[题目评论四维排序独立页面 (`lib/screens/question_comments_page.dart`, `lib/screens/comment_page.dart`)]**：
+     - 对接 `POST /comment/main/hot`，通过 4 个 Tab 展示 `最多点赞` (`type=''`)、`最高热度` (`type='recommend'`)、`最多回复` (`type='replies'`)、`最新发布` (`type='newst'`)；
+     - 题目详情页评论区支持内联切换「最热 / 最新 / 我的点赞 / 我的评论」、发表评论及一键进入四维排序页面。
+  3. **[关于页面、闪卡详情导航层级与卡片池五板块联动 (`lib/screens/about_page.dart`, `lib/widgets/flashcard_deck_dialog.dart`, `lib/screens/daily_plan_page.dart`)]**：
+     - `AboutPage` 新增 `Telegram 交流群` (`https://t.me/yibubang`)；
+     - `_FlashcardDetailView` 改为内部直接唤起 `FlashcardEditDialog` 并原地刷新状态，不再提前 `pop` 详情页，解决返回时连退两级的问题；
+     - `DailyPlanPage` 卡片池五个统计胶囊全部接入 `UserQuestionsListPage`、`MyNotesPage` 与 `FlashcardDeckDialog`。
+- **质量门禁验证**：
+  - `dart analyze lib/ test/`：**No issues found!**
+  - `flutter test test/comment_features_test.dart`：**4/4 PASS**
+  - 后端 `npm run typecheck` & `npm test`：**14/14 PASS**
+- **未完成项 / 下一次第一步**：
+  - 新功能代码保留在本地工作区（遵守 `AGENTS.md` 未自动 commit 新功能代码，待用户检阅确认）。
+
+## 前次交接：2026-11-23 医不帮 ↔ 医考帮官方双向同步白盒审计与全链路修复
 
 - **用户授权与操作目标**：
   1. 先对「医不帮 ↔ 医考帮官方」四大双向同步业务（做题、斩题、笔记、全章节重做）、持久化队列（`DurableSyncQueue` / `NoteSyncStore` / `CloudOutbox`）、抓包样本（`docs/api-req-resp/`）及「开发者模式 - 同步队列」UI 进行全面白盒审计；

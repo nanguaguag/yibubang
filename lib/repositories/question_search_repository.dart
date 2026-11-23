@@ -381,12 +381,28 @@ class QuestionSearchRepository {
         await userDb.rawQuery('SELECT COUNT(*) FROM CustomFlashcards'),
       ) ?? 0;
     } catch (_) {}
+    int praisedCommentsResult = 0;
+    int myCommentsResult = 0;
+    try {
+      praisedCommentsResult = Sqflite.firstIntValue(
+        await userDb.rawQuery(
+          "SELECT COUNT(*) FROM SavedComments WHERE category = 'praise'",
+        ),
+      ) ?? 0;
+      myCommentsResult = Sqflite.firstIntValue(
+        await userDb.rawQuery(
+          "SELECT COUNT(*) FROM SavedComments WHERE category = 'my_comment'",
+        ),
+      ) ?? 0;
+    } catch (_) {}
     return {
       'collection': colResult,
       'mistake': mistakeResult,
       'cut': cutResult,
       'notes': notesResult,
       'flashcards': flashcardResult,
+      'praised_comments': praisedCommentsResult,
+      'my_comments': myCommentsResult,
     };
   }
 
@@ -424,6 +440,16 @@ class QuestionSearchRepository {
     final userMap = <String, Map<String, dynamic>>{
       for (final r in userRows) (r['id']?.toString() ?? ''): r,
     };
+
+    return loadQuestionsByIds(questionIds, userMap: userMap);
+  }
+
+  /// 按一组题目 ID 从已安装题库中批量查询题目摘要与所属学科信息
+  Future<List<QuestionSearchResult>> loadQuestionsByIds(
+    List<String> questionIds, {
+    Map<String, Map<String, dynamic>>? userMap,
+  }) async {
+    if (questionIds.isEmpty) return <QuestionSearchResult>[];
 
     final banks = await listSearchBanks();
     final prefs = await SharedPreferences.getInstance();
@@ -481,7 +507,7 @@ class QuestionSearchRepository {
 
             for (final row in rows) {
               final qid = row['id'] as String;
-              final userRow = userMap[qid];
+              final userRow = userMap?[qid];
               final result = QuestionSearchResult.fromMap(
                 row,
                 bank.bankId,

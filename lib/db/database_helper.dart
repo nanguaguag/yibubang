@@ -1102,6 +1102,39 @@ class UserDBHelper {
     ''');
 
     await db.execute('''
+      CREATE TABLE IF NOT EXISTS SavedComments (
+        id TEXT PRIMARY KEY,
+        comment_id TEXT NOT NULL,
+        question_id TEXT NOT NULL,
+        category TEXT NOT NULL,
+        user_id TEXT NOT NULL DEFAULT '',
+        nickname TEXT NOT NULL DEFAULT '',
+        avatar TEXT NOT NULL DEFAULT '',
+        school TEXT NOT NULL DEFAULT '',
+        content TEXT NOT NULL DEFAULT '',
+        praise_num INTEGER NOT NULL DEFAULT 0,
+        oppose_num INTEGER NOT NULL DEFAULT 0,
+        replies INTEGER NOT NULL DEFAULT 0,
+        floor_num TEXT NOT NULL DEFAULT '1',
+        ctime TEXT NOT NULL DEFAULT '',
+        img_watermark TEXT NOT NULL DEFAULT '',
+        reply_json TEXT NOT NULL DEFAULT '[]',
+        timestamp INTEGER NOT NULL DEFAULT 0,
+        updated_at INTEGER NOT NULL DEFAULT 0,
+        sync_status INTEGER NOT NULL DEFAULT 0
+      )
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_saved_comments_question_cat
+        ON SavedComments(question_id, category);
+    ''');
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_saved_comments_cat_time
+        ON SavedComments(category, timestamp DESC);
+    ''');
+
+    await db.execute('''
       CREATE TABLE IF NOT EXISTS NoteSyncQueue (
         id TEXT PRIMARY KEY,
         action TEXT NOT NULL,
