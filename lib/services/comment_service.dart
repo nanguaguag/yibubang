@@ -26,6 +26,39 @@ enum CommentSortType {
   const CommentSortType(this.apiType, this.label);
 }
 
+/// 全局批量扫描同步评论/点赞进度状态（跨页面生命周期保持）
+class CommentBatchSyncState {
+  final SavedCommentCategory? category;
+  final int current;
+  final int total;
+  final bool isRunning;
+  final bool isCancelled;
+
+  const CommentBatchSyncState({
+    this.category,
+    this.current = 0,
+    this.total = 0,
+    this.isRunning = false,
+    this.isCancelled = false,
+  });
+
+  CommentBatchSyncState copyWith({
+    SavedCommentCategory? category,
+    int? current,
+    int? total,
+    bool? isRunning,
+    bool? isCancelled,
+  }) {
+    return CommentBatchSyncState(
+      category: category ?? this.category,
+      current: current ?? this.current,
+      total: total ?? this.total,
+      isRunning: isRunning ?? this.isRunning,
+      isCancelled: isCancelled ?? this.isCancelled,
+    );
+  }
+}
+
 /// 医考帮评论、我的点赞 (mypraise) 与我的评论 (mycomment) 同步及本地归纳管理服务
 class CommentService {
   static final CommentService instance = CommentService._internal();
@@ -35,6 +68,21 @@ class CommentService {
 
   /// 全局点赞/评论变动通知器（触发 UI 实时刷新）
   final ValueNotifier<int> commentSyncEventNotifier = ValueNotifier<int>(0);
+
+  /// 全局批量扫描同步状态（跨页面生命周期保持）
+  final ValueNotifier<CommentBatchSyncState> batchSyncNotifier =
+      ValueNotifier<CommentBatchSyncState>(const CommentBatchSyncState());
+
+  /// 当前是否有全局批量同步在运行
+  bool get isBatchSyncing => batchSyncNotifier.value.isRunning;
+
+  /// 取消当前正在运行的全局批量同步
+  void cancelBatchSync() {
+    if (batchSyncNotifier.value.isRunning) {
+      batchSyncNotifier.value =
+          batchSyncNotifier.value.copyWith(isCancelled: true);
+    }
+  }
 
   void notifyCommentChanged() {
     commentSyncEventNotifier.value++;
@@ -622,16 +670,8 @@ class CommentService {
   }
 
   /// 批量扫描用户已作答/收藏/记笔记的题目，从医考帮拉取历史点赞或个人评论
-  Future<int> syncFromTouchedQuestions({
-    SavedCommentCategory? category,
-    void Function(int current, int total)? onProgress,
-  }) async {
-    final prefs = await SharedPreferences.getInstance();
-    final loggedIn = prefs.getBool('loggedin') ?? false;
-    if (!loggedIn) {
-      throw StateError('请先登录医考帮账号后再执行同步');
-    }
-
+  /// 获取待扫描同步评论/点赞的题目列表（已做题、收藏、笔记或已有评论的题目去重集合）
+  Future<List<String>> getTouchedQuestionIds() async {
     final db = await UserDBHelper().database;
     await ensureTables(db);
     final qRows = await db.rawQuery('''
@@ -641,24 +681,73 @@ class CommentService {
       UNION
       SELECT DISTINCT question_id AS id FROM SavedComments
     ''');
-    final qIds = qRows
+    return qRows
         .map((r) => r['id']?.toString() ?? '')
         .where((id) => id.isNotEmpty)
         .toList();
+  }
+
+  Future<int> syncFromTouchedQuestions({
+    SavedCommentCategory? category,
+    List<String>? targetQuestionIds,
+    bool Function()? isCancelled,
+    void Function(int current, int total)? onProgress,
+  }) async {
+    // 互斥保护：严禁两个批量同步任务并发运行
+    if (batchSyncNotifier.value.isRunning) {
+      throw StateError('已有批量同步任务在后台运行中，请勿重复发起');
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    final loggedIn = prefs.getBool('loggedin') ?? false;
+    if (!loggedIn) {
+      throw StateError('请先登录医考帮账号后再执行同步');
+    }
+
+    final qIds = targetQuestionIds ?? await getTouchedQuestionIds();
     if (qIds.isEmpty) return 0;
 
+    // 标记全局状态为运行中
+    batchSyncNotifier.value = CommentBatchSyncState(
+      category: category,
+      current: 0,
+      total: qIds.length,
+      isRunning: true,
+      isCancelled: false,
+    );
+
     final beforeCount = (await getAllSavedComments(category: category)).length;
-    for (var i = 0; i < qIds.length; i++) {
-      onProgress?.call(i + 1, qIds.length);
-      final q = Question(id: qIds[i], userAnswer: '');
-      await syncCommentsForQuestion(
-        q,
-        syncPraise:
-            category == null || category == SavedCommentCategory.praise,
-        syncMyComment:
-            category == null || category == SavedCommentCategory.myComment,
+    try {
+      for (var i = 0; i < qIds.length; i++) {
+        if (batchSyncNotifier.value.isCancelled ||
+            isCancelled?.call() == true) {
+          break;
+        }
+        final currentStep = i + 1;
+        batchSyncNotifier.value = batchSyncNotifier.value.copyWith(
+          current: currentStep,
+          total: qIds.length,
+        );
+        onProgress?.call(currentStep, qIds.length);
+
+        final q = Question(id: qIds[i], userAnswer: '');
+        await syncCommentsForQuestion(
+          q,
+          syncPraise:
+              category == null || category == SavedCommentCategory.praise,
+          syncMyComment:
+              category == null || category == SavedCommentCategory.myComment,
+        );
+      }
+    } finally {
+      final wasCancelled = batchSyncNotifier.value.isCancelled;
+      batchSyncNotifier.value = batchSyncNotifier.value.copyWith(
+        isRunning: false,
+        isCancelled: wasCancelled,
       );
+      notifyCommentChanged();
     }
+
     final afterCount = (await getAllSavedComments(category: category)).length;
     return (afterCount - beforeCount).clamp(0, 999999);
   }

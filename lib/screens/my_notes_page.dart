@@ -11,7 +11,14 @@ import '../widgets/note_editor_sheet.dart';
 import 'note_detail_page.dart';
 
 class MyNotesPage extends StatefulWidget {
-  const MyNotesPage({super.key});
+  final List<String>? scopedQuestionIds;
+  final String? scopeTitle;
+
+  const MyNotesPage({
+    super.key,
+    this.scopedQuestionIds,
+    this.scopeTitle,
+  });
 
   @override
   State<MyNotesPage> createState() => _MyNotesPageState();
@@ -24,6 +31,7 @@ class _MyNotesPageState extends State<MyNotesPage> {
 
   List<QuestionNote> _allNotes = [];
   bool _loading = true;
+  late bool _isScopedMode;
   bool _isSearching = false;
   String _keyword = '';
 
@@ -35,6 +43,7 @@ class _MyNotesPageState extends State<MyNotesPage> {
   @override
   void initState() {
     super.initState();
+    _isScopedMode = widget.scopedQuestionIds != null;
     _loadNotes();
     _scrollController.addListener(_onScroll);
     NoteService.instance.noteSyncEventNotifier.addListener(_onSyncEvent);
@@ -83,9 +92,14 @@ class _MyNotesPageState extends State<MyNotesPage> {
   }
 
   List<QuestionNote> get _filteredNotes {
+    final scoped = (_isScopedMode && widget.scopedQuestionIds != null)
+        ? _allNotes
+            .where((note) => widget.scopedQuestionIds!.contains(note.questionId))
+            .toList()
+        : _allNotes;
     final term = _keyword.trim().toLowerCase();
-    if (term.isEmpty) return _allNotes;
-    return _allNotes.where((note) {
+    if (term.isEmpty) return scoped;
+    return scoped.where((note) {
       return note.content.toLowerCase().contains(term);
     }).toList();
   }
@@ -444,10 +458,73 @@ class _MyNotesPageState extends State<MyNotesPage> {
     });
   }
 
+  Widget _buildScopeBanner(ThemeData theme) {
+    if (widget.scopedQuestionIds == null) return const SizedBox.shrink();
+    final scheme = theme.colorScheme;
+    final scopedNotesCount = _allNotes
+        .where((n) => widget.scopedQuestionIds!.contains(n.questionId))
+        .length;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: _isScopedMode
+            ? scheme.primaryContainer.withValues(alpha: 0.35)
+            : scheme.surfaceContainerHighest.withValues(alpha: 0.4),
+        border: Border(
+          bottom: BorderSide(
+            color: scheme.outlineVariant.withValues(alpha: 0.3),
+          ),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            _isScopedMode ? Icons.filter_alt_rounded : Icons.public_rounded,
+            size: 16,
+            color: _isScopedMode ? scheme.primary : scheme.outline,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              _isScopedMode
+                  ? '已按${widget.scopeTitle ?? "每日计划范围"}筛选 (共 $scopedNotesCount 条)'
+                  : '正在查看全部笔记 (共 ${_allNotes.length} 条)',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: _isScopedMode ? scheme.primary : scheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          TextButton(
+            style: TextButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+            ),
+            onPressed: () {
+              setState(() {
+                _isScopedMode = !_isScopedMode;
+              });
+            },
+            child: Text(
+              _isScopedMode ? '查看全部' : '切回计划范围',
+              style: const TextStyle(fontSize: 12),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final filtered = _filteredNotes;
     final theme = Theme.of(context);
+    final displayedTotal = (_isScopedMode && widget.scopedQuestionIds != null)
+        ? _allNotes
+            .where((n) => widget.scopedQuestionIds!.contains(n.questionId))
+            .length
+        : _allNotes.length;
 
     return Scaffold(
       appBar: AppBar(
@@ -461,7 +538,7 @@ class _MyNotesPageState extends State<MyNotesPage> {
                 ),
                 onChanged: (v) => setState(() => _keyword = v),
               )
-            : Text('我的笔记 (${_allNotes.length})'),
+            : Text('我的笔记 ($displayedTotal)'),
         actions: [
           IconButton(
             tooltip: _isSearching ? '取消搜索' : '搜索笔记',
@@ -480,7 +557,11 @@ class _MyNotesPageState extends State<MyNotesPage> {
           ),
         ],
       ),
-      body: _loading
+      body: Column(
+        children: [
+          _buildScopeBanner(theme),
+          Expanded(
+            child: _loading
           ? const Center(child: CircularProgressIndicator())
           : _allNotes.isEmpty
               ? Center(
@@ -645,6 +726,9 @@ class _MyNotesPageState extends State<MyNotesPage> {
                         );
                       },
                     ),
+          ),
+        ],
+      ),
     );
   }
 }

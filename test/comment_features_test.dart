@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -12,8 +13,11 @@ import 'package:yibubang/db/database_helper.dart';
 import 'package:yibubang/models/comment.dart';
 import 'package:yibubang/models/question.dart';
 import 'package:yibubang/models/spaced_review_item.dart';
+import 'package:yibubang/repositories/question_search_repository.dart';
 import 'package:yibubang/repositories/spaced_review_repository.dart';
 import 'package:yibubang/screens/about_page.dart';
+import 'package:yibubang/screens/my_notes_page.dart';
+import 'package:yibubang/screens/user_questions_list_page.dart';
 import 'package:yibubang/services/comment_service.dart';
 import 'package:yibubang/widgets/flashcard_deck_dialog.dart';
 
@@ -340,6 +344,162 @@ void main() {
 
       expect(find.text('Telegram 交流群'), findsOneWidget);
       expect(find.text('t.me/yibubang'), findsOneWidget);
+    });
+
+    test('getTouchedQuestionIds 正确提取已做、收藏、笔记与评论去重题目 ID', () async {
+      await testDb.execute('DELETE FROM Question');
+      await testDb.execute('DELETE FROM Notes');
+      await testDb.execute('DELETE FROM SavedComments');
+
+      await testDb.insert('Question', {
+        'id': 'q_done_1',
+        'status': 1,
+        'collection': 0,
+      });
+      await testDb.insert('Question', {
+        'id': 'q_collected_1',
+        'status': 0,
+        'collection': 1,
+      });
+      await testDb.insert('Notes', {
+        'id': 'n_1',
+        'question_id': 'q_note_1',
+        'content': 'test note',
+        'timestamp': 1000,
+      });
+      await testDb.insert('SavedComments', {
+        'id': 'sc_1',
+        'category': 'praise',
+        'comment_id': 'c_1',
+        'question_id': 'q_comment_1',
+        'content': 'test',
+        'timestamp': 1000,
+        'updated_at': 1000,
+      });
+
+      final ids = await CommentService.instance.getTouchedQuestionIds();
+      expect(ids, containsAll(['q_done_1', 'q_collected_1', 'q_note_1', 'q_comment_1']));
+      expect(ids.length, 4);
+    });
+
+    testWidgets('UserQuestionsListPage 在 scopedQuestionIds 模式下展示计划筛选提示与切换按钮',
+        (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: UserQuestionsListPage(
+            type: UserQuestionsType.mistake,
+            scopedQuestionIds: ['q_fake_1'],
+            scopeTitle: '每日计划范围',
+          ),
+        ),
+      );
+      for (int i = 0; i < 20; i++) {
+        await tester.runAsync(() => Future.delayed(const Duration(milliseconds: 20)));
+        await tester.pump();
+        if (find.textContaining('已按每日计划范围筛选').evaluate().isNotEmpty) break;
+      }
+
+      expect(find.textContaining('已按每日计划范围筛选'), findsOneWidget);
+      expect(find.text('查看全部'), findsOneWidget);
+
+      await tester.tap(find.text('查看全部'));
+      for (int i = 0; i < 20; i++) {
+        await tester.runAsync(() => Future.delayed(const Duration(milliseconds: 20)));
+        await tester.pump();
+        if (find.textContaining('正在查看全部我的错题').evaluate().isNotEmpty) break;
+      }
+
+      expect(find.textContaining('正在查看全部我的错题'), findsOneWidget);
+      expect(find.text('切回计划范围'), findsOneWidget);
+    });
+
+    testWidgets('MyNotesPage 在 scopedQuestionIds 模式下展示计划筛选提示与切换按钮',
+        (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: MyNotesPage(
+            scopedQuestionIds: ['q_note_1'],
+            scopeTitle: '每日计划范围',
+          ),
+        ),
+      );
+      for (int i = 0; i < 20; i++) {
+        await tester.runAsync(() => Future.delayed(const Duration(milliseconds: 20)));
+        await tester.pump();
+        if (find.textContaining('已按每日计划范围筛选').evaluate().isNotEmpty) break;
+      }
+
+      expect(find.textContaining('已按每日计划范围筛选'), findsOneWidget);
+      expect(find.text('查看全部'), findsOneWidget);
+
+      await tester.tap(find.text('查看全部'));
+      for (int i = 0; i < 20; i++) {
+        await tester.runAsync(() => Future.delayed(const Duration(milliseconds: 20)));
+        await tester.pump();
+        if (find.textContaining('正在查看全部笔记').evaluate().isNotEmpty) break;
+      }
+
+      expect(find.textContaining('正在查看全部笔记'), findsOneWidget);
+      expect(find.text('切回计划范围'), findsOneWidget);
+    });
+
+    test('syncFromTouchedQuestions 支持通过 isCancelled 随时终止同步循环', () async {
+      int progressCallCount = 0;
+      bool cancelled = false;
+
+      final count = await CommentService.instance.syncFromTouchedQuestions(
+        category: SavedCommentCategory.praise,
+        targetQuestionIds: ['q_cancel_1', 'q_cancel_2', 'q_cancel_3', 'q_cancel_4'],
+        isCancelled: () => cancelled,
+        onProgress: (curr, total) {
+          progressCallCount++;
+          if (curr >= 2) {
+            cancelled = true;
+          }
+        },
+      );
+
+      // 仅执行了前 2 题，后续 2 题被成功终止
+      expect(progressCallCount, 2);
+      expect(count, greaterThanOrEqualTo(0));
+    });
+
+    test('全局批量同步互斥防护与 cancelBatchSync 状态流转', () async {
+      final completer = Completer<void>();
+
+      // 启动一个长耗时的后台模拟同步
+      final syncFuture = CommentService.instance.syncFromTouchedQuestions(
+        category: SavedCommentCategory.praise,
+        targetQuestionIds: ['q_block_1', 'q_block_2', 'q_block_3'],
+        onProgress: (curr, total) async {
+          if (curr == 1 && !completer.isCompleted) {
+            completer.complete();
+          }
+        },
+      );
+
+      // 等待任务进入运行状态
+      await completer.future;
+      expect(CommentService.instance.isBatchSyncing, isTrue);
+      expect(CommentService.instance.batchSyncNotifier.value.isRunning, isTrue);
+
+      // 再次尝试发起另一个并发同步，必须被抛出 StateError 严格拦截
+      expect(
+        () => CommentService.instance.syncFromTouchedQuestions(
+          category: SavedCommentCategory.myComment,
+          targetQuestionIds: ['q_concurrent_1'],
+        ),
+        throwsA(isA<StateError>()),
+      );
+
+      // 通过全局 cancelBatchSync 终止正在运行的同步
+      CommentService.instance.cancelBatchSync();
+      expect(CommentService.instance.batchSyncNotifier.value.isCancelled, isTrue);
+
+      await syncFuture;
+
+      // 结束后全局状态自动恢复为 false
+      expect(CommentService.instance.isBatchSyncing, isFalse);
     });
   });
 }

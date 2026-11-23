@@ -252,6 +252,7 @@ class _DailyPlanPageState extends State<DailyPlanPage> with WidgetsBindingObserv
                   onTap: () => _openUserQuestions(
                     context,
                     UserQuestionsType.mistake,
+                    poolType: 'wrong',
                   ),
                 ),
                 const SizedBox(width: 6),
@@ -263,6 +264,7 @@ class _DailyPlanPageState extends State<DailyPlanPage> with WidgetsBindingObserv
                   onTap: () => _openUserQuestions(
                     context,
                     UserQuestionsType.collection,
+                    poolType: 'collected',
                   ),
                 ),
                 const SizedBox(width: 6),
@@ -290,6 +292,7 @@ class _DailyPlanPageState extends State<DailyPlanPage> with WidgetsBindingObserv
                   onTap: () => _openUserQuestions(
                     context,
                     UserQuestionsType.cut,
+                    poolType: 'mastered',
                   ),
                 ),
               ],
@@ -355,11 +358,22 @@ class _DailyPlanPageState extends State<DailyPlanPage> with WidgetsBindingObserv
 
   Future<void> _openUserQuestions(
     BuildContext context,
-    UserQuestionsType type,
-  ) async {
+    UserQuestionsType type, {
+    required String poolType,
+  }) async {
+    final ids = await _service.getScopedPoolQuestionIds(poolType);
+    if (!mounted) return;
+    final subjects = _summary?.coveredSubjects ?? [];
+    final scopeDesc = subjects.isNotEmpty
+        ? '每日计划 (${subjects.join(" · ")})'
+        : '每日计划范围';
     await pushAdaptiveModalPage(
-      context,
-      builder: (_) => UserQuestionsListPage(type: type),
+      this.context,
+      builder: (_) => UserQuestionsListPage(
+        type: type,
+        scopedQuestionIds: ids,
+        scopeTitle: scopeDesc,
+      ),
     );
     if (mounted) {
       _loadData();
@@ -367,9 +381,18 @@ class _DailyPlanPageState extends State<DailyPlanPage> with WidgetsBindingObserv
   }
 
   Future<void> _openMyNotes(BuildContext context) async {
+    final ids = await _service.getScopedPoolQuestionIds('note');
+    if (!mounted) return;
+    final subjects = _summary?.coveredSubjects ?? [];
+    final scopeDesc = subjects.isNotEmpty
+        ? '每日计划 (${subjects.join(" · ")})'
+        : '每日计划范围';
     await pushAdaptiveModalPage(
-      context,
-      builder: (_) => const MyNotesPage(),
+      this.context,
+      builder: (_) => MyNotesPage(
+        scopedQuestionIds: ids,
+        scopeTitle: scopeDesc,
+      ),
     );
     if (mounted) {
       _loadData();

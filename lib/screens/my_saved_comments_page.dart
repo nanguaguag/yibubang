@@ -1,5 +1,8 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../common/adaptive_route.dart';
 import '../common/platform_adaptive.dart';
@@ -50,9 +53,20 @@ class _MySavedCommentsPageState extends State<MySavedCommentsPage> {
   @override
   void initState() {
     super.initState();
+    // 跨页面恢复当前分类正在执行的后台同步状态
+    final syncState = CommentService.instance.batchSyncNotifier.value;
+    final matchesCategory = syncState.category == null ||
+        syncState.category == widget.category;
+    if (syncState.isRunning && matchesCategory) {
+      _syncing = true;
+      _syncProgressText = '${syncState.current}/${syncState.total}';
+    }
     _loadData();
     _scrollController.addListener(_onScroll);
     CommentService.instance.commentSyncEventNotifier.addListener(_onSyncEvent);
+    CommentService.instance.batchSyncNotifier.addListener(
+      _onBatchSyncStateChanged,
+    );
   }
 
   @override
@@ -60,9 +74,32 @@ class _MySavedCommentsPageState extends State<MySavedCommentsPage> {
     _searchController.dispose();
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
-    CommentService.instance.commentSyncEventNotifier
-        .removeListener(_onSyncEvent);
+    CommentService.instance.commentSyncEventNotifier.removeListener(_onSyncEvent);
+    CommentService.instance.batchSyncNotifier.removeListener(
+      _onBatchSyncStateChanged,
+    );
     super.dispose();
+  }
+
+  void _onBatchSyncStateChanged() {
+    if (!mounted) return;
+    final state = CommentService.instance.batchSyncNotifier.value;
+    final matchesCategory = state.category == null ||
+        state.category == widget.category;
+    if (state.isRunning && matchesCategory) {
+      if (!_syncing || _syncProgressText != '${state.current}/${state.total}') {
+        setState(() {
+          _syncing = true;
+          _syncProgressText = '${state.current}/${state.total}';
+        });
+      }
+    } else if (!state.isRunning && _syncing) {
+      setState(() {
+        _syncing = false;
+        _syncProgressText = '';
+      });
+      _loadData();
+    }
   }
 
   void _onScroll() {
@@ -153,16 +190,292 @@ class _MySavedCommentsPageState extends State<MySavedCommentsPage> {
     return '$y-$m-$d $h:$min';
   }
 
+  Future<T?> _showNoAnimationDialog<T>({
+    required BuildContext context,
+    required Widget Function(BuildContext) builder,
+    bool barrierDismissible = true,
+  }) {
+    return showGeneralDialog<T>(
+      context: context,
+      barrierDismissible: barrierDismissible,
+      barrierLabel: 'Dismiss',
+      barrierColor: Colors.black54,
+      transitionDuration: Duration.zero,
+      pageBuilder: (ctx, anim1, anim2) => builder(ctx),
+    );
+  }
+
+  String _estimateSyncTime(int questionCount) {
+    final seconds = (questionCount * 0.2).ceil();
+    if (seconds <= 5) return '约 5 秒内';
+    if (seconds < 60) return '约 $seconds 秒';
+    final mins = seconds ~/ 60;
+    final remainSec = seconds % 60;
+    if (remainSec == 0) return '约 $mins 分钟';
+    return '约 $mins 分 $remainSec 秒';
+  }
+
+  void _showActiveSyncProgressDialog() {
+    final label = widget.category.label;
+    _showNoAnimationDialog(
+      context: context,
+      builder: (dlgCtx) {
+        final theme = Theme.of(dlgCtx);
+        final scheme = theme.colorScheme;
+        return ValueListenableBuilder<CommentBatchSyncState>(
+          valueListenable: CommentService.instance.batchSyncNotifier,
+          builder: (context, state, child) {
+            final curr = state.current;
+            final total = state.total;
+            final percent = total > 0 ? (curr / total).clamp(0.0, 1.0) : 0.0;
+            final remain = math.max(0, total - curr);
+
+            return AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              title: Row(
+                children: [
+                  const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2.2),
+                  ),
+                  const SizedBox(width: 10),
+                  Text('正在扫描同步$label'),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '正在后台逐题拉取医考帮最新$label并归纳入库...',
+                    style: const TextStyle(fontSize: 13, color: Colors.grey),
+                  ),
+                  const SizedBox(height: 16),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(6),
+                    child: LinearProgressIndicator(
+                      value: percent,
+                      minHeight: 8,
+                      backgroundColor: scheme.surfaceContainerHighest,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        '进度：$curr / $total 题',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: scheme.primary,
+                        ),
+                      ),
+                      Text(
+                        '${(percent * 100).toStringAsFixed(1)}%',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: scheme.primary,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '预计剩余耗时：${_estimateSyncTime(remain)}',
+                    style: TextStyle(fontSize: 12, color: scheme.outline),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dlgCtx).pop(),
+                  child: const Text('后台运行'),
+                ),
+                FilledButton.tonalIcon(
+                  style: FilledButton.styleFrom(
+                    foregroundColor: scheme.error,
+                    backgroundColor: scheme.errorContainer.withValues(alpha: 0.5),
+                  ),
+                  icon: const Icon(Icons.stop_circle_outlined, size: 16),
+                  label: const Text('终止同步'),
+                  onPressed: () {
+                    CommentService.instance.cancelBatchSync();
+                    Navigator.of(dlgCtx).pop();
+                    ScaffoldMessenger.of(this.context).showSnackBar(
+                      const SnackBar(
+                        content: Text('正在终止同步，将在完成当前题目后停止...'),
+                        duration: Duration(seconds: 1),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   Future<void> _handleBatchSync() async {
-    if (_syncing) return;
+    final currentSync = CommentService.instance.batchSyncNotifier.value;
+    if (currentSync.isRunning) {
+      final matchesCategory = currentSync.category == null ||
+          currentSync.category == widget.category;
+      if (matchesCategory) {
+        _showActiveSyncProgressDialog();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '后台正在同步医考帮${currentSync.category?.label ?? "其他数据"}，请稍候...',
+            ),
+          ),
+        );
+      }
+      return;
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    final loggedIn = prefs.getBool('loggedin') ?? false;
+    if (!loggedIn) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请先登录医考帮账号后再执行同步')),
+      );
+      return;
+    }
+
+    final touchedIds = await CommentService.instance.getTouchedQuestionIds();
+    if (!mounted) return;
+    if (touchedIds.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('本地暂无可扫描的已做题或收藏记录')),
+      );
+      return;
+    }
+
+    final label = widget.category.label;
+    final confirmed = await _showNoAnimationDialog<bool>(
+      context: context,
+      builder: (dlgCtx) {
+        final theme = Theme.of(dlgCtx);
+        final scheme = theme.colorScheme;
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Row(
+            children: [
+              Icon(Icons.sync_rounded, color: scheme.primary),
+              const SizedBox(width: 8),
+              Text('扫描同步$label'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '将扫描本地已做、收藏及记过笔记的题目，从医考帮官方接口获取最新的$label并归纳入库。',
+                style: const TextStyle(fontSize: 14, height: 1.5),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
+                decoration: BoxDecoration(
+                  color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: scheme.outlineVariant.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          '待扫描题目总数',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                        Text(
+                          '${touchedIds.length} 题',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: scheme.primary,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          '预计耗时',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                        Text(
+                          _estimateSyncTime(touchedIds.length),
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                '提示：同步在后台轻量运行，请尽量保持网络畅通。',
+                style: TextStyle(fontSize: 12, color: scheme.outline),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dlgCtx).pop(false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dlgCtx).pop(true),
+              child: const Text('开始同步'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true) return;
+    if (!mounted) return;
+
     setState(() {
       _syncing = true;
-      _syncProgressText = '准备中...';
+      _syncProgressText = '0/${touchedIds.length}';
     });
     final messenger = ScaffoldMessenger.of(context);
     try {
       final added = await CommentService.instance.syncFromTouchedQuestions(
         category: widget.category,
+        targetQuestionIds: touchedIds,
         onProgress: (curr, total) {
           if (mounted) {
             setState(() {
@@ -173,12 +486,16 @@ class _MySavedCommentsPageState extends State<MySavedCommentsPage> {
       );
       await _loadData();
       if (mounted) {
+        final wasCancelled =
+            CommentService.instance.batchSyncNotifier.value.isCancelled;
         messenger.showSnackBar(
           SnackBar(
             content: Text(
-              added > 0
-                  ? '同步完成，新增归纳 $added 条${widget.category.label}'
-                  : '同步完成，当前${widget.category.label}已是最新',
+              wasCancelled
+                  ? '已终止同步，本次新增归纳 $added 条${widget.category.label}'
+                  : added > 0
+                      ? '同步完成，新增归纳 $added 条${widget.category.label}'
+                      : '同步完成，当前${widget.category.label}已是最新',
             ),
           ),
         );
@@ -792,23 +1109,24 @@ class _MySavedCommentsPageState extends State<MySavedCommentsPage> {
         actions: [
           if (_syncing)
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              child: Center(
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const SizedBox(
-                      width: 15,
-                      height: 15,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      _syncProgressText,
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                  ],
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: ActionChip(
+                visualDensity: VisualDensity.compact,
+                avatar: const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2),
                 ),
+                label: Text(
+                  _syncProgressText.isEmpty ? '同步中' : _syncProgressText,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: theme.colorScheme.primary,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                tooltip: '正在扫描同步，点击查看进度或终止',
+                onPressed: _showActiveSyncProgressDialog,
               ),
             )
           else

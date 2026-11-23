@@ -564,6 +564,196 @@ class DailyReviewService {
   Future<DailyReviewSummary>? _inFlightSummary;
   String? _inFlightSummaryKey;
 
+  /// 获取当前复习计划卡片池所覆盖的具体题目 ID 集合
+  /// poolType 可选: 'wrong' (错题), 'collected' (收藏), 'note' (笔记关联题目), 'mastered' (熟练斩题)
+  Future<List<String>> getScopedPoolQuestionIds(
+    String poolType, {
+    ReviewPlan? customPlan,
+    DatabaseExecutor? executor,
+  }) async {
+    final userDb = executor ?? await _userDbHelper.database;
+    final plan =
+        customPlan ?? await _spacedRepo.getOrCreateActivePlan(userDb);
+    final banks = await _scopeBanks(plan);
+    final bankIds = banks.keys.toList();
+    if (bankIds.isEmpty) {
+      return [];
+    }
+
+    final hasRelations = (await userDb.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='QuestionRelations'",
+    )).isNotEmpty;
+
+    if (hasRelations) {
+      final projectionStateRows = await userDb.query(
+        'QuestionProjectionState',
+        where: 'bank_id IN (${List.filled(bankIds.length, '?').join(',')})',
+        whereArgs: bankIds,
+      );
+      if (projectionStateRows.length == bankIds.length) {
+        final bankPlaceholders = List.filled(bankIds.length, '?').join(',');
+        final subjects = plan.coveredSubjects;
+        final hasSubjectFilter = subjects.isNotEmpty;
+        final subjectPlaceholders =
+            hasSubjectFilter ? List.filled(subjects.length, '?').join(',') : '';
+
+        final relFilter = hasSubjectFilter
+            ? 'r.bank_id IN ($bankPlaceholders) AND r.subject_id IN ($subjectPlaceholders)'
+            : 'r.bank_id IN ($bankPlaceholders)';
+        final relArgs =
+            hasSubjectFilter ? [...bankIds, ...subjects] : [...bankIds];
+
+        if (poolType == 'wrong') {
+          final rows = await userDb.rawQuery('''
+            SELECT uq.id
+            FROM main.Question uq
+            WHERE uq.status = 2
+              AND COALESCE(uq.cut_question,'0') NOT IN ('1','cutted')
+              AND EXISTS (
+                SELECT 1 FROM main.QuestionRelations r
+                WHERE r.question_id = uq.id AND $relFilter
+              )
+            ORDER BY uq.updated_at DESC
+          ''', relArgs);
+          return rows
+              .map((r) => r['id']?.toString() ?? '')
+              .where((id) => id.isNotEmpty)
+              .toList();
+        } else if (poolType == 'collected') {
+          final rows = await userDb.rawQuery('''
+            SELECT uq.id
+            FROM main.Question uq
+            WHERE uq.collection = 1
+              AND COALESCE(uq.cut_question,'0') NOT IN ('1','cutted')
+              AND EXISTS (
+                SELECT 1 FROM main.QuestionRelations r
+                WHERE r.question_id = uq.id AND $relFilter
+              )
+            ORDER BY uq.updated_at DESC
+          ''', relArgs);
+          return rows
+              .map((r) => r['id']?.toString() ?? '')
+              .where((id) => id.isNotEmpty)
+              .toList();
+        } else if (poolType == 'note') {
+          final rows = await userDb.rawQuery('''
+            SELECT DISTINCT n.question_id AS id
+            FROM main.Notes n
+            LEFT JOIN main.Question uq ON uq.id = n.question_id
+            WHERE COALESCE(uq.cut_question,'0') NOT IN ('1','cutted')
+              AND EXISTS (
+                SELECT 1 FROM main.QuestionRelations r
+                WHERE r.question_id = n.question_id AND $relFilter
+              )
+          ''', relArgs);
+          return rows
+              .map((r) => r['id']?.toString() ?? '')
+              .where((id) => id.isNotEmpty)
+              .toList();
+        } else if (poolType == 'mastered') {
+          final rows = await userDb.rawQuery('''
+            SELECT uq.id
+            FROM main.Question uq
+            WHERE uq.cut_question IN ('1','cutted')
+              AND EXISTS (
+                SELECT 1 FROM main.QuestionRelations r
+                WHERE r.question_id = uq.id AND $relFilter
+              )
+            UNION
+            SELECT s.item_id AS id
+            FROM main.SpacedReviewItem s
+            WHERE s.state = 3
+              AND (s.plan_id = ? OR s.plan_id IS NULL)
+              AND (
+                s.item_type = 'flashcard'
+                OR EXISTS (
+                  SELECT 1 FROM main.QuestionRelations r
+                  WHERE r.question_id = s.item_id AND $relFilter
+                )
+              )
+          ''', [...relArgs, plan.id, ...relArgs]);
+          return rows
+              .map((r) => r['id']?.toString() ?? '')
+              .where((id) => id.isNotEmpty)
+              .toList();
+        }
+      }
+    }
+
+    // 兜底回退：若投影未全量就绪，走 TEMP 表
+    return UserDatabaseCoordinator.instance.run(() async {
+      await userDb.execute(
+        'CREATE TEMP TABLE IF NOT EXISTS review_pool_ids(id TEXT PRIMARY KEY)',
+      );
+      await userDb.execute('DELETE FROM temp.review_pool_ids');
+      try {
+        for (final bank in banks.values) {
+          await _withScopeBank(
+            userDb,
+            bank,
+            plan,
+            (from, filter, args, relations) => userDb.rawInsert(
+              'INSERT OR IGNORE INTO temp.review_pool_ids SELECT DISTINCT q.id FROM $from WHERE $filter',
+              args,
+            ),
+          );
+        }
+        if (poolType == 'wrong') {
+          final rows = await userDb.rawQuery('''
+            SELECT uq.id FROM main.Question uq
+            JOIN temp.review_pool_ids p ON p.id = uq.id
+            WHERE uq.status = 2 AND COALESCE(uq.cut_question,'0') NOT IN ('1','cutted')
+            ORDER BY uq.updated_at DESC
+          ''');
+          return rows
+              .map((r) => r['id']?.toString() ?? '')
+              .where((id) => id.isNotEmpty)
+              .toList();
+        } else if (poolType == 'collected') {
+          final rows = await userDb.rawQuery('''
+            SELECT uq.id FROM main.Question uq
+            JOIN temp.review_pool_ids p ON p.id = uq.id
+            WHERE uq.collection = 1 AND COALESCE(uq.cut_question,'0') NOT IN ('1','cutted')
+            ORDER BY uq.updated_at DESC
+          ''');
+          return rows
+              .map((r) => r['id']?.toString() ?? '')
+              .where((id) => id.isNotEmpty)
+              .toList();
+        } else if (poolType == 'note') {
+          final rows = await userDb.rawQuery('''
+            SELECT DISTINCT n.question_id AS id
+            FROM main.Notes n
+            JOIN temp.review_pool_ids p ON p.id = n.question_id
+            LEFT JOIN main.Question uq ON uq.id = n.question_id
+            WHERE COALESCE(uq.cut_question,'0') NOT IN ('1','cutted')
+          ''');
+          return rows
+              .map((r) => r['id']?.toString() ?? '')
+              .where((id) => id.isNotEmpty)
+              .toList();
+        } else if (poolType == 'mastered') {
+          final rows = await userDb.rawQuery('''
+            SELECT uq.id FROM main.Question uq
+            JOIN temp.review_pool_ids p ON p.id = uq.id
+            WHERE uq.cut_question IN ('1','cutted')
+            UNION
+            SELECT s.item_id AS id FROM main.SpacedReviewItem s
+            WHERE s.state = 3 AND (s.plan_id = ? OR s.plan_id IS NULL)
+              AND (s.item_type = 'flashcard' OR s.item_id IN (SELECT id FROM temp.review_pool_ids))
+          ''', [plan.id]);
+          return rows
+              .map((r) => r['id']?.toString() ?? '')
+              .where((id) => id.isNotEmpty)
+              .toList();
+        }
+        return [];
+      } finally {
+        await userDb.execute('DELETE FROM temp.review_pool_ids');
+      }
+    });
+  }
+
   /// 获取今日学习概览与卡片统计（对同屏并发调用实现 in-flight 请求去重）
   Future<DailyReviewSummary> getTodaySummary({
     ReviewPlan? customPlan,

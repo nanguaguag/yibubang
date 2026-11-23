@@ -6,10 +6,14 @@ import '../repositories/question_search_repository.dart';
 
 class UserQuestionsListPage extends StatefulWidget {
   final UserQuestionsType type;
+  final List<String>? scopedQuestionIds;
+  final String? scopeTitle;
 
   const UserQuestionsListPage({
     super.key,
     required this.type,
+    this.scopedQuestionIds,
+    this.scopeTitle,
   });
 
   @override
@@ -23,6 +27,7 @@ class _UserQuestionsListPageState extends State<UserQuestionsListPage> {
   List<QuestionSearchResult> _allQuestions = [];
   bool _loading = true;
   String? _error;
+  late bool _isScopedMode;
 
   bool _isSearching = false;
   String _keyword = '';
@@ -35,6 +40,7 @@ class _UserQuestionsListPageState extends State<UserQuestionsListPage> {
   @override
   void initState() {
     super.initState();
+    _isScopedMode = widget.scopedQuestionIds != null;
     _loadQuestions();
   }
 
@@ -73,7 +79,13 @@ class _UserQuestionsListPageState extends State<UserQuestionsListPage> {
     });
 
     try {
-      final results = await _repository.loadUserQuestions(widget.type);
+      final List<QuestionSearchResult> results;
+      if (_isScopedMode && widget.scopedQuestionIds != null) {
+        results =
+            await _repository.loadQuestionsByIds(widget.scopedQuestionIds!);
+      } else {
+        results = await _repository.loadUserQuestions(widget.type);
+      }
       if (!mounted) return;
       setState(() {
         _allQuestions = results;
@@ -467,6 +479,62 @@ class _UserQuestionsListPageState extends State<UserQuestionsListPage> {
     );
   }
 
+  Widget _buildScopeBanner(ThemeData theme) {
+    if (widget.scopedQuestionIds == null) return const SizedBox.shrink();
+    final scheme = theme.colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: _isScopedMode
+            ? scheme.primaryContainer.withValues(alpha: 0.35)
+            : scheme.surfaceContainerHighest.withValues(alpha: 0.4),
+        border: Border(
+          bottom: BorderSide(
+            color: scheme.outlineVariant.withValues(alpha: 0.3),
+          ),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            _isScopedMode ? Icons.filter_alt_rounded : Icons.public_rounded,
+            size: 16,
+            color: _isScopedMode ? scheme.primary : scheme.outline,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              _isScopedMode
+                  ? '已按${widget.scopeTitle ?? "每日计划范围"}筛选 (共 ${_allQuestions.length} 题)'
+                  : '正在查看全部$_title (共 ${_allQuestions.length} 题)',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: _isScopedMode ? scheme.primary : scheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          TextButton(
+            style: TextButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+            ),
+            onPressed: () {
+              setState(() {
+                _isScopedMode = !_isScopedMode;
+              });
+              _loadQuestions();
+            },
+            child: Text(
+              _isScopedMode ? '查看全部' : '切回计划范围',
+              style: const TextStyle(fontSize: 12),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final filtered = _filteredQuestions;
@@ -511,35 +579,45 @@ class _UserQuestionsListPageState extends State<UserQuestionsListPage> {
           ),
         ],
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Center(child: Text(_error!))
-              : _allQuestions.isEmpty
-                  ? Center(
-                      child: Text(
-                        _emptyMessage,
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    )
-                  : filtered.isEmpty
-                      ? Center(
-                          child: Text(
-                            '没有符合筛选条件的题目',
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
+      body: Column(
+        children: [
+          _buildScopeBanner(theme),
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : _error != null
+                    ? Center(child: Text(_error!))
+                    : _allQuestions.isEmpty
+                        ? Center(
+                            child: Text(
+                              _emptyMessage,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
                             ),
-                          ),
-                        )
-                      : ListView.builder(
-                          padding: const EdgeInsets.only(top: 6, bottom: 24),
-                          itemCount: filtered.length,
-                          itemBuilder: (context, index) {
-                            return _buildQuestionCard(filtered[index]);
-                          },
-                        ),
+                          )
+                        : filtered.isEmpty
+                            ? Center(
+                                child: Text(
+                                  '没有符合筛选条件的题目',
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              )
+                            : ListView.builder(
+                                padding: const EdgeInsets.only(
+                                  top: 6,
+                                  bottom: 24,
+                                ),
+                                itemCount: filtered.length,
+                                itemBuilder: (context, index) {
+                                  return _buildQuestionCard(filtered[index]);
+                                },
+                              ),
+          ),
+        ],
+      ),
     );
   }
 }

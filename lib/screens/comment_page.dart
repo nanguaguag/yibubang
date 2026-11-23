@@ -35,9 +35,9 @@ Future<bool> showPublishCommentSheet(
   final loggedIn = await checkLoginStatus();
   if (!context.mounted) return false;
   if (!loggedIn) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('请先登录医考帮账号后再发表评论')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('请先登录医考帮账号后再发表评论')));
     return false;
   }
 
@@ -93,9 +93,7 @@ Future<bool> showPublishCommentSheet(
                       borderRadius: BorderRadius.circular(12),
                     ),
                     filled: true,
-                    fillColor: Theme.of(ctx)
-                        .colorScheme
-                        .surfaceContainerHighest
+                    fillColor: Theme.of(ctx).colorScheme.surfaceContainerHighest
                         .withValues(alpha: 0.3),
                   ),
                 ),
@@ -129,9 +127,9 @@ Future<bool> showPublishCommentSheet(
                               try {
                                 final resp = await CommentService.instance
                                     .publishComment(
-                                  content: text,
-                                  question: question,
-                                );
+                                      content: text,
+                                      question: question,
+                                    );
                                 if (!ctx.mounted) return;
                                 if (resp['code']?.toString() == '200') {
                                   Navigator.of(ctx).pop(true);
@@ -177,11 +175,7 @@ class CommentPage extends StatefulWidget {
   // 外层滚动的控制器，用于实现「滚动到底自动加载下一页」
   final ScrollController? scrollController;
 
-  const CommentPage({
-    super.key,
-    required this.question,
-    this.scrollController,
-  });
+  const CommentPage({super.key, required this.question, this.scrollController});
 
   @override
   State<CommentPage> createState() => _CommentPageState();
@@ -205,8 +199,9 @@ class _CommentPageState extends State<CommentPage>
   void initState() {
     super.initState();
     widget.scrollController?.addListener(_onScroll);
-    CommentService.instance.commentSyncEventNotifier
-        .addListener(_refreshLocalSaved);
+    CommentService.instance.commentSyncEventNotifier.addListener(
+      _refreshLocalSaved,
+    );
     _initData();
   }
 
@@ -234,8 +229,9 @@ class _CommentPageState extends State<CommentPage>
   @override
   void dispose() {
     widget.scrollController?.removeListener(_onScroll);
-    CommentService.instance.commentSyncEventNotifier
-        .removeListener(_refreshLocalSaved);
+    CommentService.instance.commentSyncEventNotifier.removeListener(
+      _refreshLocalSaved,
+    );
     super.dispose();
   }
 
@@ -304,10 +300,7 @@ class _CommentPageState extends State<CommentPage>
     final bool isTokenExpired = code == 309 || code == '309';
     if (isTokenExpired) {
       clearUserInfo();
-      return CommentData.fromJson({
-        'hot': [],
-        'time_line': [],
-      });
+      return CommentData.fromJson({'hot': [], 'time_line': []});
     }
     final dynamic rawData = response['data'];
     CommentData data;
@@ -316,10 +309,7 @@ class _CommentPageState extends State<CommentPage>
     } else if (rawData is Map) {
       data = CommentData.fromJson(Map<String, dynamic>.from(rawData));
     } else {
-      data = CommentData.fromJson({
-        'hot': [],
-        'time_line': [],
-      });
+      data = CommentData.fromJson({'hot': [], 'time_line': []});
     }
     unawaited(
       CommentService.instance.harvestFromCommentList(
@@ -435,10 +425,8 @@ class _CommentPageState extends State<CommentPage>
                 foregroundColor: theme.colorScheme.primary,
                 visualDensity: VisualDensity.compact,
               ),
-              onPressed: () => QuestionCommentsPage.open(
-                context,
-                question: widget.question,
-              ),
+              onPressed: () =>
+                  QuestionCommentsPage.open(context, question: widget.question),
             ),
           ],
         ),
@@ -508,9 +496,7 @@ class _CommentPageState extends State<CommentPage>
           onPressed: () {
             Navigator.push(
               context,
-              adaptivePageRoute(
-                builder: (context) => const AuthCheckPage(),
-              ),
+              adaptivePageRoute(builder: (context) => const AuthCheckPage()),
             );
           },
         ),
@@ -548,8 +534,7 @@ class _CommentPageState extends State<CommentPage>
             (c) => CommentItem(
               comment: c,
               question: widget.question,
-              initiallyPraised:
-                  c.isPraise == '1' || _praisedIds.contains(c.id),
+              initiallyPraised: c.isPraise == '1' || _praisedIds.contains(c.id),
             ),
           ),
           if (_loading)
@@ -563,7 +548,7 @@ class _CommentPageState extends State<CommentPage>
               child: Center(
                 child: TextButton.icon(
                   icon: const Icon(Icons.open_in_new_rounded, size: 15),
-                  label: const Text('进入评论区看板 (最多点赞 · 最高热度 · 最多回复 · 最新发布)'),
+                  label: const Text('进入评论区看板'),
                   onPressed: () => QuestionCommentsPage.open(
                     context,
                     question: widget.question,
@@ -627,17 +612,17 @@ class _CommentItemState extends State<CommentItem> {
     final loggedIn = prefs.getBool('loggedin') ?? false;
     if (!loggedIn) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请先登录后再点赞')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('请先登录后再点赞')));
       return;
     }
 
     if (_isPraised) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('您已经点赞过该评论了')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('您已经点赞过该评论了')));
       return;
     }
 
@@ -661,9 +646,9 @@ class _CommentItemState extends State<CommentItem> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('点赞出错: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('点赞出错: $e')));
       }
     } finally {
       if (mounted) {
@@ -684,10 +669,8 @@ class _CommentItemState extends State<CommentItem> {
           Navigator.push(
             context,
             adaptivePageRoute(
-              builder: (context) => CommentReplyPage(
-                comment: comment,
-                question: question,
-              ),
+              builder: (context) =>
+                  CommentReplyPage(comment: comment, question: question),
             ),
           );
         },
@@ -726,8 +709,9 @@ class _CommentItemState extends State<CommentItem> {
                   '$_praiseCount',
                   style: TextStyle(
                     color: praiseColor,
-                    fontWeight:
-                        hasPraised ? FontWeight.bold : FontWeight.normal,
+                    fontWeight: hasPraised
+                        ? FontWeight.bold
+                        : FontWeight.normal,
                   ),
                 ),
               ],
@@ -794,10 +778,7 @@ class _CommentItemState extends State<CommentItem> {
         margin: const EdgeInsets.only(bottom: 8.0),
         decoration: BoxDecoration(
           border: const Border(
-            left: BorderSide(
-              color: Colors.grey,
-              width: 4.0,
-            ),
+            left: BorderSide(color: Colors.grey, width: 4.0),
           ),
           color: Colors.grey.withValues(alpha: 0.2),
         ),
@@ -810,20 +791,13 @@ class _CommentItemState extends State<CommentItem> {
         margin: const EdgeInsets.only(bottom: 8.0),
         decoration: BoxDecoration(
           border: const Border(
-            left: BorderSide(
-              color: Colors.grey,
-              width: 4.0,
-            ),
+            left: BorderSide(color: Colors.grey, width: 4.0),
           ),
           color: Colors.grey.withValues(alpha: 0.2),
         ),
         child: Column(
           children: [
-            _getReplyComment(
-              comment,
-              context,
-              depth: depth + 1,
-            ),
+            _getReplyComment(comment, context, depth: depth + 1),
             _commentContent(comment.reply[replyLength - 1 - depth], context),
           ],
         ),
@@ -873,19 +847,12 @@ class _CommentItemState extends State<CommentItem> {
         // 如果是回复，则先显示引用的原评论内容
         _getReplyComment(comment, context),
         // 评论内容
-        Text(
-          comment.content,
-          style: const TextStyle(fontSize: 16),
-        ),
+        Text(comment.content, style: const TextStyle(fontSize: 16)),
         // 如果有图像，则显示图像
         if (comment.imgWatermark.isNotEmpty)
           InkWell(
             onTap: () {
-              _showFullScreenImage(
-                context,
-                [comment.imgWatermark],
-                0,
-              );
+              _showFullScreenImage(context, [comment.imgWatermark], 0);
             },
             child: Padding(
               padding: const EdgeInsets.all(4),
@@ -913,12 +880,10 @@ class _CommentItemState extends State<CommentItem> {
               leading: const Icon(Icons.copy),
               title: const Text('复制评论'),
               onTap: () {
-                Clipboard.setData(
-                  ClipboardData(text: comment.content),
-                );
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('复制成功！')),
-                );
+                Clipboard.setData(ClipboardData(text: comment.content));
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(const SnackBar(content: Text('复制成功！')));
                 Navigator.pop(ctx);
               },
             ),
@@ -971,9 +936,9 @@ class _CommentItemState extends State<CommentItem> {
                   question: widget.question,
                 );
                 if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('已成功将评论保存为笔记！')),
-                  );
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(const SnackBar(content: Text('已成功将评论保存为笔记！')));
                 }
               },
             ),
@@ -1021,9 +986,7 @@ class _CommentItemState extends State<CommentItem> {
   @override
   Widget build(BuildContext context) {
     return Card(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       margin: const EdgeInsets.all(8.0),
       child: InkWell(
         onTap: () => _showOptions(context, widget.comment),

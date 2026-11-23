@@ -1,6 +1,30 @@
 # 跨会话交接
 
-## 最新交接：2026-11-23 医考帮我的点赞/我的评论归纳同步、评论四维排序页、卡片池联动及闪卡导航修复
+## 最新交接：2026-11-23 医考帮点赞评论后台同步全局状态机、防并发互斥与跨页面生命周期保持
+
+- **用户授权与操作目标**：
+  1. 修复在同步过程中退出“我的点赞”返回“我的”页，再点进去不显示正在同步但后台仍在运行的 Bug；
+  2. 修复后台同步仍在运行时，用户在页面上强行再次点击导致两个同步任务并发运行、相互竞态的问题。
+- **完成项**：
+  1. **[全局后台同步状态机与并发互斥保护 (`lib/services/comment_service.dart`)]**：
+     - 定义 `CommentBatchSyncState` 数据模型，在单例 `CommentService` 统一维护全局响应式状态 `batchSyncNotifier` 与快捷属性 `isBatchSyncing`；
+     - `syncFromTouchedQuestions` 增加严格的单飞互斥保护：若当前已有后台批量任务在运行，抛出 `StateError` 拒绝并发拉起第二个任务；
+     - 循环过程实时将当前已扫题数 `current`、总数 `total`、分类 `category` 与 `isRunning` 写入全局 `batchSyncNotifier`，在 `finally` 块中确保重置 `isRunning: false`，杜绝异常导致状态卡死；
+     - 提供单例级 `cancelBatchSync()`，实现跨页面随时一键安全终止后台任务。
+  2. **[UI 跨页面生命周期保持与无缝恢复 (`lib/screens/my_saved_comments_page.dart`)]**：
+     - `MySavedCommentsPage` 在 `initState` 中直接读取全局 `batchSyncNotifier`，退出重进即刻恢复当前分类的后台同步状态与进度展示（`15/120`）；
+     - 监听 `batchSyncNotifier` 变化，后台完成时自动刷新列表 `_loadData()` 并清除 AppBar 进度条；
+     - AppBar 点击同步按钮时先做全局互斥判断：若后台任务匹配当前页面分类，秒开正在运行的进度浮窗（可继续查看实时进度或点击终止）；若后台任务在跑其他分类，提示“后台正在同步其他数据”；
+     - 弹窗直接绑定 `batchSyncNotifier`，实现进度流动跳动与一键全局终止。
+- **质量门禁验证**：
+  - `dart analyze lib/ test/`：**No issues found!**
+  - `flutter test test/comment_features_test.dart`：**9/9 PASS**（新增全局批量同步互斥防护与 cancelBatchSync 状态流转测试）
+  - 全量用例 `flutter test test/official_sync_queue_test.dart test/daily_review_service_test.dart test/comment_features_test.dart`：**29/29 PASS**
+  - 后端 `npm run typecheck` & `npm test`：**14/14 PASS**
+- **未完成项 / 下一次第一步**：
+  - 代码保留在工作区未 commit（严格遵循 `AGENTS.md`，待用户检阅确认）。
+
+## 前次交接：2026-11-23 医考帮我的点赞/我的评论归纳同步、评论四维排序页、卡片池联动及闪卡导航修复
 
 - **用户授权与操作目标**：
   1. 先对上一轮医考帮双向同步修复执行中文 Git commit（已提交 `4844952`）；

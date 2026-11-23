@@ -1,5 +1,22 @@
 # 当前开发状态
 
+## 2026-11-23 医考帮点赞评论后台同步全局状态机、防并发互斥与跨页面生命周期保持（完成）
+
+1. **全局后台批量同步状态机与并发互斥保护 ([lib/services/comment_service.dart](../../lib/services/comment_service.dart))**：
+   - 提取全局响应式状态模型 `CommentBatchSyncState`，在单例 `CommentService` 中维护全局状态 `batchSyncNotifier` 与互斥判断属性 `isBatchSyncing`；
+   - `syncFromTouchedQuestions` 强制校验全局运行状态，杜绝任何并发拉起第二个同步任务的可能（抛出 `StateError`）；
+   - 在 `finally` 块中确保重置 `isRunning: false`，杜绝任何网络或逻辑异常导致状态卡死；
+   - 提供单例级 `cancelBatchSync()`，实现跨页面随时一键安全终止后台任务。
+2. **UI 跨页面生命周期保持与无缝恢复 ([lib/screens/my_saved_comments_page.dart](../../lib/screens/my_saved_comments_page.dart))**：
+   - `MySavedCommentsPage` 在 `initState` 中直接恢复当前分类的后台同步状态与进度展示（`15/120`），退出再进入依然无缝显示同步进度；
+   - 监听 `batchSyncNotifier` 变化，后台完成时自动刷新列表 `_loadData()` 并重置 AppBar 状态；
+   - AppBar 同步按钮点击时先判断全局运行状态：若正在同步当前分类则秒开进度控制浮窗，若正在同步其他分类则友好提示，杜绝重复并发；
+   - 控制浮窗直接绑定 `batchSyncNotifier`，进度条实时流动跳动，并提供「终止同步」按钮一键全局中断。
+3. **每日复习计划卡片池与详情列表数量 100% 精确对齐 ([lib/services/daily_review_service.dart](../../lib/services/daily_review_service.dart) / [lib/screens/user_questions_list_page.dart](../../lib/screens/user_questions_list_page.dart) / [lib/screens/my_notes_page.dart](../../lib/screens/my_notes_page.dart) / [lib/screens/daily_plan_page.dart](../../lib/screens/daily_plan_page.dart))**：
+   - 在 `DailyReviewService` 实现 `getScopedPoolQuestionIds(poolType)`，严格复用 `_scopePoolCounts` 相同的题库、科目筛选及已斩题排除 SQL，确保取出的题目 ID 集合与卡片池数字分毫不差；
+   - `UserQuestionsListPage` 与 `MyNotesPage` 新增 `scopedQuestionIds` 模式，点进列表默认仅展示计划范围内的题目/笔记，标题与徽章数字精准对齐；
+   - 页面顶部增加轻量优雅的范围提示条（Scope Banner），展示“已按每日计划范围筛选 (共 X 题/条)”，并支持一键切换“查看全部”与“切回计划范围”，兼顾数量精确与全局查阅。
+
 ## 2026-11-23 医考帮我的点赞/我的评论归纳同步、评论四维排序页、卡片池联动及闪卡导航修复（完成）
 
 1. **医考帮「我的点赞」与「我的评论」拉取、本地归纳保存及云同步 ([lib/models/comment.dart](../../lib/models/comment.dart) / [lib/services/comment_service.dart](../../lib/services/comment_service.dart) / [lib/screens/my_saved_comments_page.dart](../../lib/screens/my_saved_comments_page.dart) / [lib/screens/my_page.dart](../../lib/screens/my_page.dart))**：
