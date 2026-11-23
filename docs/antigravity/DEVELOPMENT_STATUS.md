@@ -1,5 +1,13 @@
 # 当前开发状态
 
+## 2026-11-23 版本发布：v2.2.5+215（已完成）
+
+- **版本号升级**：`pubspec.yaml` 正式递增至 `2.2.5+215`。
+- **更新清单同步**：更新 `yibubang_update.json`，写入 v2.2.5 各平台资产直链（Android 通用与分 ABI、Windows、macOS、Linux）与结构化版本更新说明，保证客户端在线更新能够正确检出与解析。
+- **发布说明归档**：建立 `docs/release-notes/v2.2.5.md`，汇总自 v2.2.4 以来的四大核心变更（医考帮双向同步全链路加固、我的点赞与评论归纳云同步、四维排序看板、卡片池范围精确对齐与导航优化）。
+- **文档与索引更新**：同步更新 `README.md`、`README_EN.md`、`docs/CURRENT_STATUS.md`、`docs/release-notes/README.md` 与知识库索引。
+- **自动化门禁与 Tag 标记**：全量测试与静态分析通过后，正式执行 Release commit 并打上带附注的 Git tag `v2.2.5`。
+
 ## 2026-11-23 医考帮点赞评论后台同步全局状态机、防并发互斥与跨页面生命周期保持（完成）
 
 1. **全局后台批量同步状态机与并发互斥保护 ([lib/services/comment_service.dart](../../lib/services/comment_service.dart))**：

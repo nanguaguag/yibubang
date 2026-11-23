@@ -1,6 +1,22 @@
 # 跨会话交接
 
-## 最新交接：2026-11-23 医考帮点赞评论后台同步全局状态机、防并发互斥与跨页面生命周期保持
+## 最新交接：2026-11-23 v2.2.5+215 版本升级与发布交付
+
+- **用户授权与操作目标**：
+  1. 在 `flutter test` 和 `flutter analyze` 全量验证通过后，将应用正式升级发布到 `2.2.5`（更新版本号至 `2.2.5+215`、更新 `yibubang_update.json`、编写发布说明 `docs/release-notes/v2.2.5.md`、更新相关文档、完成中文 release commit 并打 tag `v2.2.5`）。
+- **完成项**：
+  1. **[版本号与分发清单升级]**：
+     - `pubspec.yaml`：递增至 `version: 2.2.5+215`；
+     - `yibubang_update.json`：更新 `latest_app: "2.2.5"`、`latest_app_url`、各平台资产下载直链（Android 通用与分 ABI、Windows、macOS、Linux）以及结构化 `update_info`；
+  2. **[发布说明与文档同步]**：
+     - 创建 `docs/release-notes/v2.2.5.md`，完整总结自 v2.2.4 以来的四大核心改进（医考帮双向同步全链路白盒加固、点赞与评论归纳云同步、评论四维排序看板、卡片池范围精确对齐与导航优化）；
+     - 更新 `docs/release-notes/README.md`，挂载 v2.2.5 条目；
+     - 更新 `README.md`、`README_EN.md`、`docs/CURRENT_STATUS.md`、`docs/project/` 与知识库索引。
+  3. **[门禁与 Git 标记]**：
+     - `dart analyze lib/ test/` 0 issues，全量测试 100% 通过；
+     - 提交发布 commit 并打上带附注 Git tag `v2.2.5`。
+
+## 前次交接：2026-11-23 医考帮点赞评论后台同步全局状态机、防并发互斥与跨页面生命周期保持
 
 - **用户授权与操作目标**：
   1. 修复在同步过程中退出“我的点赞”返回“我的”页，再点进去不显示正在同步但后台仍在运行的 Bug；

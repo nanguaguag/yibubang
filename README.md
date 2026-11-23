@@ -126,7 +126,7 @@ Invoke-WebRequest -Uri "https://gitee.com" -Method Head
 
 如果您是开发者，想了解本项目的源码构建方式、本地数据库设计、云端同步协议或 AI 搜索后端部署细节，请参阅 `docs/` 目录下的完整文档：
 
-- [文档总目录](docs/README.md) · [当前开发进度](docs/CURRENT_STATUS.md) · [更新日志](docs/release-notes/v2.2.4.md)
+- [文档总目录](docs/README.md) · [当前开发进度](docs/CURRENT_STATUS.md) · [更新日志](docs/release-notes/v2.2.5.md)
 - [系统架构与同步协议](docs/antigravity/ARCHITECTURE.md) · [数据库设计](docs/antigravity/database_current.md) · [AI 搜索与教材部署](docs/ai-search/README.md)
 - [测试策略与验证](docs/antigravity/TESTING_STRATEGY.md) · [跨会话开发交接](docs/antigravity/SESSION_HANDOFF.md)
 
