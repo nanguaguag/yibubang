@@ -47,7 +47,9 @@ class _DeveloperPageState extends State<DeveloperPage>
 
   // 队列数据
   List<Map<String, dynamic>> _ykbQueueItems = [];
+  int _ykbQueueTotalCount = 0;
   List<Map<String, dynamic>> _noteQueueItems = [];
+  int _noteQueueTotalCount = 0;
   List<Map<String, dynamic>> _recentActivities = [];
 
   // Cloudflare 同步与冷备队列
@@ -154,6 +156,8 @@ class _DeveloperPageState extends State<DeveloperPage>
   Future<void> _loadQueuesAndActivities() async {
     final db = await UserDBHelper().database;
     try {
+      final countRes = await db.rawQuery('SELECT COUNT(*) FROM YkbSyncQueue');
+      _ykbQueueTotalCount = Sqflite.firstIntValue(countRes) ?? 0;
       final ykbRows = await db.query(
         'YkbSyncQueue',
         orderBy: 'created_at ASC',
@@ -161,10 +165,13 @@ class _DeveloperPageState extends State<DeveloperPage>
       );
       _ykbQueueItems = List<Map<String, dynamic>>.from(ykbRows);
     } catch (_) {
+      _ykbQueueTotalCount = 0;
       _ykbQueueItems = [];
     }
 
     try {
+      final countRes = await db.rawQuery('SELECT COUNT(*) FROM NoteSyncQueue');
+      _noteQueueTotalCount = Sqflite.firstIntValue(countRes) ?? 0;
       final noteRows = await db.query(
         'NoteSyncQueue',
         orderBy: 'created_at ASC',
@@ -172,6 +179,7 @@ class _DeveloperPageState extends State<DeveloperPage>
       );
       _noteQueueItems = List<Map<String, dynamic>>.from(noteRows);
     } catch (_) {
+      _noteQueueTotalCount = 0;
       _noteQueueItems = [];
     }
 
@@ -236,7 +244,10 @@ class _DeveloperPageState extends State<DeveloperPage>
     final tables = [
       'Question',
       'Notes',
+      'NoteTombstones',
+      'CloudDeletedNotes',
       'Activities',
+      'CloudDeletedActivities',
       'CustomFlashcards',
       'CloudDeletedFlashcards',
       'SpacedReviewItem',
@@ -245,6 +256,7 @@ class _DeveloperPageState extends State<DeveloperPage>
       'CloudPullCursor',
       'YkbSyncQueue',
       'NoteSyncQueue',
+      'QuestionRelations',
       'IdentitySubject',
       'IdentityChapter',
       'QuestionBank',
@@ -730,8 +742,10 @@ class _DeveloperPageState extends State<DeveloperPage>
         _buildQueueCard(
           theme: theme,
           title: '医考帮做题/斩题/重做同步队列',
-          badgeText: '${_ykbQueueItems.length} 项待处理',
-          badgeColor: _ykbQueueItems.isEmpty
+          badgeText: _ykbQueueTotalCount > _ykbQueueItems.length
+              ? '共 $_ykbQueueTotalCount 项 (展示前 ${_ykbQueueItems.length} 条)'
+              : '$_ykbQueueTotalCount 项待处理',
+          badgeColor: _ykbQueueTotalCount == 0
               ? Colors.green
               : theme.colorScheme.primary,
           onProcess: () async {
@@ -745,7 +759,7 @@ class _DeveloperPageState extends State<DeveloperPage>
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
-                  content: Text('已重置所有综合同步任务的重试计数为 0'),
+                  content: Text('已重置所有综合同步任务的重试计数与暂停状态'),
                   duration: Duration(milliseconds: 800),
                 ),
               );
@@ -775,8 +789,10 @@ class _DeveloperPageState extends State<DeveloperPage>
         _buildQueueCard(
           theme: theme,
           title: '医考帮笔记上传/删除队列',
-          badgeText: '${_noteQueueItems.length} 项待处理',
-          badgeColor: _noteQueueItems.isEmpty
+          badgeText: _noteQueueTotalCount > _noteQueueItems.length
+              ? '共 $_noteQueueTotalCount 项 (展示前 ${_noteQueueItems.length} 条)'
+              : '$_noteQueueTotalCount 项待处理',
+          badgeColor: _noteQueueTotalCount == 0
               ? Colors.green
               : theme.colorScheme.secondary,
           onProcess: () async {
@@ -790,7 +806,7 @@ class _DeveloperPageState extends State<DeveloperPage>
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
-                  content: Text('已重置所有笔记同步任务的重试计数为 0'),
+                  content: Text('已重置所有笔记同步任务的重试计数与暂停状态'),
                   duration: Duration(milliseconds: 800),
                 ),
               );
@@ -890,7 +906,23 @@ class _DeveloperPageState extends State<DeveloperPage>
                     final duration = (act['duration'] as num?)?.toInt() ?? 0;
                     final ts = (act['timestamp'] as num?)?.toInt() ?? 0;
 
-                    final cached = SyncResponseCache.instance.getByItemId(qId);
+                    final cacheType = switch (title) {
+                      'CutQuestion' => 'cut',
+                      'RedoChapter' => 'redo_chapter',
+                      'NoteUpload' => 'note_upload',
+                      'NoteDelete' => 'note_delete',
+                      'NewAnswer' || 'ReviewAnswer' => 'answer',
+                      _ => null,
+                    };
+                    final lookupId = title == 'RedoChapter'
+                        ? (act['chapter_id']?.toString() ?? qId)
+                        : qId;
+                    final cached = cacheType == null
+                        ? null
+                        : SyncResponseCache.instance.getByItemId(
+                            lookupId,
+                            type: cacheType,
+                          );
 
                     String mainTitle;
                     String subTitle;
@@ -915,6 +947,10 @@ class _DeveloperPageState extends State<DeveloperPage>
                       mainTitle = '从医考帮拉取笔记: 题目 $qId';
                       subTitle =
                           '科目: ${act['subject_id'] ?? '-'}  |  时间: ${_formatTime(ts)}';
+                    } else if (title == 'YkbPull') {
+                      mainTitle = '从医考帮拉取做题: 题目 $qId';
+                      subTitle =
+                          '题库: ${act['bank_id'] ?? '-'}  |  时间: ${_formatTime(ts)}';
                     } else if (title == 'FlashcardReview') {
                       mainTitle =
                           '闪卡复习: 卡片 $qId  |  评级: ${isRight ?? '-'}  |  用时 ${(duration / 1000).toStringAsFixed(1)}s';
@@ -922,6 +958,11 @@ class _DeveloperPageState extends State<DeveloperPage>
                           '科目/题库: ${act['subject_id'] ?? act['bank_id'] ?? '-'}  |  时间: ${_formatTime(ts)}';
                     } else if (title == 'ReviewMemory') {
                       mainTitle = '记忆曲线复习: $qId  |  评级: ${isRight ?? '-'}';
+                      subTitle =
+                          '科目/题库: ${act['subject_id'] ?? act['bank_id'] ?? '-'}  |  时间: ${_formatTime(ts)}';
+                    } else if (title == 'ReviewAnswer') {
+                      mainTitle =
+                          '记忆曲线做题: 题目 $qId  |  用时 ${(duration / 1000).toStringAsFixed(1)}s';
                       subTitle =
                           '科目/题库: ${act['subject_id'] ?? act['bank_id'] ?? '-'}  |  时间: ${_formatTime(ts)}';
                     } else if (title == '熟练斩卡' || title == '熟练斩题') {
@@ -1048,7 +1089,7 @@ class _DeveloperPageState extends State<DeveloperPage>
             padding: const EdgeInsets.all(16),
             child: Center(
               child: Text(
-                'CloudOutbox 为空，本地题目、卡片、笔记、记忆项、做题流水均已同步到 D1 (Owner: ${_cloudSyncOwner ?? "未绑定"})',
+                'CloudOutbox 为空，本地题目（含主观题自评）、笔记、卡片、记忆曲线、复习计划、做题流水均已同步到 D1 (Owner: ${_cloudSyncOwner ?? "未绑定"})',
                 style: const TextStyle(color: Colors.grey, fontSize: 13),
               ),
             ),
@@ -1235,6 +1276,14 @@ class _DeveloperPageState extends State<DeveloperPage>
         kindName = '笔记';
         kindColor = Colors.teal;
         break;
+      case 'note_delete':
+        kindName = '删笔记';
+        kindColor = Colors.red;
+        break;
+      case 'activity_delete':
+        kindName = '删流水';
+        kindColor = Colors.redAccent;
+        break;
       case 'activity':
         kindName = '流水';
         kindColor = Colors.green;
@@ -1344,7 +1393,7 @@ class _DeveloperPageState extends State<DeveloperPage>
       } else if (kind == 'spaced_item') {
         final rows = await db.query(
           'SpacedReviewItem',
-          where: 'id = ?',
+          where: 'item_id = ?',
           whereArgs: [id],
         );
         if (rows.isNotEmpty) entity = rows.first;
@@ -1358,8 +1407,22 @@ class _DeveloperPageState extends State<DeveloperPage>
       } else if (kind == 'note') {
         final rows = await db.query(
           'Notes',
-          where: 'question_id = ?',
-          whereArgs: [int.tryParse(id) ?? id],
+          where: 'id = ?',
+          whereArgs: [id],
+        );
+        if (rows.isNotEmpty) entity = rows.first;
+      } else if (kind == 'note_delete') {
+        final rows = await db.query(
+          'CloudDeletedNotes',
+          where: 'id = ?',
+          whereArgs: [id],
+        );
+        if (rows.isNotEmpty) entity = rows.first;
+      } else if (kind == 'activity_delete') {
+        final rows = await db.query(
+          'CloudDeletedActivities',
+          where: 'id = ?',
+          whereArgs: [id],
         );
         if (rows.isNotEmpty) entity = rows.first;
       } else if (kind == 'activity') {
@@ -1497,6 +1560,14 @@ class _DeveloperPageState extends State<DeveloperPage>
       text = '笔记拉取';
       bg = Colors.indigo.withValues(alpha: 0.15);
       fg = Colors.indigo.shade700;
+    } else if (title == 'YkbPull') {
+      text = isRight == '1' ? '拉取·对' : '拉取·错';
+      bg = Colors.indigo.withValues(alpha: 0.15);
+      fg = Colors.indigo.shade700;
+    } else if (title == 'ReviewAnswer') {
+      text = isRight == '1' ? '复习·对' : '复习·错';
+      bg = Colors.cyan.withValues(alpha: 0.15);
+      fg = Colors.cyan.shade800;
     } else if (title == 'Backfill') {
       text = '补记';
       bg = Colors.brown.withValues(alpha: 0.15);
@@ -1590,6 +1661,15 @@ class _DeveloperPageState extends State<DeveloperPage>
     if (code == '200') {
       bg = Colors.green.withValues(alpha: 0.15);
       fg = Colors.green.shade700;
+    } else if (code == '已暂停') {
+      bg = Colors.red.withValues(alpha: 0.15);
+      fg = Colors.red.shade700;
+    } else if (code == '发包中') {
+      bg = Colors.amber.withValues(alpha: 0.18);
+      fg = Colors.brown.shade700;
+    } else if (code == '退避中') {
+      bg = Colors.orange.withValues(alpha: 0.15);
+      fg = Colors.deepOrange;
     } else if (code.contains('斩') || code == 'cut') {
       bg = Colors.purple.withValues(alpha: 0.15);
       fg = Colors.purple.shade700;
@@ -1638,9 +1718,40 @@ class _DeveloperPageState extends State<DeveloperPage>
     );
   }
 
+  String _resolveQueueStatusCode(
+    Map<String, dynamic> item,
+    SyncResponseRecord? cached,
+  ) {
+    if (cached != null && cached.code.isNotEmpty) return cached.code;
+    final state = item['queue_state']?.toString() ?? 'pending';
+    if (state == 'paused') return '已暂停';
+    if (state == 'sending') return '发包中';
+    final nextAt = (item['next_attempt_at'] as num?)?.toInt() ?? 0;
+    if (nextAt > DateTime.now().millisecondsSinceEpoch) return '退避中';
+    final retry = (item['retry_count'] as num?)?.toInt() ?? 0;
+    return retry > 0 ? '重试' : '待同步';
+  }
+
+  String _formatQueueMetaLine(Map<String, dynamic> item) {
+    final createdAt = (item['created_at'] as num?)?.toInt() ?? 0;
+    final retry = (item['retry_count'] as num?)?.toInt() ?? 0;
+    final state = item['queue_state']?.toString() ?? 'pending';
+    final owner = item['owner_user_id']?.toString() ?? '';
+    final nextAt = (item['next_attempt_at'] as num?)?.toInt() ?? 0;
+    final parts = <String>[
+      '状态: $state',
+      '重试: $retry',
+      if (owner.isNotEmpty) '账号: $owner' else '账号: 未认领',
+      if (nextAt > DateTime.now().millisecondsSinceEpoch)
+        '下次重试: ${_formatTime(nextAt)}'
+      else
+        '时间: ${_formatTime(createdAt)}',
+    ];
+    return parts.join('  |  ');
+  }
+
   Widget _buildYkbQueueTile(ThemeData theme, Map<String, dynamic> item) {
     final type = item['type']?.toString() ?? '';
-    final createdAt = (item['created_at'] as num?)?.toInt() ?? 0;
     final retry = (item['retry_count'] as num?)?.toInt() ?? 0;
     final lastError = item['last_error']?.toString();
     final queueId = item['id']?.toString() ?? '';
@@ -1648,8 +1759,8 @@ class _DeveloperPageState extends State<DeveloperPage>
 
     final cached =
         SyncResponseCache.instance.getByQueueId(queueId) ??
-        SyncResponseCache.instance.getByItemId(itemId);
-    final String statusCode = cached?.code ?? (retry > 0 ? '重试' : '待同步');
+        SyncResponseCache.instance.getByItemId(itemId, type: type);
+    final String statusCode = _resolveQueueStatusCode(item, cached);
 
     final typeNames = {'cut': '斩题同步', 'answer': '做题提交', 'redo_chapter': '章节重做'};
 
@@ -1687,7 +1798,7 @@ class _DeveloperPageState extends State<DeveloperPage>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '时间: ${_formatTime(createdAt)}  |  重试次数: $retry',
+            _formatQueueMetaLine(item),
             style: const TextStyle(fontSize: 11),
           ),
           if (lastError != null && lastError.isNotEmpty)
@@ -1756,7 +1867,7 @@ class _DeveloperPageState extends State<DeveloperPage>
                   cached?.rawResponse ??
                   item['last_response']?.toString() ??
                   const JsonEncoder.withIndent('  ').convert({
-                    'status': 'pending',
+                    'status': item['queue_state'] ?? 'pending',
                     'message': '队列项尚未向服务器请求或未生成响应',
                     'retry_count': retry,
                     'last_error': lastError,
@@ -1785,16 +1896,16 @@ class _DeveloperPageState extends State<DeveloperPage>
 
   Widget _buildNoteQueueTile(ThemeData theme, Map<String, dynamic> item) {
     final action = item['action']?.toString() ?? '';
-    final createdAt = (item['created_at'] as num?)?.toInt() ?? 0;
     final retry = (item['retry_count'] as num?)?.toInt() ?? 0;
     final lastError = item['last_error']?.toString();
     final queueId = item['id']?.toString() ?? '';
     final questionId = item['question_id']?.toString();
+    final cacheType = action == 'upload' ? 'note_upload' : 'note_delete';
 
     final cached =
         SyncResponseCache.instance.getByQueueId(queueId) ??
-        SyncResponseCache.instance.getByItemId(questionId);
-    final String statusCode = cached?.code ?? (retry > 0 ? '重试' : '待同步');
+        SyncResponseCache.instance.getByItemId(questionId, type: cacheType);
+    final String statusCode = _resolveQueueStatusCode(item, cached);
 
     return ListTile(
       dense: true,
@@ -1832,7 +1943,7 @@ class _DeveloperPageState extends State<DeveloperPage>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '时间: ${_formatTime(createdAt)}  |  重试次数: $retry',
+            _formatQueueMetaLine(item),
             style: const TextStyle(fontSize: 11),
           ),
           if (lastError != null && lastError.isNotEmpty)

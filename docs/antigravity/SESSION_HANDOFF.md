@@ -1,6 +1,71 @@
 # 跨会话交接
 
-## 最新交接：2026-11-19 医不帮单页长滚动官网 (yibubang-web) 从零构建与全量验证
+## 最新交接：2026-11-23 医不帮 ↔ 医考帮官方双向同步白盒审计与全链路修复
+
+- **用户授权与操作目标**：
+  1. 先对「医不帮 ↔ 医考帮官方」四大双向同步业务（做题、斩题、笔记、全章节重做）、持久化队列（`DurableSyncQueue` / `NoteSyncStore` / `CloudOutbox`）、抓包样本（`docs/api-req-resp/`）及「开发者模式 - 同步队列」UI 进行全面白盒审计；
+  2. 用户确认审计报告后，授权按方案逐步完成全量修复，并要求保持代码整洁、减少胶水代码。
+- **完成项**：
+  1. **[P0 修复：新建笔记 `pushNote` 空 `data: {}` 闭环与防重复合并 (`lib/services/note_service.dart`)]**：
+     - 适配医考帮 `pushNote` 真实响应 `{"code":"200","message":"请求成功","data":{}}`：当返回 200 但无 `id` 时，自动调用 `_resolveCreatedRemoteId`（请求 `getNote` 按正文和首图匹配最新笔记 ID）并在同一事务内绑定 `Notes.remote_id`（若期间已删除则绑定 `NoteTombstones.remote_id` 并入队 `cleanNote`）；
+     - `syncNotesForQuestion` 拉取时支持按正文认领本地未绑定 `remote_id` 的同内容笔记，消除本地双份重复笔记；
+     - `uploadImage` 补齐 `code == '309'` 登录过期清理与弹窗提示。
+  2. **[P0 修复：离线同步队列错误分级与登录自动唤醒 (`lib/db/durable_sync_queue.dart`, `lib/common/request.dart`, `lib/services/auth_service.dart`)]**：
+     - 区分发包前/无网/鉴权错误（`SocketException`、`HandshakeException`、`309_TOKEN_EXPIRED`）与发包后结果未明的 `uncertain` 错误，避免离线做题和笔记上传在首次网络异常时被直接置为 `paused`；
+     - 新增 `DurableSyncQueue.wakeOnLogin`，登录成功后自动重置当前账号 `pending` 任务的 `next_attempt_at = 0` 并触发 `YkbSyncService` 与 `NoteService` 队列消费。
+  3. **[P1 修复与架构收敛：统一题目元数据解析器、彻底纠正 `chapter_parent_id` 与科目混淆 (`lib/services/ykb_sync_service.dart`, `lib/models/question.dart`, `lib/services/note_service.dart`, `lib/screens/question_detail/question_note_view.dart`)]**：
+     - 在 `YkbSyncService` 中提取 `resolveQuestionMeta`，统一从显式参数、章节/题目对象、用户库 `QuestionRelations` 投影表及题库 `Question`/`IdentityQuestion` 反查 `subjectId`、`chapterId`、`identityId`、`appId`、`chapterParentId`；
+     - 针对医考帮抓包与真实题库核验：彻底厘清外层 `identity_id`（如 20301）、内层 `identity_id`（如 203010 刷题叶子）、内层 `chapter_parent_id`（如 11 层级父章）与内层 `subject_id`（如 20301 科目体系）的关系。纠正了历史代码将 `chapter_parent_id` 错当 `subject_id` 的反向覆盖 Bug，内层严格上报真实父章节 ID；
+     - 修复 `NoteService` 写入 `Question` 兜底行时误将 `meta.subjectId` 存入 `chapter_parent_id` 的历史 Bug；
+     - 删除未使用的死代码 `YkbSyncService.syncRedoChapter`，消除 `_markError` 与 `DurableSyncQueue` 双重递增 `retry_count`；
+     - 将 `QuestionNoteView` 内联重复的 250 行笔记编辑器弹窗统一收敛至 `showNoteEditorSheet`。
+  4. **[P1/P2 修复：斩题、做题、重做去重与拉取批处理优化 (`lib/repositories/question_search_repository.dart`, `lib/services/daily_review_service.dart`, `lib/models/question.dart`, `lib/services/ykb_pull_service.dart`, `lib/services/ykb_bank_smart_sync_service.dart`)]**：
+     - 补齐 `QuestionSearchRepository.setCutQuestion`（「我的 - 已斩题目」取消斩题）与 `DailyReviewService.cutQuestion` / `submitReviewResult`（「每日复习」熟练斩题与做题）向 `YkbSyncService` 的同步调用；
+     - `YkbSyncService.syncAnswer` 对多选题答案执行大写与字母排序规范化，并跳过主观题自评（避免向选择题接口提交“已掌握”）；
+     - `syncCutQuestion` 与 `syncAnswer` 入队时自动替换同题尚未发出的 `pending` 旧任务；`resetQuestionAnswers` 全章节重做时自动删除该章节下尚未发出的 `pending` 作答任务；
+     - `YkbPullService._pullBank` 重构为预取题库映射 + 分批查询用户库 + 单事务 `Batch` 提交，并支持合并远端斩题状态、时间戳与耗时；`YkbBankSmartSyncService` 增量同步题库时自动将远端 `cut_question == '1'` 合并入 `user_data.Question`。
+  5. **[P1/P2 修复：开发者模式「同步队列」UI 对齐 (`lib/screens/developer_page.dart`)]**：
+     - `YkbSyncQueue` 与 `NoteSyncQueue` 增加 `SELECT COUNT(*)` 真实总数统计，列表项展示 `queue_state`（`已暂停` / `发包中` / `退避中` / `待同步`）、下次重试时间与账号归属；
+     - `SyncResponseCache` 支持按 `type:itemId` 精确查询，修复同题不同操作响应码串扰；
+     - 修复 `_showOutboxEntityDialog` 查询 `SpacedReviewItem` 主键列名错误（`id` -> `item_id`），并在 `Activities` 流水中新增 `YkbPull` 与 `ReviewAnswer` 专属徽章。
+  6. **[用户反馈增补：笔记与主观题 Cloudflare D1 同步、每日复习独立同步开关与沙盒孤儿图片清理 (`backend/`, `lib/db/cloud_outbox.dart`, `lib/screens/settings_page.dart`, `lib/services/note_service.dart`)]**：
+     - 服务端 `backend/schema.sql` 与 `backend/src/sync_v2.ts` 新增 `sync_notes`、`sync_deleted_notes`（含运行时 `ensureNotesSchema` 幂等自愈建表），支持 `note` 与 `note_delete` 的批量推送与拉取；
+     - 客户端 `CloudOutbox` 完整实现 `Notes` 增删改触发器、`CloudDeletedNotes` 防复活墓碑、已有笔记自动回填与 `mergePage` LWW 合并；
+     - 主观题/填空题自评（`'已掌握'` / `'未掌握'`）严格拦截不发往医考帮接口，同时通过 `CloudOutbox` 的 `question` 与 `activity` 触发器完整同步至 Cloudflare D1；
+     - 「设置 - 医考帮」新增「每日复习做题同步到医考帮」与「每日复习熟练斩题同步到医考帮」两个独立开关；
+     - `NoteService.saveNote` / `deleteNote` 自动清理 `note_images` 沙盒目录下被移除的孤儿图片。
+- **质量门禁验证**：
+  - `dart analyze lib/ test/`：**No issues found! (0 errors, 0 warnings)**；
+  - 后端测试：`npm run typecheck` (`tsc --noEmit`) 0 errors，`npm test` **14/14 PASS**；
+  - `flutter test --no-pub`：**380 passed, 3 skipped (联网用例), 0 failed**。
+- **未完成项 / 下一次第一步**：
+  - 所有代码与文档修改均保留在本地工作区（严格遵守 `AGENTS.md` 未自动执行 `git commit`）；
+  - 若需在线上 Cloudflare Worker 立即生效 `sync_notes` 表同步，可在 `backend/` 目录执行 `npx wrangler deploy`（`ensureNotesSchema` 会在首次请求时自动在远端 D1 建表，无需手动跑迁移脚本）。
+
+## 前次交接：2026-11-23 Windows 题库下载 TLS 排查、专属 Noto Sans SC 字体打包与 CI 分析修复
+
+- **用户授权与操作目标**：
+  1. 排查 Windows 端「题库管理 → 下载题库」报 `HandshakeException: CERTIFICATE_VERIFY_FAILED: unable to get local issuer certificate` 的原因，验证后将排查方法写入 README；
+  2. 解决 Windows 端 Flutter 默认字体混排粗细不一问题，且不增加 Android APK 体积（仅在 `flutter build windows` 时打包注入 `Noto Sans SC` 400/500/700 三个字重），完成后中文 commit；
+  3. 排查 GitHub Actions `flutter analyze --no-fatal-infos` 失败但本地通过的差异原因；
+  4. 将上述长期记忆与交接信息沉淀到知识库文档。
+- **完成项**：
+  1. **[Windows Gitee TLS 报错定位与文档补充 (`README.md`, `README_EN.md`)]**：
+     - 实测证书链确认 Gitee 使用 `TrustAsia TLS RSA Root CA`（由 `Certum Trusted Network CA` 交叉签发），Windows 根证书采用按需懒加载，而 Dart BoringSSL 仅读取已落盘的 Windows 证书存储区；
+     - 用户在报错 Windows 机器执行 `Invoke-WebRequest -Uri "https://gitee.com" -Method Head` 后重启应用验证下载恢复正常，已将说明与命令写入中英文 README。
+  2. **[Windows 专属字体打包与动态加载 (`windows/fonts/`, `windows/CMakeLists.txt`, `lib/main.dart`, `pubspec.yaml`)]**：
+     - 还原 `pubspec.yaml` 中的全局 `fonts:` 声明，将 `NotoSansSC-{Regular,Medium,Bold}.ttf` 与 `OFL.txt` 移至 `windows/fonts/`，确保 Android / macOS / Linux 安装包 0 字节增量；
+     - `windows/CMakeLists.txt` 增加安装规则，仅在 Windows 构建时复制 `windows/fonts/` 至产物 `data/fonts/`；
+     - `lib/main.dart` 新增 `_loadWindowsFonts()`，仅在 `!kIsWeb && Platform.isWindows` 时通过 `FontLoader('NotoSansSC')` 动态注册 400/500/700 字重，未找到字体时回退 `'Microsoft YaHei UI'`；
+     - 验证 `dart analyze lib/main.dart`（No issues）与 `flutter test test/app_markdown_test.dart`（4/4 PASS），完成中文 commit `f6e780d`。
+  3. **[GitHub Actions 静态分析失败排查闭环]**：
+     - 调取 Actions job `137244025881` 日志定位唯一失败项：`pubspec.yaml` 残留已删除截图的 `assets/images/` 声明（本地因目录内残留 `.DS_Store` 未报错，Git 不保留空目录导致 CI 报 `asset_directory_does_not_exist` warning）；
+     - 用户已在 `f661407` 整理提交并推送 `origin/main`。
+- **未完成项 / 下一次第一步**：
+  - 本次文档更新（`PROJECT_MEMORY.md`、`DEVELOPMENT_STATUS.md`、`SESSION_HANDOFF.md`）保留在本地未提交状态（按规则不自动 `git commit`）；
+  - 下一次第一步：检查 `git status` 并按需提交本次知识库文档更新；在 Windows 真机运行最新构建确认 `Noto Sans SC` 400/500/700 渲染效果，并关注远端 GitHub Actions 四平台构建状态。
+
+## 前次交接：2026-11-19 医不帮单页长滚动官网 (yibubang-web) 从零构建与全量验证
 
 - **用户授权与操作目标**：
   - 检查 `./yibubang-web` 目录结构后，基于最新产品特性（纯净离线与全平台、四大刷题模式、每日计划与记忆闪卡、有依据的 AI 搜索与 53+17 本教材原页直达、学习统计与打卡格子墙、多端同步与数据安全、四大专业题库与动态最新版本号下载）为医不帮打造面向医学生的单页长滚动官网。

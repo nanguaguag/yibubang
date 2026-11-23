@@ -74,9 +74,9 @@ class FlashcardEditDialog extends StatefulWidget {
         builder: (_) => page,
       );
     } else {
-      return Navigator.of(context).push<CustomFlashcard>(
-        MaterialPageRoute(builder: (_) => page),
-      );
+      return Navigator.of(
+        context,
+      ).push<CustomFlashcard>(MaterialPageRoute(builder: (_) => page));
     }
   }
 
@@ -143,7 +143,9 @@ class _FlashcardEditDialogState extends State<FlashcardEditDialog> {
       type: FileType.image,
       allowMultiple: false,
     );
-    if (result == null || result.files.isEmpty || result.files.first.path == null) {
+    if (result == null ||
+        result.files.isEmpty ||
+        result.files.first.path == null) {
       return;
     }
 
@@ -168,14 +170,18 @@ class _FlashcardEditDialogState extends State<FlashcardEditDialog> {
           final newText = text.replaceRange(sel.start, sel.end, imgMarkdown);
           controller.value = TextEditingValue(
             text: newText,
-            selection: TextSelection.collapsed(offset: sel.start + imgMarkdown.length),
+            selection: TextSelection.collapsed(
+              offset: sel.start + imgMarkdown.length,
+            ),
           );
         } else {
-          controller.text = text.isEmpty ? imgMarkdown.trim() : '$text$imgMarkdown';
+          controller.text = text.isEmpty
+              ? imgMarkdown.trim()
+              : '$text$imgMarkdown';
         }
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('图片已成功上传至医考帮官方图床并插入')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('图片已成功上传至医考帮官方图床并插入')));
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('图片上传失败，请确保已登录医考帮账号且网络正常')),
@@ -183,9 +189,9 @@ class _FlashcardEditDialogState extends State<FlashcardEditDialog> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('上传异常: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('上传异常: $e')));
       }
     } finally {
       if (mounted) {
@@ -227,13 +233,17 @@ class _FlashcardEditDialogState extends State<FlashcardEditDialog> {
       for (final t in widget.initialTags!) {
         _addTagsFromString(t);
       }
-    } else if (widget.defaultTag != null && widget.defaultTag!.trim().isNotEmpty) {
+    } else if (widget.defaultTag != null &&
+        widget.defaultTag!.trim().isNotEmpty) {
       _addTagsFromString(widget.defaultTag!);
     }
   }
 
   void _addTagsFromString(String raw) {
-    final parts = raw.split(RegExp(r'[,，\s]+')).map((e) => e.trim()).where((e) => e.isNotEmpty);
+    final parts = raw
+        .split(RegExp(r'[,，\s]+'))
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty);
     for (final tag in parts) {
       if (!_selectedTags.contains(tag)) {
         _selectedTags.add(tag);
@@ -296,15 +306,15 @@ class _FlashcardEditDialogState extends State<FlashcardEditDialog> {
     final backText = _backController.text.trim();
 
     if (frontText.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请输入闪卡正面内容（提问/概念）')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('请输入闪卡正面内容（提问/概念）')));
       return;
     }
     if (backText.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请输入闪卡背面内容（答案/解析）')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('请输入闪卡背面内容（答案/解析）')));
       return;
     }
 
@@ -312,14 +322,17 @@ class _FlashcardEditDialogState extends State<FlashcardEditDialog> {
 
     try {
       final nowMs = DateTime.now().millisecondsSinceEpoch;
-      final cardId = widget.existingCard?.id ??
+      final cardId =
+          widget.existingCard?.id ??
           'fc_${nowMs}_${math.Random().nextInt(9999).toString().padLeft(4, '0')}';
 
       final title = frontText.length > 30
           ? '${frontText.substring(0, 30)}...'
           : frontText;
 
-      final tagsString = _selectedTags.isNotEmpty ? _selectedTags.join(', ') : null;
+      final tagsString = _selectedTags.isNotEmpty
+          ? _selectedTags.join(', ')
+          : null;
 
       final card = CustomFlashcard(
         id: cardId,
@@ -341,19 +354,25 @@ class _FlashcardEditDialogState extends State<FlashcardEditDialog> {
     } catch (e) {
       if (mounted) {
         setState(() => _saving = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('保存闪卡失败: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('保存闪卡失败: $e')));
       }
     }
   }
 
-  Widget _buildBody(BuildContext context, {bool showHeader = true, bool showBottomActions = true}) {
+  Widget _buildBody(
+    BuildContext context, {
+    bool showHeader = true,
+    bool showBottomActions = true,
+  }) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
 
     // 未选中的已有标签候选（排除已选）
-    final candidateTags = _availableTags.where((t) => !_selectedTags.contains(t)).toList();
+    final candidateTags = _availableTags
+        .where((t) => !_selectedTags.contains(t))
+        .toList();
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -369,7 +388,11 @@ class _FlashcardEditDialogState extends State<FlashcardEditDialog> {
                   color: scheme.primaryContainer.withValues(alpha: 0.5),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: Icon(Icons.style_outlined, color: scheme.primary, size: 22),
+                child: Icon(
+                  Icons.style_outlined,
+                  color: scheme.primary,
+                  size: 22,
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -396,7 +419,7 @@ class _FlashcardEditDialogState extends State<FlashcardEditDialog> {
             Icon(Icons.crop_portrait_rounded, size: 16, color: scheme.primary),
             const SizedBox(width: 6),
             Text(
-              '正面 (Front · 问题 / 概念)',
+              '正面',
               style: theme.textTheme.labelMedium?.copyWith(
                 fontWeight: FontWeight.bold,
                 color: scheme.primary,
@@ -408,7 +431,10 @@ class _FlashcardEditDialogState extends State<FlashcardEditDialog> {
                 _previewFront ? Icons.edit_outlined : Icons.visibility_outlined,
                 size: 16,
               ),
-              label: Text(_previewFront ? '编辑' : '预览', style: const TextStyle(fontSize: 12)),
+              label: Text(
+                _previewFront ? '编辑' : '预览',
+                style: const TextStyle(fontSize: 12),
+              ),
               onPressed: () => setState(() => _previewFront = !_previewFront),
             ),
             const SizedBox(width: 4),
@@ -436,7 +462,9 @@ class _FlashcardEditDialogState extends State<FlashcardEditDialog> {
             decoration: BoxDecoration(
               color: scheme.surfaceContainerHighest.withValues(alpha: 0.25),
               borderRadius: BorderRadius.circular(AppShapes.medium),
-              border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.4)),
+              border: Border.all(
+                color: scheme.outlineVariant.withValues(alpha: 0.4),
+              ),
             ),
             child: _frontController.text.trim().isEmpty
                 ? Text(
@@ -455,12 +483,17 @@ class _FlashcardEditDialogState extends State<FlashcardEditDialog> {
             maxLines: 4,
             decoration: InputDecoration(
               hintText: '写下正面需要回忆或测试的知识点、题干或概念...',
-              hintStyle: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant.withValues(alpha: 0.6)),
+              hintStyle: TextStyle(
+                fontSize: 13,
+                color: scheme.onSurfaceVariant.withValues(alpha: 0.6),
+              ),
               filled: true,
               fillColor: scheme.surfaceContainerHighest.withValues(alpha: 0.35),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(AppShapes.medium),
-                borderSide: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.4)),
+                borderSide: BorderSide(
+                  color: scheme.outlineVariant.withValues(alpha: 0.4),
+                ),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(AppShapes.medium),
@@ -476,7 +509,7 @@ class _FlashcardEditDialogState extends State<FlashcardEditDialog> {
             Icon(Icons.flip_to_back_rounded, size: 16, color: scheme.secondary),
             const SizedBox(width: 6),
             Text(
-              '背面 (Back · 答案 / 解析 / 重点总结)',
+              '背面',
               style: theme.textTheme.labelMedium?.copyWith(
                 fontWeight: FontWeight.bold,
                 color: scheme.secondary,
@@ -488,7 +521,10 @@ class _FlashcardEditDialogState extends State<FlashcardEditDialog> {
                 _previewBack ? Icons.edit_outlined : Icons.visibility_outlined,
                 size: 16,
               ),
-              label: Text(_previewBack ? '编辑' : '预览', style: const TextStyle(fontSize: 12)),
+              label: Text(
+                _previewBack ? '编辑' : '预览',
+                style: const TextStyle(fontSize: 12),
+              ),
               onPressed: () => setState(() => _previewBack = !_previewBack),
             ),
             const SizedBox(width: 4),
@@ -507,28 +543,42 @@ class _FlashcardEditDialogState extends State<FlashcardEditDialog> {
             ),
           ],
         ),
-        if ((widget.restoreText != null && widget.restoreText!.trim().isNotEmpty) ||
-            (widget.explainText != null && widget.explainText!.trim().isNotEmpty)) ...[
+        if ((widget.restoreText != null &&
+                widget.restoreText!.trim().isNotEmpty) ||
+            (widget.explainText != null &&
+                widget.explainText!.trim().isNotEmpty)) ...[
           const SizedBox(height: 6),
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
               children: [
-                if (widget.restoreText != null && widget.restoreText!.trim().isNotEmpty) ...[
+                if (widget.restoreText != null &&
+                    widget.restoreText!.trim().isNotEmpty) ...[
                   ActionChip(
-                    avatar: Icon(Icons.auto_awesome, size: 14, color: scheme.primary),
+                    avatar: Icon(
+                      Icons.auto_awesome,
+                      size: 14,
+                      color: scheme.primary,
+                    ),
                     label: const Text('引用考点还原', style: TextStyle(fontSize: 12)),
                     visualDensity: VisualDensity.compact,
-                    onPressed: () => _appendOrSetBack('考点还原', widget.restoreText!),
+                    onPressed: () =>
+                        _appendOrSetBack('考点还原', widget.restoreText!),
                   ),
                   const SizedBox(width: 8),
                 ],
-                if (widget.explainText != null && widget.explainText!.trim().isNotEmpty) ...[
+                if (widget.explainText != null &&
+                    widget.explainText!.trim().isNotEmpty) ...[
                   ActionChip(
-                    avatar: Icon(Icons.lightbulb_outline, size: 14, color: scheme.secondary),
+                    avatar: Icon(
+                      Icons.lightbulb_outline,
+                      size: 14,
+                      color: scheme.secondary,
+                    ),
                     label: const Text('引用答案解析', style: TextStyle(fontSize: 12)),
                     visualDensity: VisualDensity.compact,
-                    onPressed: () => _appendOrSetBack('答案解析', widget.explainText!),
+                    onPressed: () =>
+                        _appendOrSetBack('答案解析', widget.explainText!),
                   ),
                 ],
               ],
@@ -544,7 +594,9 @@ class _FlashcardEditDialogState extends State<FlashcardEditDialog> {
             decoration: BoxDecoration(
               color: scheme.secondaryContainer.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(AppShapes.medium),
-              border: Border.all(color: scheme.secondary.withValues(alpha: 0.3)),
+              border: Border.all(
+                color: scheme.secondary.withValues(alpha: 0.3),
+              ),
             ),
             child: _backController.text.trim().isEmpty
                 ? Text(
@@ -563,12 +615,17 @@ class _FlashcardEditDialogState extends State<FlashcardEditDialog> {
             maxLines: 12,
             decoration: InputDecoration(
               hintText: '写下背面参考答案、核心记忆秘诀、精炼总结...',
-              hintStyle: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant.withValues(alpha: 0.6)),
+              hintStyle: TextStyle(
+                fontSize: 13,
+                color: scheme.onSurfaceVariant.withValues(alpha: 0.6),
+              ),
               filled: true,
               fillColor: scheme.surfaceContainerHighest.withValues(alpha: 0.35),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(AppShapes.medium),
-                borderSide: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.4)),
+                borderSide: BorderSide(
+                  color: scheme.outlineVariant.withValues(alpha: 0.4),
+                ),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(AppShapes.medium),
@@ -581,7 +638,11 @@ class _FlashcardEditDialogState extends State<FlashcardEditDialog> {
         // 标签管理（已选标签 Chips + 快速选取已有标签 + 自定义输入）
         Row(
           children: [
-            Icon(Icons.label_outline_rounded, size: 16, color: scheme.onSurfaceVariant),
+            Icon(
+              Icons.label_outline_rounded,
+              size: 16,
+              color: scheme.onSurfaceVariant,
+            ),
             const SizedBox(width: 6),
             Text(
               '标签分类 (点击可删除或添加)',
@@ -608,7 +669,9 @@ class _FlashcardEditDialogState extends State<FlashcardEditDialog> {
                   });
                 },
                 visualDensity: VisualDensity.compact,
-                backgroundColor: scheme.secondaryContainer.withValues(alpha: 0.4),
+                backgroundColor: scheme.secondaryContainer.withValues(
+                  alpha: 0.4,
+                ),
               );
             }).toList(),
           ),
@@ -625,7 +688,10 @@ class _FlashcardEditDialogState extends State<FlashcardEditDialog> {
                 children: [
                   Text(
                     '常用标签: ',
-                    style: TextStyle(fontSize: 11.5, color: scheme.onSurfaceVariant.withValues(alpha: 0.7)),
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
+                    ),
                   ),
                   const SizedBox(width: 4),
                   ...candidateTags.take(8).map((tag) {
@@ -633,7 +699,10 @@ class _FlashcardEditDialogState extends State<FlashcardEditDialog> {
                       padding: const EdgeInsets.only(right: 6),
                       child: ActionChip(
                         avatar: const Icon(Icons.add_rounded, size: 13),
-                        label: Text(tag, style: const TextStyle(fontSize: 11.5)),
+                        label: Text(
+                          tag,
+                          style: const TextStyle(fontSize: 11.5),
+                        ),
                         visualDensity: VisualDensity.compact,
                         materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         //padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -658,8 +727,15 @@ class _FlashcardEditDialogState extends State<FlashcardEditDialog> {
             controller: _tagInputController,
             decoration: InputDecoration(
               hintText: '输入新标签，多个用逗号隔开',
-              hintStyle: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant.withValues(alpha: 0.6)),
-              prefixIcon: Icon(Icons.style_outlined, size: 20, color: scheme.primary),
+              hintStyle: TextStyle(
+                fontSize: 13,
+                color: scheme.onSurfaceVariant.withValues(alpha: 0.6),
+              ),
+              prefixIcon: Icon(
+                Icons.style_outlined,
+                size: 20,
+                color: scheme.primary,
+              ),
               suffixIcon: IconButton(
                 icon: const Icon(Icons.add_circle_outline_rounded, size: 20),
                 tooltip: '添加标签',
@@ -668,10 +744,15 @@ class _FlashcardEditDialogState extends State<FlashcardEditDialog> {
               ),
               filled: true,
               fillColor: scheme.surfaceContainerHighest.withValues(alpha: 0.25),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 12,
+              ),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(AppShapes.medium),
-                borderSide: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.4)),
+                borderSide: BorderSide(
+                  color: scheme.outlineVariant.withValues(alpha: 0.4),
+                ),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(AppShapes.medium),
@@ -713,17 +794,25 @@ class _FlashcardEditDialogState extends State<FlashcardEditDialog> {
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(AppShapes.medium),
                   ),
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 12,
+                  ),
                 ),
                 icon: _saving
                     ? const SizedBox(
                         width: 16,
                         height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
                       )
                     : const Icon(Icons.check_rounded, size: 18),
                 label: Text(
-                  _saving ? '正在保存...' : (widget.existingCard == null ? '保存并入库' : '保存修改'),
+                  _saving
+                      ? '正在保存...'
+                      : (widget.existingCard == null ? '保存并入库' : '保存修改'),
                   style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
                 onPressed: _saving ? null : _handleSave,
@@ -759,7 +848,9 @@ class _FlashcardEditDialogState extends State<FlashcardEditDialog> {
                     height: 4,
                     margin: const EdgeInsets.symmetric(vertical: 8),
                     decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -777,7 +868,9 @@ class _FlashcardEditDialogState extends State<FlashcardEditDialog> {
       appBar: AppBar(
         title: Text(widget.dialogTitle),
         leading: IconButton(
-          icon: Icon(isDesktop ? Icons.close_rounded : Icons.arrow_back_rounded),
+          icon: Icon(
+            isDesktop ? Icons.close_rounded : Icons.arrow_back_rounded,
+          ),
           onPressed: () => Navigator.of(context).pop(),
         ),
         actions: [
@@ -800,7 +893,9 @@ class _FlashcardEditDialogState extends State<FlashcardEditDialog> {
           color: Theme.of(context).colorScheme.surface,
           border: Border(
             top: BorderSide(
-              color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.35),
+              color: Theme.of(
+                context,
+              ).colorScheme.outlineVariant.withValues(alpha: 0.35),
             ),
           ),
         ),
@@ -819,17 +914,25 @@ class _FlashcardEditDialogState extends State<FlashcardEditDialog> {
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(AppShapes.medium),
                   ),
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 12,
+                  ),
                 ),
                 icon: _saving
                     ? const SizedBox(
                         width: 16,
                         height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
                       )
                     : const Icon(Icons.check_rounded, size: 18),
                 label: Text(
-                  _saving ? '正在保存...' : (widget.existingCard == null ? '保存并入库' : '保存修改'),
+                  _saving
+                      ? '正在保存...'
+                      : (widget.existingCard == null ? '保存并入库' : '保存修改'),
                   style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
                 onPressed: _saving ? null : _handleSave,

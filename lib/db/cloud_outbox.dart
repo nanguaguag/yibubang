@@ -143,6 +143,43 @@ class CloudOutbox {
         END''',
       );
     }
+    final noteCols = (await db.rawQuery("PRAGMA table_info('Notes')"))
+        .map((r) => r['name'] as String)
+        .toSet();
+    if (noteCols.isNotEmpty) {
+      final noteUpdatedAtExpr = noteCols.contains('updated_at')
+          ? 'NEW.updated_at'
+          : (noteCols.contains('timestamp') ? 'NEW.timestamp' : '0');
+      for (final event in ['INSERT', 'UPDATE']) {
+        await db.execute(
+          '''CREATE TRIGGER IF NOT EXISTS cloud_note_${event.toLowerCase()}
+          AFTER $event ON Notes
+          WHEN (SELECT applying FROM CloudSyncContext WHERE id=1)=0
+          BEGIN
+            DELETE FROM CloudOutbox WHERE kind='note' AND entity_id=NEW.id AND owner=(SELECT owner FROM CloudSyncContext WHERE id=1);
+            INSERT INTO CloudOutbox(owner, kind, entity_id, updated_at)
+            SELECT owner, 'note', NEW.id, $noteUpdatedAtExpr FROM CloudSyncContext WHERE id=1;
+          END''',
+        );
+      }
+      await db.execute(
+        'CREATE TABLE IF NOT EXISTS CloudDeletedNotes(id TEXT PRIMARY KEY)',
+      );
+      await db.execute(
+        """CREATE TRIGGER IF NOT EXISTS cloud_note_no_resurrection BEFORE INSERT ON Notes
+        WHEN (SELECT applying FROM CloudSyncContext WHERE id=1)=1 AND EXISTS(SELECT 1 FROM CloudDeletedNotes WHERE id=NEW.id)
+        BEGIN SELECT RAISE(IGNORE); END""",
+      );
+      await db.execute(
+        """CREATE TRIGGER IF NOT EXISTS cloud_note_delete AFTER DELETE ON Notes
+        BEGIN
+          INSERT OR IGNORE INTO CloudDeletedNotes(id) VALUES(OLD.id);
+          DELETE FROM CloudOutbox WHERE kind='note' AND entity_id=OLD.id;
+          INSERT INTO CloudOutbox(owner,kind,entity_id)
+            SELECT owner,'note_delete',OLD.id FROM CloudSyncContext WHERE id=1 AND applying=0;
+        END""",
+      );
+    }
   }
 
   static Future<void> bind(Database db, String owner) => db.transaction((
@@ -154,6 +191,13 @@ class CloudOutbox {
       'CloudSyncAccounts',
       where: 'owner=?',
       whereArgs: [owner],
+    );
+    // 增量补齐本地已有但尚未进入过 Outbox 的笔记（兼容老版本已绑定账号升级后首次同步笔记）
+    await tx.rawInsert(
+      '''INSERT INTO CloudOutbox(owner, kind, entity_id, updated_at)
+      SELECT ?, 'note', id, updated_at FROM Notes n
+      WHERE NOT EXISTS (SELECT 1 FROM CloudOutbox o WHERE o.owner=? AND o.kind='note' AND o.entity_id=n.id)''',
+      [owner, owner],
     );
     if (known.isNotEmpty) return;
     final names = fields.keys.join(', ');
@@ -233,8 +277,17 @@ class CloudOutbox {
         if (mask & field.value != 0) payload[field.key] = row[field.key];
       }
       payload['updated_at'] = row['updated_at'];
-    } else if (row['kind'] == 'activity_delete' || row['kind'] == 'flashcard_delete') {
+    } else if (row['kind'] == 'activity_delete' ||
+        row['kind'] == 'flashcard_delete' ||
+        row['kind'] == 'note_delete') {
       // 不可变实体ID的删除意图无需读取已删除实体。
+    } else if (row['kind'] == 'note') {
+      final rows = await db.query(
+        'Notes',
+        where: 'id=?',
+        whereArgs: [row['entity_id']],
+      );
+      if (rows.isNotEmpty) payload.addAll(rows.single);
     } else if (row['kind'] == 'flashcard') {
       final rows = await db.query(
         'CustomFlashcards',
@@ -403,6 +456,62 @@ class CloudOutbox {
         await tx.insert(
           'ReviewPlans',
           plan,
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+      for (final id in (data['pull_deleted_notes'] as List? ?? const [])) {
+        if (id is! String || id.isEmpty) continue;
+        await tx.insert(
+          'CloudDeletedNotes',
+          {'id': id},
+          conflictAlgorithm: ConflictAlgorithm.ignore,
+        );
+        await tx.delete(
+          'CloudOutbox',
+          where: "kind='note' AND entity_id=?",
+          whereArgs: [id],
+        );
+        await tx.delete('Notes', where: 'id=?', whereArgs: [id]);
+      }
+      for (final value in (data['pull_notes'] as List? ?? const [])) {
+        final note = Map<String, dynamic>.from(value as Map);
+        final noteId = note['id']?.toString();
+        final qId = note['question_id']?.toString();
+        if (noteId == null || noteId.isEmpty || qId == null || qId.isEmpty) {
+          continue;
+        }
+        await tx.insert(
+          'Question',
+          {'id': qId, 'chapter_id': '', 'chapter_parent_id': ''},
+          conflictAlgorithm: ConflictAlgorithm.ignore,
+        );
+        final localRows = await tx.query(
+          'Notes',
+          columns: ['updated_at', 'sync_status', 'remote_id'],
+          where: 'id=?',
+          whereArgs: [noteId],
+          limit: 1,
+        );
+        final remoteUpdated = (note['updated_at'] as num?)?.toInt() ?? 0;
+        if (localRows.isNotEmpty) {
+          final localUpdated =
+              (localRows.first['updated_at'] as num?)?.toInt() ?? 0;
+          if (localUpdated > remoteUpdated) continue;
+        }
+        await tx.insert(
+          'Notes',
+          {
+            'id': noteId,
+            'remote_id':
+                note['remote_id'] ??
+                (localRows.isEmpty ? null : localRows.first['remote_id']),
+            'question_id': qId,
+            'content': note['content']?.toString() ?? '',
+            'imgs': note['imgs']?.toString() ?? '[]',
+            'timestamp': (note['timestamp'] as num?)?.toInt() ?? remoteUpdated,
+            'updated_at': remoteUpdated,
+            'sync_status': 0,
+          },
           conflictAlgorithm: ConflictAlgorithm.replace,
         );
       }

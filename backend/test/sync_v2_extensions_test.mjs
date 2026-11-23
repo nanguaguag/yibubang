@@ -129,6 +129,69 @@ test('D1 增量扩展：卡片、记忆曲线与复习计划成功 push 并通�
   assert.equal(page.pull_review_plans[0].daily_new_target, 30);
 });
 
+test('D1 增量扩展：笔记 (note / note_delete) 与主观题自评状态双向同步与防复活', async () => {
+  const { wrapper } = createTestDatabase();
+  const userId = 'u_test_notes';
+  const deviceId = 'd_device_notes';
+  const stream = 'abcdef0123456789abcdef0123456789';
+  const now = Date.now();
+
+  const accepted = await pushMutations(wrapper, userId, deviceId, [
+    {
+      seq: 1,
+      stream,
+      kind: 'question',
+      id: 'q_subj_1',
+      payload: {
+        chapter_id: 'ch_1',
+        chapter_parent_id: 'sub_1',
+        user_answer: '已掌握',
+        status: 1,
+        updated_at: now,
+      }
+    },
+    {
+      seq: 2,
+      stream,
+      kind: 'note',
+      id: 'local_note_1',
+      payload: {
+        remote_id: '1346299',
+        question_id: 'q_subj_1',
+        content: '前馈调节的作用是防止负反馈矫枉过正',
+        imgs: JSON.stringify([{ b_img: 'https://img.example/1.jpg', s_img: 'https://img.example/1_s.jpg' }]),
+        timestamp: now,
+        updated_at: now,
+      }
+    }
+  ], now);
+  assert.deepEqual(accepted, [1, 2]);
+
+  let page = await pullChanges(wrapper, userId, 0);
+  assert.equal(page.pull_questions.length, 1);
+  assert.equal(page.pull_questions[0].user_answer, '已掌握');
+  assert.equal(page.pull_questions[0].status, 1);
+  assert.equal(page.pull_notes.length, 1);
+  assert.equal(page.pull_notes[0].id, 'local_note_1');
+  assert.equal(page.pull_notes[0].remote_id, '1346299');
+  assert.equal(page.pull_notes[0].content, '前馈调节的作用是防止负反馈矫枉过正');
+
+  // 删除笔记
+  await pushMutations(wrapper, userId, deviceId, [
+    {
+      seq: 3,
+      stream,
+      kind: 'note_delete',
+      id: 'local_note_1',
+      payload: {}
+    }
+  ], now + 20);
+
+  page = await pullChanges(wrapper, userId, 0);
+  assert.equal(page.pull_notes.length, 0);
+  assert.deepEqual(page.pull_deleted_notes, ['local_note_1']);
+});
+
 test('D1 增量扩展：卡片删除墓碑防复活', async () => {
   const { wrapper } = createTestDatabase();
   const userId = 'u_test_del';

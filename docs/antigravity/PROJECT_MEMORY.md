@@ -17,5 +17,8 @@
 - D1 同步性能与参数限制：Cloudflare D1 单条 SQL 绑定参数硬上限为 **100**（非普通 SQLite 的 999）；大批量上传须使用多行合并 `ON CONFLICT DO UPDATE` + 并发查重 + `push_only` 跳过中间 Pull + GZip（>16KB 自动压缩）；客户端在遇到 500/超时时自动缩减单批上限（500 -> 150 -> 50）。
 - 卡片图片与 Markdown 渲染契约：卡片与每日复习统一复用 `AppMarkdown`；Markdown 图片统一居中显示且占位尺寸固定（200×140），防止加载后跳变，点击直达 `FullScreenImageView`；图片上传直连医考帮官方图床。
 - 教材页图存储与 24 小时会话签名契约：Cloudflare R2 免费额度（10 GB/月）按**全账号**所有桶合计（含 `yibubang-textbooks` 与 `yibubang-user-backups`），新增教材须先本地核算总容量再上传；`textbooks.melonhu.com` Worker 支持 24 小时会话级 HMAC 令牌（`scope=session`），App 本地持久化后直连下载，遇 403 自动静默续签（仍保留单页签名向后兼容）；未备案域名无法使用国内七牛桶，海外七牛实测慢于 CF 直连。
+- Windows 专属 UI 字体打包契约：严禁在 `pubspec.yaml` 中直接声明大型中文字体（会导致 Android/macOS/Linux 安装包体积无谓膨胀）。`Noto Sans SC`（400/500/700）存放在 `windows/fonts/`，由 `windows/CMakeLists.txt` 仅在 Windows 构建时复制到 `data/fonts/`，并在 `lib/main.dart` 的 `_loadWindowsFonts()` 中仅当 `Platform.isWindows` 时通过 `FontLoader` 动态加载（缺失时回退 `'Microsoft YaHei UI'`）；其他平台保持系统原生字体。
+- Windows Gitee TLS 证书懒加载踩坑：Gitee 证书链依赖 `TrustAsia TLS RSA Root CA`（由 `Certum Trusted Network CA` 交叉签发）。Windows 采用根证书按需懒加载，而 Dart BoringSSL 仅读取本机已落盘的 Windows 证书存储区；若机器未通过原生应用（Edge/PowerShell）访问过相关站点，下载题库会报 `CERTIFICATE_VERIFY_FAILED: unable to get local issuer certificate`。排查指引已写入 `README.md` / `README_EN.md`。
+- CI 静态分析空资源目录踩坑：`flutter analyze --no-fatal-infos` 只忽略 `info`、不忽略 `warning`。若 `pubspec.yaml` 声明的资产目录在 Git 中已无已跟踪文件（本地可能因 `.DS_Store` 残留而本地不报错），CI 检出后会因空目录不存在触发 `asset_directory_does_not_exist` warning 并导致构建失败。
 
 版本、数量、部署与验证更新[开发状态](DEVELOPMENT_STATUS.md)；代理工作规则见[AGENT_RULES](AGENT_RULES.md)。

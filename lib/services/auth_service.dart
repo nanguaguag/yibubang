@@ -6,6 +6,8 @@ import '../common/platform_adaptive.dart';
 import '../common/request.dart';
 import '../main.dart';
 import '../screens/my_page.dart';
+import 'note_service.dart';
+import 'ykb_sync_service.dart';
 
 /// 账号自检结果
 class AuthCheckResult {
@@ -167,6 +169,8 @@ class AuthService {
                     onLoggedIn: () {
                       // 登录成功后重新触发自检与队列
                       checkTokenValidity(promptRelogin: false);
+                      unawaited(YkbSyncService.instance.processQueue());
+                      unawaited(NoteService.instance.processQueue());
                     },
                   ),
                 );

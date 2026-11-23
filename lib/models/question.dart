@@ -125,6 +125,7 @@ class Question {
   String userAnswer; // 用户答案
 
   Question({
+    this.sourceBankId,
     required this.id,
     this.year,
     this.unit,
@@ -696,6 +697,19 @@ Future<int> resetQuestionAnswers({
       }
       if (changed > 0) {
         if (redoTask != null) {
+          final owner = redoTask['owner_user_id']?.toString() ?? '';
+          for (var i = 0; i < ids.length; i += 500) {
+            final chunk = ids.sublist(
+              i,
+              i + 500 < ids.length ? i + 500 : ids.length,
+            );
+            await tx.delete(
+              'YkbSyncQueue',
+              where:
+                  "owner_user_id = ? AND type = 'answer' AND queue_state = 'pending' AND item_id IN (${List.filled(chunk.length, '?').join(',')})",
+              whereArgs: [owner, ...chunk],
+            );
+          }
           await DurableSyncQueue.enqueue(
             'YkbSyncQueue',
             redoTask,

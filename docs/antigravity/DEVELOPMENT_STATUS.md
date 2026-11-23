@@ -1,5 +1,49 @@
 # 当前开发状态
 
+## 2026-11-23 医不帮 ↔ 医考帮官方双向同步深度审计与全链路修复（完成）
+
+1. **新建笔记 `pushNote` 空 `data: {}` 闭环与防重认领 ([lib/services/note_service.dart](../../lib/services/note_service.dart))**：
+   - 修复医考帮 `POST /allQuestion/Note/pushNote` 返回 `{"code":"200","data":{}}` 不含笔记 ID 时被误判为 `protocol_error` 导致队列永久 `paused` 的 P0 缺陷：上传成功后自动回查 `getNote` 按正文与首图精确绑定远端分配的 `remote_id`；
+   - `syncNotesForQuestion` 拉取合并时支持认领本地尚未绑定 `remote_id` 但正文一致的笔记，杜绝产生双份重复笔记；
+   - `uploadImage` 补齐 `code == '309'` 登录失效守护与重登弹窗通知。
+2. **离线队列错误分级与重登自动唤醒 ([lib/db/durable_sync_queue.dart](../../lib/db/durable_sync_queue.dart) / [lib/common/request.dart](../../lib/common/request.dart) / [lib/services/auth_service.dart](../../lib/services/auth_service.dart))**：
+   - 区分客户端发包前/无网异常（`SocketException`、`HandshakeException`、`309_TOKEN_EXPIRED`）与服务端结果未明的 `uncertain` 异常，离线做题或写笔记不再被首次网络失败直接锁死为 `paused`；
+   - 新增 `DurableSyncQueue.wakeOnLogin`，登录成功后立即清零当前账号 `pending` 任务的退避等待时间并拉起 `YkbSyncService` 与 `NoteService` 队列。
+3. **统一题目同步元数据解析与消除胶水代码 ([lib/services/ykb_sync_service.dart](../../lib/services/ykb_sync_service.dart) / [lib/screens/question_detail/question_note_view.dart](../../lib/screens/question_detail/question_note_view.dart))**：
+   - 封装 `YkbSyncService.resolveQuestionMeta`，统一按「显式参数 → 章节/题目实体 → 用户库 `QuestionRelations` 投影 → 题库 `Question`/`IdentityQuestion` → 全局偏好」解析 `subjectId`、`chapterId`、`identityId` 与 `appId`，解决从「我的笔记 / 笔记详情 / 已斩题目 / 每日复习」操作时缺失科目与身份 ID 的问题；
+   - 移除 `YkbSyncService.syncRedoChapter` 死代码与 `_markError` 双重递增 `retry_count`；合并 `QuestionNoteView` 中重复的 250 行笔记编辑器弹窗至共享组件 `showNoteEditorSheet`。
+4. **斩题、做题、重做与拉取双向链路补齐 ([lib/repositories/question_search_repository.dart](../../lib/repositories/question_search_repository.dart) / [lib/services/daily_review_service.dart](../../lib/services/daily_review_service.dart) / [lib/models/question.dart](../../lib/models/question.dart) / [lib/services/ykb_pull_service.dart](../../lib/services/ykb_pull_service.dart) / [lib/services/ykb_bank_smart_sync_service.dart](../../lib/services/ykb_bank_smart_sync_service.dart))**：
+   - 补齐「我的 - 已斩题目」取消斩题与「每日复习」熟练斩题/带选项作答向医考帮的同步调用；
+   - `syncAnswer` 自动对多选题答案字母排序，并过滤非选择题/主观题自评（避免向官方选择题接口发送“已掌握”）；
+   - `syncCutQuestion` / `syncAnswer` 入队时自动折叠同题未发送的旧 `pending` 任务；`resetQuestionAnswers` 全章节重做时自动清理该章节未发送的旧 `answer` 任务；
+   - `YkbPullService` 重构为预取题库映射 + 单事务 `Batch` 批量合并（消除逐题 N+1 查询），支持解析远端时间戳、耗时与斩题状态；`YkbBankSmartSyncService` 增量同步题库时将远端已斩状态（`cut_question == '1'`）安全合并入用户库 `Question` 表。
+5. **开发者模式「同步队列」监控对齐 ([lib/screens/developer_page.dart](../../lib/screens/developer_page.dart))**：
+   - `YkbSyncQueue` 与 `NoteSyncQueue` 补齐 `SELECT COUNT(*)` 真实总数统计，列表直观展示 `queue_state`（`pending`/`sending`/`paused`）、下次重试时间与归属账号；
+   - `SyncResponseCache` 支持按 `type:itemId` 复合键精确索引，消除同题不同操作响应码串扰；
+   - 修复 `_showOutboxEntityDialog` 查询 `SpacedReviewItem` 的主键列名（`item_id`），并在 `Activities` 流水中新增 `YkbPull` 与 `ReviewAnswer` 专属类型徽章。
+6. **笔记与主观题自评纳入 Cloudflare D1 增量同步及每日复习医考帮同步独立开关 ([backend/schema.sql](../../backend/schema.sql) / [backend/src/sync_v2.ts](../../backend/src/sync_v2.ts) / [lib/db/cloud_outbox.dart](../../lib/db/cloud_outbox.dart) / [lib/screens/settings_page.dart](../../lib/screens/settings_page.dart))**：
+   - 服务端 `schema.sql` 与 `sync_v2.ts` 新增 `sync_notes`、`sync_deleted_notes` 及 `ensureNotesSchema` 自动建表，支持 `note` / `note_delete` 的批量 `pushMutations` 与 `pullChanges`；
+   - 客户端 `CloudOutbox` 新增 `cloud_note_insert/update/delete`、`cloud_note_no_resurrection` 触发器与 `CloudDeletedNotes` 墓碑，支持历史笔记自动回填与远端笔记 LWW 合并；
+   - 主观题自评（`'已掌握'` / `'未掌握'`）严格保留在本地与 Cloudflare D1 同步，绝不发往医考帮官方接口；
+   - 「设置 - 医考帮」新增「每日复习做题同步到医考帮」与「每日复习熟练斩题同步到医考帮」两个独立开关；
+   - `NoteService` 在笔记编辑移除图片或删除笔记时自动清理沙盒 `note_images` 孤儿图片。
+7. **质量门禁**：
+   - `dart analyze lib/ test/`：0 issues；
+   - 后端测试：`tsc --noEmit` 0 errors，14/14 项全部 PASS；
+   - `flutter test`：380 passed, 3 skipped (联网用例), 0 failed。
+
+## 2026-11-23 Windows 专属字体打包与证书/CI 排查闭环（完成）
+
+1. **Windows Gitee 题库下载 TLS 报错定位与文档化 (`README.md` / `README_EN.md`)**：
+   - 定位 `unable to get local issuer certificate` 根因为 Gitee 证书链（`TrustAsia TLS RSA Root CA` ← `Certum Trusted Network CA`）与 Windows 根证书懒加载 + Dart BoringSSL 仅读已落盘存储区之间的差异；
+   - 用户 Windows 实测执行 `Invoke-WebRequest -Uri "https://gitee.com" -Method Head` 后恢复下载，已将排查方法写入中英文 README。
+2. **Windows 专属 Noto Sans SC 字体按平台打包与动态加载 (`windows/fonts/` / `windows/CMakeLists.txt` / `lib/main.dart`)**：
+   - 避免在 `pubspec.yaml` 全局声明 30 MB 字体导致 Android APK 体积膨胀，改为仅在 Windows 构建时通过 CMake 复制 `NotoSansSC-{Regular,Medium,Bold}.ttf` 至 `data/fonts/`；
+   - `lib/main.dart` 新增 `_loadWindowsFonts()`，仅在 Windows 启动时通过 `FontLoader` 动态注册，缺失时回退 `'Microsoft YaHei UI'`；其他平台保持 0 字节增量；
+   - `dart analyze lib/main.dart` 0 issues，`flutter test test/app_markdown_test.dart` 4/4 PASS；已提交 `f6e780d` 并与 `f661407` 一并推送至 `origin/main`。
+3. **GitHub Actions `flutter analyze --no-fatal-infos` 失败排查闭环**：
+   - 定位 CI 失败原因为 `pubspec.yaml` 残留已清空的 `assets/images/` 声明（本地因 `.DS_Store` 存在而未复现，CI 触发 `asset_directory_does_not_exist` warning），已在 `f661407` 清理。
+
 ## 2026-11-18 口腔教材并入知识库（70 本）与 24 小时会话级页图签名上线（完成）
 
 1. **17 本口腔教材提取与语料入库 (`scripts/knowledge_base/textbooks.py` / `config.json`)**：

@@ -49,13 +49,14 @@ Widget buildNoteThumbnail(NoteImage img, double width, double height) {
 /// 弹出笔记创建 / 编辑 BottomSheet
 Future<void> showNoteEditorSheet(
   BuildContext context, {
+  String? initialContent,
   QuestionNote? existingNote,
   String? defaultQuestionId,
   Question? question,
   VoidCallback? onSaved,
 }) async {
   final textController = TextEditingController(
-    text: existingNote?.content ?? '',
+    text: existingNote?.content ?? initialContent ?? '',
   );
   final List<NoteImage> images = List.from(existingNote?.images ?? []);
 

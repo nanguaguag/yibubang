@@ -2,12 +2,31 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:sqflite/sqflite.dart';
 
 import '../common/request.dart';
 import '../db/database_helper.dart';
 import '../db/durable_sync_queue.dart';
+import '../db/question_bank_manager.dart';
 import '../models/chapter.dart';
 import '../models/question.dart';
+
+/// 题目同步上下文元数据（统一解析 subjectId / chapterId / identityId / appId）
+class QuestionSyncMeta {
+  final String subjectId;
+  final String chapterId;
+  final String identityId;
+  final String appId;
+  final String chapterParentId;
+
+  const QuestionSyncMeta({
+    required this.subjectId,
+    required this.chapterId,
+    required this.identityId,
+    required this.appId,
+    required this.chapterParentId,
+  });
+}
 
 /// 医考帮同步队列单项
 class YkbSyncQueueItem {
@@ -106,8 +125,11 @@ class SyncResponseCache {
   SyncResponseCache._internal();
 
   final Map<String, SyncResponseRecord> _byQueueId = {};
+  final Map<String, SyncResponseRecord> _byTypedItem = {};
   final Map<String, SyncResponseRecord> _byItemId = {};
   final List<SyncResponseRecord> _history = [];
+
+  static String _typedKey(String type, String itemId) => '$type:$itemId';
 
   void record({
     required String queueId,
@@ -131,6 +153,7 @@ class SyncResponseCache {
     _byQueueId[queueId] = item;
     if (itemId != null && itemId.isNotEmpty) {
       _byItemId[itemId] = item;
+      _byTypedItem[_typedKey(type, itemId)] = item;
     }
     _history.insert(0, item);
     if (_history.length > 200) {
@@ -138,8 +161,14 @@ class SyncResponseCache {
       if (_byQueueId[removed.queueId] == removed) {
         _byQueueId.remove(removed.queueId);
       }
-      if (removed.itemId != null && _byItemId[removed.itemId] == removed) {
-        _byItemId.remove(removed.itemId);
+      if (removed.itemId != null) {
+        if (_byItemId[removed.itemId] == removed) {
+          _byItemId.remove(removed.itemId);
+        }
+        final tKey = _typedKey(removed.type, removed.itemId!);
+        if (_byTypedItem[tKey] == removed) {
+          _byTypedItem.remove(tKey);
+        }
       }
     }
   }
@@ -149,8 +178,11 @@ class SyncResponseCache {
     return _byQueueId[queueId];
   }
 
-  SyncResponseRecord? getByItemId(String? itemId) {
-    if (itemId == null) return null;
+  SyncResponseRecord? getByItemId(String? itemId, {String? type}) {
+    if (itemId == null || itemId.isEmpty) return null;
+    if (type != null && type.isNotEmpty) {
+      return _byTypedItem[_typedKey(type, itemId)];
+    }
     return _byItemId[itemId];
   }
 
@@ -158,6 +190,7 @@ class SyncResponseCache {
 
   void clear() {
     _byQueueId.clear();
+    _byTypedItem.clear();
     _byItemId.clear();
     _history.clear();
   }
@@ -171,30 +204,254 @@ class YkbSyncService {
   static const String keySyncCutToYkb = 'sync_cut_to_ykb';
   static const String keySyncAnswersToYkb = 'sync_answers_to_ykb';
   static const String keySyncRedoToYkb = 'sync_redo_to_ykb';
+  static const String keySyncReviewAnswersToYkb = 'sync_review_answers_to_ykb';
+  static const String keySyncReviewCutToYkb = 'sync_review_cut_to_ykb';
 
   /// 是否开启斩题同步到医考帮
   Future<bool> isSyncCutEnabled() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool(keySyncCutToYkb) ?? true;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(keySyncCutToYkb) ?? true;
+    } catch (_) {
+      return false;
+    }
   }
 
   /// 是否开启做题同步到医考帮
   Future<bool> isSyncAnswersEnabled() async {
-    final prefs = await SharedPreferences.getInstance();
-    // 兼容历史 key: questionUpload (不应与题库清单 sync_question_bank 混淆)
-    if (prefs.containsKey(keySyncAnswersToYkb)) {
-      return prefs.getBool(keySyncAnswersToYkb) ?? true;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      // 兼容历史 key: questionUpload (不应与题库清单 sync_question_bank 混淆)
+      if (prefs.containsKey(keySyncAnswersToYkb)) {
+        return prefs.getBool(keySyncAnswersToYkb) ?? true;
+      }
+      if (prefs.containsKey('questionUpload')) {
+        return prefs.getBool('questionUpload') ?? true;
+      }
+      return true;
+    } catch (_) {
+      return false;
     }
-    if (prefs.containsKey('questionUpload')) {
-      return prefs.getBool('questionUpload') ?? true;
-    }
-    return true;
   }
 
   /// 是否开启章节重做同步到医考帮
   Future<bool> isSyncRedoEnabled() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(keySyncRedoToYkb) ?? true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// 是否开启每日复习做题同步到医考帮
+  Future<bool> isSyncReviewAnswersEnabled() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(keySyncReviewAnswersToYkb) ?? true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// 是否开启每日复习熟练斩题同步到医考帮
+  Future<bool> isSyncReviewCutEnabled() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(keySyncReviewCutToYkb) ?? true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// 统一解析题目的同步上下文元数据（subjectId, chapterId, identityId, appId）。
+  /// 优先使用显式参数与 Question/Chapter，缺失时自动回退查询用户库投影与题库。
+  Future<QuestionSyncMeta> resolveQuestionMeta(
+    String questionId, {
+    Question? question,
+    Chapter? chapter,
+    String? subjectId,
+    String? chapterId,
+    String? identityId,
+    String? appId,
+    String? chapterParentId,
+    String? bankId,
+  }) async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool(keySyncRedoToYkb) ?? true;
+    var resSubject =
+        _nonEmpty(subjectId) ??
+        _nonEmpty(chapter?.subjectId) ??
+        _nonEmpty(question?.chapterParentId) ??
+        '';
+    var resChapter =
+        _nonEmpty(chapterId) ??
+        _nonEmpty(chapter?.id) ??
+        _nonEmpty(question?.chapterId) ??
+        '';
+    var resIdentity =
+        _nonEmpty(identityId) ??
+        _nonEmpty(chapter?.identityId) ??
+        _nonEmpty(question?.nativeIdentityId) ??
+        _nonEmpty(question?.identityId) ??
+        '';
+    var resAppId =
+        _nonEmpty(appId) ??
+        _nonEmpty(question?.nativeAppId) ??
+        _nonEmpty(question?.appId) ??
+        '';
+    var resParent =
+        _nonEmpty(chapterParentId) ?? _nonEmpty(question?.chapterParentId) ?? '';
+
+    if (resSubject.isEmpty ||
+        resChapter.isEmpty ||
+        resIdentity.isEmpty ||
+        resParent.isEmpty) {
+      try {
+        final userDb = await UserDBHelper().database;
+        final relRows = await userDb.query(
+          'QuestionRelations',
+          columns: ['identity_id', 'subject_id', 'chapter_id'],
+          where: 'question_id = ?',
+          whereArgs: [questionId],
+          limit: 1,
+        );
+        if (relRows.isNotEmpty) {
+          final r = relRows.first;
+          if (resSubject.isEmpty) {
+            resSubject = _nonEmpty(r['subject_id']?.toString()) ?? '';
+          }
+          if (resChapter.isEmpty) {
+            resChapter = _nonEmpty(r['chapter_id']?.toString()) ?? '';
+          }
+          if (resIdentity.isEmpty) {
+            resIdentity = _nonEmpty(r['identity_id']?.toString()) ?? '';
+          }
+        }
+        if (resParent.isEmpty || resChapter.isEmpty) {
+          final qRows = await userDb.query(
+            'Question',
+            columns: ['chapter_id', 'chapter_parent_id'],
+            where: 'id = ?',
+            whereArgs: [questionId],
+            limit: 1,
+          );
+          if (qRows.isNotEmpty) {
+            final r = qRows.first;
+            if (resParent.isEmpty) {
+              resParent = _nonEmpty(r['chapter_parent_id']?.toString()) ?? '';
+            }
+            if (resChapter.isEmpty) {
+              resChapter = _nonEmpty(r['chapter_id']?.toString()) ?? '';
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (resSubject.isEmpty ||
+        resChapter.isEmpty ||
+        resIdentity.isEmpty ||
+        resAppId.isEmpty ||
+        resParent.isEmpty) {
+      final targetBankId =
+          _nonEmpty(bankId) ??
+          _nonEmpty(question?.sourceBankId) ??
+          _nonEmpty(prefs.getString('activeBankId'));
+      if (targetBankId != null) {
+        try {
+          final bankDb = await QuestionBankDatabaseManager().openBank(
+            targetBankId,
+          );
+          final qRows = await bankDb.query(
+            'Question',
+            columns: [
+              'chapter_id',
+              'chapter_parent_id',
+              'identity_id',
+              'native_identity_id',
+              'app_id',
+              'native_app_id',
+            ],
+            where: 'id = ?',
+            whereArgs: [questionId],
+            limit: 1,
+          );
+          if (qRows.isNotEmpty) {
+            final r = qRows.first;
+            if (resParent.isEmpty) {
+              resParent = _nonEmpty(r['chapter_parent_id']?.toString()) ?? '';
+            }
+            if (resChapter.isEmpty) {
+              resChapter = _nonEmpty(r['chapter_id']?.toString()) ?? '';
+            }
+            if (resIdentity.isEmpty) {
+              resIdentity =
+                  _nonEmpty(r['native_identity_id']?.toString()) ??
+                  _nonEmpty(r['identity_id']?.toString()) ??
+                  '';
+            }
+            if (resAppId.isEmpty) {
+              resAppId =
+                  _nonEmpty(r['native_app_id']?.toString()) ??
+                  _nonEmpty(r['app_id']?.toString()) ??
+                  '';
+            }
+          }
+          if (resSubject.isEmpty || resChapter.isEmpty || resIdentity.isEmpty) {
+            final iqRows = await bankDb.query(
+              'IdentityQuestion',
+              columns: ['identity_id', 'subject_id', 'chapter_id'],
+              where: 'question_id = ?',
+              whereArgs: [questionId],
+              limit: 1,
+            );
+            if (iqRows.isNotEmpty) {
+              final r = iqRows.first;
+              if (resSubject.isEmpty) {
+                resSubject = _nonEmpty(r['subject_id']?.toString()) ?? '';
+              }
+              if (resChapter.isEmpty) {
+                resChapter = _nonEmpty(r['chapter_id']?.toString()) ?? '';
+              }
+              if (resIdentity.isEmpty) {
+                resIdentity = _nonEmpty(r['identity_id']?.toString()) ?? '';
+              }
+            }
+          }
+        } catch (_) {}
+      }
+    }
+
+    if (resIdentity.isEmpty) {
+      resIdentity = _nonEmpty(prefs.getString('identityId')) ?? '';
+    }
+    if (resSubject.isEmpty) {
+      resSubject = _nonEmpty(prefs.getString('subjectId')) ??
+          _nonEmpty(prefs.getString('activeSubjectId')) ??
+          (resParent.isNotEmpty ? resParent : resIdentity);
+    }
+    if (resIdentity.isEmpty) {
+      resIdentity = resSubject;
+    }
+    if (resAppId.isEmpty) {
+      resAppId = '12';
+    }
+    if (resParent.isEmpty) {
+      resParent = resSubject;
+    }
+
+    return QuestionSyncMeta(
+      subjectId: resSubject,
+      chapterId: resChapter,
+      identityId: resIdentity,
+      appId: resAppId,
+      chapterParentId: resParent,
+    );
+  }
+
+  static String? _nonEmpty(String? value) {
+    final trimmed = value?.trim();
+    return (trimmed != null && trimmed.isNotEmpty) ? trimmed : null;
   }
 
   /// 同步斩题状态到医考帮
@@ -202,6 +459,7 @@ class YkbSyncService {
     required Question question,
     required bool isCut,
     Chapter? chapter,
+    String? bankId,
   }) async {
     final queueOwner = await DurableSyncQueue.owner();
     final enabled = await isSyncCutEnabled();
@@ -210,71 +468,77 @@ class YkbSyncService {
       return;
     }
 
-    final prefs = await SharedPreferences.getInstance();
-    // 优先从 chapter 获取真实科目 subjectId，否则回退
-    final subjectId = (chapter?.subjectId.isNotEmpty == true)
-        ? chapter!.subjectId
-        : (question.chapterParentId?.isNotEmpty == true
-              ? question.chapterParentId!
-              : '');
-    final chapterId = (chapter?.id.isNotEmpty == true)
-        ? chapter!.id
-        : (question.chapterId?.isNotEmpty == true ? question.chapterId! : '');
-    final identityId = (chapter?.identityId?.isNotEmpty == true)
-        ? chapter!.identityId!
-        : (question.identityId?.isNotEmpty == true
-              ? question.identityId!
-              : (prefs.getString('identityId') ?? ''));
-    final appId = question.nativeAppId?.isNotEmpty == true
-        ? question.nativeAppId!
-        : (question.appId?.isNotEmpty == true ? question.appId! : '12');
+    final meta = await resolveQuestionMeta(
+      question.id,
+      question: question,
+      chapter: chapter,
+      bankId: bankId,
+    );
 
     final payload = <String, dynamic>{
-      'subject_id': subjectId,
-      'identity_id': identityId,
+      'subject_id': meta.subjectId,
+      'identity_id': meta.identityId,
       'module_type': '1',
       'is_vip': '0',
       'is_svip': '0',
       'question_id': question.id,
       'operate': isCut ? 'add' : 'del',
-      'chapter_id': chapterId,
+      'chapter_id': meta.chapterId,
       'unit_id': '',
-      'app_id': appId,
+      'app_id': meta.appId,
     };
 
     final queueId =
         'cut_${question.id}_${isCut ? "add" : "del"}_${DateTime.now().millisecondsSinceEpoch}';
-    await _enqueue(
-      YkbSyncQueueItem(
-        id: queueId,
-        type: 'cut',
-        itemId: question.id,
-        payload: payload,
-        createdAt: DateTime.now().millisecondsSinceEpoch,
-      ),
-      owner: queueOwner,
-    );
-
-    // 记录斩题同步流水到 Activities
-    try {
-      final db = await UserDBHelper().database;
-      await db.insert('Activities', {
+    final db = await UserDBHelper().database;
+    await db.transaction((tx) async {
+      await tx.delete(
+        'YkbSyncQueue',
+        where:
+            "owner_user_id = ? AND type = 'cut' AND item_id = ? AND queue_state = 'pending'",
+        whereArgs: [queueOwner, question.id],
+      );
+      await _enqueue(
+        YkbSyncQueueItem(
+          id: queueId,
+          type: 'cut',
+          itemId: question.id,
+          payload: payload,
+          createdAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+        owner: queueOwner,
+        executor: tx,
+      );
+      await tx.insert('Activities', {
         'id': generateSimpleId(),
         'title': 'CutQuestion',
         'description': jsonEncode(payload),
         'question_id': int.tryParse(question.id) ?? 0,
-        'subject_id': subjectId,
-        'chapter_id': chapterId,
+        'subject_id': meta.subjectId,
+        'chapter_id': meta.chapterId,
         'is_right': isCut ? 'cut' : 'uncut',
         'duration': 0,
         'timestamp': DateTime.now().millisecondsSinceEpoch,
       });
-    } catch (_) {}
+    });
 
     debugPrint(
-      '[YkbSyncService] 已入队斩题同步: questionId=${question.id}, operate=${payload['operate']}, subjectId=$subjectId, chapterId=$chapterId',
+      '[YkbSyncService] 已入队斩题同步: questionId=${question.id}, operate=${payload['operate']}, subjectId=${meta.subjectId}, chapterId=${meta.chapterId}',
     );
     unawaited(processQueue());
+  }
+
+  /// 仅凭 questionId 同步斩题状态（供「我的-已斩题目」列表与「每日复习」熟练斩题调用）
+  Future<void> syncCutByQuestionId({
+    required String questionId,
+    required bool isCut,
+    String? bankId,
+  }) async {
+    await syncCutQuestion(
+      question: Question(id: questionId, userAnswer: '', sourceBankId: bankId),
+      isCut: isCut,
+      bankId: bankId,
+    );
   }
 
   /// 同步单题作答记录到医考帮
@@ -286,6 +550,7 @@ class YkbSyncService {
     String? chapterId,
     String? identityId,
     String? chapterParentId,
+    String? bankId,
   }) async {
     final queueOwner = await DurableSyncQueue.owner();
     final enabled = await isSyncAnswersEnabled();
@@ -299,74 +564,88 @@ class YkbSyncService {
     // 只有已判题（正确 status==1 或 错误 status==2）才同步到医考帮
     if (userQuestion.status != 1 && userQuestion.status != 2) return;
 
-    final prefs = await SharedPreferences.getInstance();
-    final resolvedSubjectId = (subjectId != null && subjectId.isNotEmpty)
-        ? subjectId
-        : (question.chapterParentId?.isNotEmpty == true
-              ? question.chapterParentId!
-              : '');
-    final resolvedChapterId = (chapterId != null && chapterId.isNotEmpty)
-        ? chapterId
-        : (question.chapterId?.isNotEmpty == true ? question.chapterId! : '');
-    final resolvedIdentityId = (identityId != null && identityId.isNotEmpty)
-        ? identityId
-        : (question.identityId?.isNotEmpty == true
-              ? question.identityId!
-              : (prefs.getString('identityId') ?? ''));
-    final appId = question.nativeAppId?.isNotEmpty == true
-        ? question.nativeAppId!
-        : (question.appId?.isNotEmpty == true ? question.appId! : '12');
+    final rawAnswer = getLastAnswer(userQuestion.userAnswer).trim();
+    // 主观题自评（如“已掌握”/“未掌握”）不属于医考帮选择题答案格式，跳过选择题批量接口
+    if (question.isSubjective ||
+        rawAnswer.isEmpty ||
+        !RegExp(r'^[A-Za-z]+$').hasMatch(rawAnswer)) {
+      debugPrint(
+        '[YkbSyncService] 跳过非选择题/主观题自评同步: questionId=${question.id}, answer=$rawAnswer',
+      );
+      return;
+    }
 
+    final answerStr = sortString(rawAnswer.toUpperCase());
+    final meta = await resolveQuestionMeta(
+      question.id,
+      question: question,
+      subjectId: subjectId,
+      chapterId: chapterId,
+      identityId: identityId,
+      chapterParentId: chapterParentId,
+      bankId: bankId,
+    );
+
+    final prefs = await SharedPreferences.getInstance();
     final isRight = userQuestion.status == 1 ? '1' : '0';
     final durationSec = (durationMs / 1000).round().clamp(1, 3600).toString();
-    final answerStr = getLastAnswer(userQuestion.userAnswer);
 
     // 外层 identity_id 在抓包中通常对应科目 subject_id 或用户所选身份
-    final outerIdentityId = (resolvedSubjectId.isNotEmpty)
-        ? resolvedSubjectId
-        : (prefs.getString('identityId') ?? resolvedIdentityId);
+    final outerIdentityId = meta.subjectId.isNotEmpty
+        ? meta.subjectId
+        : (prefs.getString('identityId') ?? meta.identityId);
 
     final answerItem = {
       'paper_id': '0',
-      'identity_id': resolvedIdentityId,
-      'chapter_id': resolvedChapterId,
+      'identity_id': meta.identityId,
+      'chapter_id': meta.chapterId,
       'collection_id': '',
       'category_id': '',
-      'chapter_parent_id': chapterParentId ?? question.chapterParentId ?? '',
+      'chapter_parent_id': meta.chapterParentId,
       'answer': answerStr,
       'question_id': int.tryParse(question.id) ?? question.id,
       'is_right': isRight,
-      'app_id': appId,
+      'app_id': meta.appId,
       'duration': durationSec,
-      'subject_id': resolvedSubjectId,
+      'subject_id': meta.subjectId,
     };
 
     final payload = <String, dynamic>{
-      'subject_id': resolvedSubjectId,
+      'subject_id': meta.subjectId,
       'is_svip': '0',
       'module_type': '1',
       'identity_id': outerIdentityId,
       'is_vip': '0',
       'question_category_id': '2',
-      'app_id': appId,
+      'app_id': meta.appId,
       'answer': jsonEncode([answerItem]),
     };
 
     final queueId =
         'ans_${question.id}_${DateTime.now().millisecondsSinceEpoch}';
-    await _enqueue(
-      YkbSyncQueueItem(
-        id: queueId,
-        type: 'answer',
-        itemId: question.id,
-        payload: payload,
-        createdAt: DateTime.now().millisecondsSinceEpoch,
-      ),
-      owner: queueOwner,
-    );
+    final db = await UserDBHelper().database;
+    await db.transaction((tx) async {
+      await tx.delete(
+        'YkbSyncQueue',
+        where:
+            "owner_user_id = ? AND type = 'answer' AND item_id = ? AND queue_state = 'pending'",
+        whereArgs: [queueOwner, question.id],
+      );
+      await _enqueue(
+        YkbSyncQueueItem(
+          id: queueId,
+          type: 'answer',
+          itemId: question.id,
+          payload: payload,
+          createdAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+        owner: queueOwner,
+        executor: tx,
+      );
+    });
 
     debugPrint(
-      '[YkbSyncService] 已入队作答同步: questionId=${question.id}, answer=$answerStr, isRight=$isRight, subjectId=$resolvedSubjectId, chapterId=$resolvedChapterId',
+      '[YkbSyncService] 已入队作答同步: questionId=${question.id}, answer=$answerStr, isRight=$isRight, subjectId=${meta.subjectId}, chapterId=${meta.chapterId}',
     );
     unawaited(processQueue());
   }
@@ -405,70 +684,6 @@ class YkbSyncService {
       ).toMap(),
       'owner_user_id': owner,
     };
-  }
-
-  Future<void> syncRedoChapter({
-    required Chapter chapter,
-    String? appId,
-  }) async {
-    final queueOwner = await DurableSyncQueue.owner();
-    final enabled = await isSyncRedoEnabled();
-    if (!enabled) {
-      debugPrint('[YkbSyncService] syncRedoToYkb is disabled, skip redo sync');
-      return;
-    }
-
-    final prefs = await SharedPreferences.getInstance();
-    final identityId = chapter.identityId?.isNotEmpty == true
-        ? chapter.identityId!
-        : (prefs.getString('identityId') ?? '');
-    final resolvedAppId = appId ?? '12';
-
-    final payload = <String, dynamic>{
-      'subject_id': chapter.subjectId,
-      'obj_id': chapter.id,
-      'is_svip': '0',
-      'identity_id': identityId,
-      'module_type': '1',
-      'is_vip': '0',
-      'type': 'chapter',
-      'category': 'chapter',
-      'app_id': resolvedAppId,
-      'is_wrong': '0',
-    };
-
-    final queueId =
-        'redo_${chapter.id}_${DateTime.now().millisecondsSinceEpoch}';
-    await _enqueue(
-      YkbSyncQueueItem(
-        id: queueId,
-        type: 'redo_chapter',
-        itemId: chapter.id,
-        payload: payload,
-        createdAt: DateTime.now().millisecondsSinceEpoch,
-      ),
-      owner: queueOwner,
-    );
-
-    // 记录章节重做同步流水到 Activities
-    try {
-      final db = await UserDBHelper().database;
-      await db.insert('Activities', {
-        'id': generateSimpleId(),
-        'title': 'RedoChapter',
-        'description': jsonEncode(payload),
-        'subject_id': chapter.subjectId,
-        'chapter_id': chapter.id,
-        'is_right': 'redo',
-        'duration': 0,
-        'timestamp': DateTime.now().millisecondsSinceEpoch,
-      });
-    } catch (_) {}
-
-    debugPrint(
-      '[YkbSyncService] 已入队章节重做同步: chapterId=${chapter.id}, subjectId=${chapter.subjectId}',
-    );
-    unawaited(processQueue());
   }
 
   /// 执行单个队列项目的网络请求，返回 true 表示成功 (200)，false 表示返回非 200，抛出异常表示网络中断
@@ -515,7 +730,7 @@ class YkbSyncService {
     if (responseCode == '200') {
       success = true;
     } else {
-      await _markError(
+      await _recordFailureResponse(
         item,
         resp['message']?.toString() ?? 'Code ${resp['code']}',
         lastResponse: rawResp,
@@ -549,22 +764,22 @@ class YkbSyncService {
     await DurableSyncQueue.run('YkbSyncQueue', _executeRow);
   }
 
-  Future<void> _enqueue(YkbSyncQueueItem item, {required String owner}) =>
-      DurableSyncQueue.enqueue('YkbSyncQueue', {
-        ...item.toMap(),
-        'owner_user_id': owner,
-      });
+  Future<void> _enqueue(
+    YkbSyncQueueItem item, {
+    required String owner,
+    DatabaseExecutor? executor,
+  }) => DurableSyncQueue.enqueue('YkbSyncQueue', {
+    ...item.toMap(),
+    'owner_user_id': owner,
+  }, executor: executor);
 
-  Future<void> _markError(
+  Future<void> _recordFailureResponse(
     YkbSyncQueueItem item,
     String error, {
     String? lastResponse,
   }) async {
     final db = await UserDBHelper().database;
-    final values = <String, dynamic>{
-      'retry_count': item.retryCount + 1,
-      'last_error': error,
-    };
+    final values = <String, dynamic>{'last_error': error};
     if (lastResponse != null) {
       values['last_response'] = lastResponse;
     }

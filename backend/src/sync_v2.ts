@@ -4,19 +4,54 @@ interface MutationInput {
   seq: number;
   stream: string;
   id: string;
-  kind: 'question' | 'activity' | 'activity_delete' | 'flashcard' | 'flashcard_delete' | 'spaced_item' | 'review_plan';
+  kind: 'question' | 'activity' | 'activity_delete' | 'flashcard' | 'flashcard_delete' | 'spaced_item' | 'review_plan' | 'note' | 'note_delete';
   payload: Record<string, any>;
+}
+
+const ensuredDbs = new WeakSet<D1Database>();
+async function ensureNotesSchema(db: D1Database): Promise<void> {
+  if (ensuredDbs.has(db)) return;
+  await db.batch([
+    db.prepare(`CREATE TABLE IF NOT EXISTS sync_notes (
+      user_id TEXT NOT NULL,
+      id TEXT NOT NULL,
+      remote_id TEXT,
+      question_id TEXT NOT NULL,
+      content TEXT NOT NULL DEFAULT '',
+      imgs TEXT NOT NULL DEFAULT '[]',
+      timestamp INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (user_id, id)
+    )`).bind(),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_sync_notes_question ON sync_notes(user_id, question_id)`).bind(),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_sync_notes_updated ON sync_notes(user_id, updated_at)`).bind(),
+    db.prepare(`CREATE TRIGGER IF NOT EXISTS sync_note_insert AFTER INSERT ON sync_notes BEGIN
+      INSERT INTO sync_changes(user_id,kind,entity_id) VALUES(NEW.user_id,'note',NEW.id);
+    END`).bind(),
+    db.prepare(`CREATE TRIGGER IF NOT EXISTS sync_note_update AFTER UPDATE ON sync_notes BEGIN
+      INSERT INTO sync_changes(user_id,kind,entity_id) VALUES(NEW.user_id,'note',NEW.id);
+    END`).bind(),
+    db.prepare(`CREATE TABLE IF NOT EXISTS sync_deleted_notes(user_id TEXT NOT NULL, id TEXT NOT NULL, PRIMARY KEY(user_id, id))`).bind(),
+    db.prepare(`CREATE TRIGGER IF NOT EXISTS sync_note_tombstone AFTER INSERT ON sync_deleted_notes BEGIN
+      INSERT INTO sync_changes(user_id,kind,entity_id) VALUES(NEW.user_id,'note_delete',NEW.id);
+    END`).bind(),
+    db.prepare(`CREATE TRIGGER IF NOT EXISTS sync_note_no_resurrection BEFORE INSERT ON sync_notes
+      WHEN EXISTS(SELECT 1 FROM sync_deleted_notes WHERE user_id=NEW.user_id AND id=NEW.id)
+      BEGIN SELECT RAISE(IGNORE); END`).bind(),
+  ]);
+  ensuredDbs.add(db);
 }
 
 // 严格遵守 Cloudflare D1 单条 SQL 最多 100 个绑定参数的限制，并采用多行合并批量 SQL 将 500 条同步耗时从 >40s 降至 <1s。
 // 离线设备之间无法推断真实作答先后；保留事件历史供冲突恢复，投影按入库顺序。
 export async function pushMutations(db: D1Database, user: string, device: string, input: unknown, now: number): Promise<number[]> {
   if (!Array.isArray(input) || input.length > 500) throw new Error('Invalid mutation batch');
+  await ensureNotesSchema(db);
   for (const mutation of input) {
     if (!mutation || !Number.isSafeInteger(mutation.seq) || mutation.seq <= 0 ||
         typeof mutation.stream !== 'string' || !/^[a-f0-9]{32}$/.test(mutation.stream) ||
         typeof mutation.id !== 'string' || !mutation.id ||
-        !['question', 'activity', 'activity_delete', 'flashcard', 'flashcard_delete', 'spaced_item', 'review_plan'].includes(mutation.kind) ||
+        !['question', 'activity', 'activity_delete', 'flashcard', 'flashcard_delete', 'spaced_item', 'review_plan', 'note', 'note_delete'].includes(mutation.kind) ||
         !mutation.payload || typeof mutation.payload !== 'object') throw new Error('Invalid mutation');
     const q = mutation.payload;
     if (mutation.kind === 'question') {
@@ -301,6 +336,56 @@ export async function pushMutations(db: D1Database, user: string, device: string
       }
       continue;
     }
+
+    if (first.kind === 'note_delete') {
+      const group: MutationInput[] = [first];
+      idx++;
+      while (idx < freshMutations.length && freshMutations[idx].mutation.kind === 'note_delete') {
+        group.push(freshMutations[idx].mutation);
+        idx++;
+      }
+      for (let g = 0; g < group.length; g += 45) {
+        const slice = group.slice(g, g + 45);
+        const placeholders = slice.map(() => '(?,?)').join(',');
+        const insParams: unknown[] = [];
+        for (const m of slice) insParams.push(user, m.id);
+        statements.push(db.prepare(`INSERT OR IGNORE INTO sync_deleted_notes(user_id,id) VALUES ${placeholders}`).bind(...insParams));
+        const inPh = slice.map(() => '?').join(',');
+        statements.push(db.prepare(`DELETE FROM sync_notes WHERE user_id=? AND id IN (${inPh})`).bind(user, ...slice.map(m => m.id)));
+      }
+      continue;
+    }
+
+    if (first.kind === 'note') {
+      const group: MutationInput[] = [first];
+      idx++;
+      while (idx < freshMutations.length && freshMutations[idx].mutation.kind === 'note') {
+        group.push(freshMutations[idx].mutation);
+        idx++;
+      }
+      // 8 个参数/行 -> 11 行一组 = 88 参数 <= 100
+      for (let g = 0; g < group.length; g += 11) {
+        const slice = group.slice(g, g + 11);
+        const placeholders = slice.map(() => '(?,?,?,?,?,?,?,?)').join(',');
+        const params: unknown[] = [];
+        for (const m of slice) {
+          const q = m.payload;
+          params.push(
+            user, m.id, q.remote_id ?? null, String(q.question_id ?? ''),
+            q.content ?? '', typeof q.imgs === 'string' ? q.imgs : JSON.stringify(q.imgs ?? []),
+            Number(q.timestamp) || now, Number(q.updated_at) || now
+          );
+        }
+        statements.push(
+          db.prepare(
+            `INSERT INTO sync_notes(user_id,id,remote_id,question_id,content,imgs,timestamp,updated_at) VALUES ${placeholders} ` +
+            `ON CONFLICT(user_id,id) DO UPDATE SET remote_id=COALESCE(excluded.remote_id, sync_notes.remote_id), question_id=excluded.question_id, content=excluded.content, imgs=excluded.imgs, timestamp=excluded.timestamp, updated_at=excluded.updated_at ` +
+            `WHERE sync_notes.updated_at <= excluded.updated_at`
+          ).bind(...params)
+        );
+      }
+      continue;
+    }
   }
 
   // 4. 分片执行 db.batch (500 条题目的 statements 总共只有 ~95 条，单次 batch 原子提交)
@@ -318,6 +403,7 @@ export async function pushMutations(db: D1Database, user: string, device: string
 export async function pullChanges(db: D1Database, user: string, cursor: number, through?: number) {
   if (!Number.isSafeInteger(cursor) || cursor < 0 ||
       (through !== undefined && (!Number.isSafeInteger(through) || through < cursor))) throw new Error('Invalid pull cursor');
+  await ensureNotesSchema(db);
   const maximum = await db.prepare('SELECT COALESCE(MAX(seq),0) AS seq FROM sync_changes WHERE user_id=?').bind(user).first<{seq: number}>();
   const high = through ?? maximum!.seq;
   const rows = await db.prepare('SELECT seq FROM sync_changes WHERE user_id=? AND seq>? AND seq<=? ORDER BY seq LIMIT 501').bind(user,cursor,high).all<{seq:number}>();
@@ -340,6 +426,10 @@ export async function pullChanges(db: D1Database, user: string, cursor: number, 
   const reviewPlans = await db.prepare(`SELECT DISTINCT p.id, p.name, p.bank_id, p.daily_new_target, p.daily_review_limit, p.source_types, p.covered_subjects, p.created_at, p.updated_at
     FROM sync_changes c JOIN sync_review_plans p ON p.user_id=c.user_id AND p.id=c.entity_id
     WHERE c.user_id=? AND c.kind='review_plan' AND c.seq>? AND c.seq<=? ORDER BY c.seq`).bind(user,cursor,next).all();
+  const notes = await db.prepare(`SELECT DISTINCT n.id, n.remote_id, n.question_id, n.content, n.imgs, n.timestamp, n.updated_at
+    FROM sync_changes c JOIN sync_notes n ON n.user_id=c.user_id AND n.id=c.entity_id
+    WHERE c.user_id=? AND c.kind='note' AND c.seq>? AND c.seq<=? ORDER BY c.seq`).bind(user,cursor,next).all();
+  const deletedNotes = await db.prepare(`SELECT DISTINCT d.id FROM sync_changes c JOIN sync_deleted_notes d ON d.user_id=c.user_id AND d.id=c.entity_id WHERE c.user_id=? AND c.kind='note_delete' AND c.seq>? AND c.seq<=? ORDER BY c.seq`).bind(user,cursor,next).all<{id:string}>();
 
   return {
     pull_deleted_activities: deleted.results.map(d=>d.id),
@@ -349,6 +439,8 @@ export async function pullChanges(db: D1Database, user: string, cursor: number, 
     pull_deleted_flashcards: deletedFlashcards.results.map(d=>d.id),
     pull_spaced_items: spacedItems.results,
     pull_review_plans: reviewPlans.results,
+    pull_notes: notes.results,
+    pull_deleted_notes: deletedNotes.results.map(d=>d.id),
     next_cursor: next,
     high_watermark: high,
     has_more: rows.results.length > 500,

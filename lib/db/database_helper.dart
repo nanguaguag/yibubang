@@ -349,6 +349,7 @@ class UserDBHelper {
           rethrow; // 原表仍保留，拒绝带损坏外键继续启动写入。
         }
         await NoteSyncStore.install(db);
+        await CloudOutbox.install(db);
         await _repairCoreIndexes(db);
       },
     );

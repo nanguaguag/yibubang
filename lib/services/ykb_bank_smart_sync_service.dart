@@ -497,6 +497,7 @@ class YkbBankSmartSyncService {
       } catch (_) {}
 
       // 5) 成功后才写章节状态，避免失败时把未落库的章节标记为已同步。
+      await _mergeRemoteCutStatesToUserDb(userDb, fetched, nowMs);
       for (final item in fetched) {
         chapterStateUpdates.add(
           _chapterStateRow(
@@ -1234,6 +1235,45 @@ class YkbBankSmartSyncService {
       await db.close();
     }
     return _ApplyResult(added: added, updated: updated, extra: extra);
+  }
+
+  /// 将医考帮接口返回的题目斩题状态 (cut_question == '1') 合并入用户库 Question 表
+  /// 严禁写入只读题库；仅在用户库尚未斩题时增量标记为已斩，保留本地已有的作答与收藏状态。
+  Future<void> _mergeRemoteCutStatesToUserDb(
+    Database userDb,
+    List<_FetchedChapter> fetched,
+    int nowMs,
+  ) async {
+    final cutItems = <({String qid, String chapterId, String subjectId})>[];
+    for (final item in fetched) {
+      for (final q in item.questions) {
+        final qid = q['id']?.toString() ?? '';
+        final cut = q['cut_question']?.toString() ?? '0';
+        if (qid.isNotEmpty && (cut == '1' || cut == 'cutted')) {
+          cutItems.add((
+            qid: qid,
+            chapterId: item.mapping.localChapterId,
+            subjectId: item.mapping.localSubjectId,
+          ));
+        }
+      }
+    }
+    if (cutItems.isEmpty) return;
+    await userDb.transaction((tx) async {
+      final batch = tx.batch();
+      for (final c in cutItems) {
+        batch.rawInsert(
+          '''INSERT OR IGNORE INTO Question (id, chapter_id, chapter_parent_id, cut_question, status, collection, updated_at)
+             VALUES (?, ?, ?, '1', 0, 0, ?)''',
+          [c.qid, c.chapterId, c.subjectId, nowMs],
+        );
+        batch.rawUpdate(
+          "UPDATE Question SET cut_question = '1', updated_at = ? WHERE id = ? AND COALESCE(cut_question, '0') NOT IN ('1', 'cutted')",
+          [nowMs, c.qid],
+        );
+      }
+      await batch.commit(noResult: true);
+    });
   }
 
   Future<String> _bankPath(QuestionBank bank) async {

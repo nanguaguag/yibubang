@@ -165,6 +165,21 @@ class YkbPullService {
       );
     }
 
+    // 预取当前题库所有题目的章节归属，消除循环内 N+1 题库查询
+    final bankQuestionMap = <String, ({String chapterId, String parentId})>{};
+    final bankQuestions = await bankDb.query(
+      'Question',
+      columns: ['id', 'chapter_id', 'chapter_parent_id'],
+    );
+    for (final row in bankQuestions) {
+      final qid = row['id']?.toString() ?? '';
+      if (qid.isEmpty) continue;
+      bankQuestionMap[qid] = (
+        chapterId: row['chapter_id']?.toString() ?? '',
+        parentId: row['chapter_parent_id']?.toString() ?? '',
+      );
+    }
+
     var fetched = 0;
     var applied = 0;
     var skipped = 0;
@@ -212,6 +227,21 @@ class YkbPullService {
         '[YkbPullService] identity=$identityId 拉取到 ${list.length} 条记录',
       );
 
+      // 收集本身份下属于当前题库的合法记录
+      final validItems = <({
+        String questionId,
+        String answer,
+        String rawRight,
+        int status,
+        bool isCut,
+        int timestampMs,
+        int durationMs,
+        String remoteId,
+        String chapterId,
+        String chapterParentId,
+      })>[];
+      final nowMs = DateTime.now().millisecondsSinceEpoch;
+
       for (final raw in list) {
         if (raw is! Map) {
           skipped++;
@@ -221,101 +251,159 @@ class YkbPullService {
         final questionId = raw['question_id']?.toString() ?? '';
         final answer = raw['answer']?.toString() ?? '';
         final right = raw['is_right']?.toString() ?? '';
-        if (questionId.isEmpty ||
-            answer.isEmpty ||
-            (right != '0' && right != '1')) {
+        final rawCut = raw['cut_question']?.toString() ??
+            raw['is_cut']?.toString() ??
+            '0';
+        final isCut = rawCut == '1' || rawCut == 'cutted';
+        final hasValidAnswer =
+            answer.isNotEmpty && (right == '0' || right == '1');
+        if (questionId.isEmpty || (!hasValidAnswer && !isCut)) {
           skipped++;
           invalidRecords++;
           continue;
         }
-        final isRight = raw['is_right']?.toString() == '1' ? 1 : 2;
-
-        final bankQuestionRows = await bankDb.query(
-          'Question',
-          columns: ['chapter_id', 'chapter_parent_id'],
-          where: 'id = ?',
-          whereArgs: [questionId],
-          limit: 1,
-        );
-        if (bankQuestionRows.isEmpty) {
-          // 账号里可能包含其他题库的记录，本地题库没有对应题目时跳过。
+        final bankMeta = bankQuestionMap[questionId];
+        if (bankMeta == null) {
           skipped++;
           notInBank++;
           continue;
         }
-        final chapterId =
-            bankQuestionRows.first['chapter_id']?.toString() ?? '';
-        final chapterParentId =
-            bankQuestionRows.first['chapter_parent_id']?.toString() ?? '';
+        final status = hasValidAnswer ? (right == '1' ? 1 : 2) : 0;
+        final rawTime = int.tryParse(
+              (raw['update_time'] ?? raw['ctime'] ?? raw['create_time'])
+                      ?.toString() ??
+                  '0',
+            ) ??
+            0;
+        final tsMs = rawTime > 1000000000000
+            ? rawTime
+            : (rawTime > 0 ? rawTime * 1000 : nowMs);
+        final durSec =
+            int.tryParse(raw['duration']?.toString() ?? '0') ?? 0;
 
-        final localRows = await userDb.query(
-          'Question',
-          columns: ['id', 'status', 'user_answer', 'updated_at'],
-          where: 'id = ?',
-          whereArgs: [questionId],
-          limit: 1,
-        );
-
-        final nowMs = DateTime.now().millisecondsSinceEpoch;
-        if (localRows.isEmpty) {
-          await userDb.insert('Question', {
-            'id': questionId,
-            'chapter_id': chapterId,
-            'chapter_parent_id': chapterParentId,
-            'cut_question': '0',
-            'user_answer': answer,
-            'status': isRight,
-            'collection': 0,
-            'updated_at': nowMs,
-          });
-          applied++;
-        } else {
-          final localStatus = (localRows.first['status'] as num?)?.toInt() ?? 0;
-          if (localStatus != 0) {
-            // 本地已作答优先，避免把本地更新的答案覆盖成云端旧记录。
-            skipped++;
-            alreadyAnswered++;
-            continue;
-          }
-          await userDb.update(
-            'Question',
-            {'status': isRight, 'user_answer': answer, 'updated_at': nowMs},
-            where: 'id = ?',
-            whereArgs: [questionId],
-          );
-          applied++;
-        }
-
-        // 已有本地作答流水时不重复插入，避免统计重复计数。
-        final existingActivity = await userDb.query(
-          'Activities',
-          columns: ['id'],
-          where: "question_id = ? AND title IN ('NewAnswer', 'YkbPull')",
-          whereArgs: [questionId],
-          limit: 1,
-        );
-        if (existingActivity.isEmpty) {
-          await userDb.insert('Activities', {
-            'id': generateSimpleId(),
-            'title': 'YkbPull',
-            'description': jsonEncode({
-              'question_id': questionId,
-              'answer': answer,
-              'is_right': raw['is_right']?.toString() ?? '',
-              'identity_id': identityId,
-              'remote_id': raw['id']?.toString() ?? '',
-            }),
-            'timestamp': nowMs,
-            'bank_id': bankId,
-            'question_id': questionId,
-            'identity_id': identityId,
-            'subject_id': chapterParentId,
-            'chapter_id': chapterId,
-            'is_right': isRight == 1 ? '1' : '0',
-            'duration': 0,
-          });
-        }
+        validItems.add((
+          questionId: questionId,
+          answer: answer,
+          rawRight: right,
+          status: status,
+          isCut: isCut,
+          timestampMs: tsMs,
+          durationMs: durSec > 0 ? durSec * 1000 : 0,
+          remoteId: raw['id']?.toString() ?? '',
+          chapterId: bankMeta.chapterId,
+          chapterParentId: bankMeta.parentId,
+        ));
       }
+
+      if (validItems.isEmpty) continue;
+
+      await userDb.transaction((tx) async {
+        final qIds = validItems.map((e) => e.questionId).toSet().toList();
+        final localQMap = <String, Map<String, Object?>>{};
+        final answeredActivityQIds = <String>{};
+
+        for (var i = 0; i < qIds.length; i += 500) {
+          final chunk = qIds.sublist(
+            i,
+            i + 500 < qIds.length ? i + 500 : qIds.length,
+          );
+          final ph = List.filled(chunk.length, '?').join(',');
+          final qRows = await tx.query(
+            'Question',
+            columns: ['id', 'status', 'user_answer', 'cut_question'],
+            where: 'id IN ($ph)',
+            whereArgs: chunk,
+          );
+          for (final r in qRows) {
+            localQMap[r['id'] as String] = r;
+          }
+          final actRows = await tx.query(
+            'Activities',
+            columns: ['question_id'],
+            where:
+                "question_id IN ($ph) AND title IN ('NewAnswer', 'YkbPull')",
+            whereArgs: chunk,
+          );
+          for (final r in actRows) {
+            final qid = r['question_id']?.toString();
+            if (qid != null) answeredActivityQIds.add(qid);
+          }
+        }
+
+        final batch = tx.batch();
+        for (final item in validItems) {
+          final local = localQMap[item.questionId];
+          if (local == null) {
+            batch.insert('Question', {
+              'id': item.questionId,
+              'chapter_id': item.chapterId,
+              'chapter_parent_id': item.chapterParentId,
+              'cut_question': item.isCut ? '1' : '0',
+              'user_answer': item.answer,
+              'status': item.status,
+              'collection': 0,
+              'updated_at': item.timestampMs,
+            });
+            localQMap[item.questionId] = {
+              'id': item.questionId,
+              'status': item.status,
+              'user_answer': item.answer,
+              'cut_question': item.isCut ? '1' : '0',
+            };
+            applied++;
+          } else {
+            final localStatus = (local['status'] as num?)?.toInt() ?? 0;
+            final localCut = local['cut_question']?.toString() ?? '0';
+            final needApplyAnswer = localStatus == 0 && item.status != 0;
+            final needApplyCut =
+                item.isCut && localCut != '1' && localCut != 'cutted';
+            if (!needApplyAnswer && !needApplyCut) {
+              skipped++;
+              alreadyAnswered++;
+              continue;
+            }
+            final patch = <String, Object?>{
+              'updated_at': item.timestampMs,
+              if (needApplyAnswer) 'status': item.status,
+              if (needApplyAnswer) 'user_answer': item.answer,
+              if (needApplyCut) 'cut_question': '1',
+            };
+            batch.update(
+              'Question',
+              patch,
+              where: 'id = ?',
+              whereArgs: [item.questionId],
+            );
+            localQMap[item.questionId] = {...local, ...patch};
+            applied++;
+          }
+
+          if (item.status != 0 &&
+              !answeredActivityQIds.contains(item.questionId)) {
+            answeredActivityQIds.add(item.questionId);
+            batch.insert('Activities', {
+              'id': generateSimpleId(),
+              'title': 'YkbPull',
+              'description': jsonEncode({
+                'question_id': item.questionId,
+                'answer': item.answer,
+                'is_right': item.rawRight,
+                'identity_id': identityId,
+                'remote_id': item.remoteId,
+              }),
+              'timestamp': item.timestampMs,
+              'bank_id': bankId,
+              'question_id': item.questionId,
+              'identity_id': identityId,
+              'subject_id': item.chapterParentId,
+              'chapter_id': item.chapterId,
+              'is_right': item.status == 1 ? '1' : '0',
+              'duration': item.durationMs,
+            });
+          }
+        }
+        await batch.commit(noResult: true);
+      });
     }
 
     if (applied > 0) {

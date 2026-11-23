@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'ykb_encrypt.dart';
 
+import '../db/durable_sync_queue.dart';
 import '../db/settings.dart';
 import '../services/auth_service.dart';
 
@@ -164,6 +165,7 @@ Future<Map<String, dynamic>> login(
       await prefs.setString('user_uuid', data['user_uuid'].toString());
     }
     await prefs.setBool('loggedin', true);
+    await DurableSyncQueue.wakeOnLogin(data['user_id'].toString());
   }
   return loginResp;
 }

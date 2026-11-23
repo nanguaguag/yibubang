@@ -339,6 +339,36 @@ void main() {
     );
     expect(called, false);
   });
+  test('离线/SocketException网络失败不将非幂等任务锁死在paused，登录唤醒可立即重发', () async {
+    await db.insert('YkbSyncQueue', {
+      'id': 'offline_ans',
+      'type': 'answer',
+      'payload': '{}',
+      'created_at': 1,
+      'owner_user_id': 'u',
+    });
+    await http.runWithClient(
+      () => YkbSyncService.instance.processQueue(),
+      () => MockClient(
+        (_) async => throw const SocketException('Network unreachable'),
+      ),
+    );
+    final row = (await db.query('YkbSyncQueue')).single;
+    expect(row['queue_state'], 'pending');
+    expect(row['retry_count'], 1);
+    expect(
+      row['next_attempt_at'] as int,
+      greaterThan(DateTime.now().millisecondsSinceEpoch),
+    );
+    await DurableSyncQueue.wakeOnLogin('u');
+    final woken = (await db.query('YkbSyncQueue')).single;
+    expect(woken['next_attempt_at'], 0);
+    await http.runWithClient(
+      () => YkbSyncService.instance.processQueue(),
+      () => MockClient((_) async => http.Response('{"code":200}', 200)),
+    );
+    expect(await db.query('YkbSyncQueue'), isEmpty);
+  });
 }
 
 class _DeadlineClient extends http.BaseClient {

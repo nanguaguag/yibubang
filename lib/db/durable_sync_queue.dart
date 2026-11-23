@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
@@ -37,10 +38,14 @@ class DurableSyncQueue {
   }
 
   static Future<String> owner() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool('loggedin') == true
-        ? prefs.getString('user_id') ?? ''
-        : '';
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool('loggedin') == true
+          ? prefs.getString('user_id') ?? ''
+          : '';
+    } catch (_) {
+      return '';
+    }
   }
 
   static Future<void> enqueue(
@@ -55,6 +60,23 @@ class DurableSyncQueue {
       'queue_state': account.isEmpty ? 'paused' : 'pending',
       'next_attempt_at': 0,
     }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  /// 登录成功后立即唤醒当前账号下所有处于退避冷却中的 pending 任务。
+  static Future<void> wakeOnLogin([String? userId]) async {
+    final account = (userId != null && userId.isNotEmpty)
+        ? userId
+        : await owner();
+    if (account.isEmpty) return;
+    final db = await UserDBHelper().database;
+    for (final table in ['YkbSyncQueue', 'NoteSyncQueue']) {
+      await db.update(
+        table,
+        {'next_attempt_at': 0},
+        where: "owner_user_id=? AND queue_state='pending'",
+        whereArgs: [account],
+      );
+    }
   }
 
   static Future<bool> reset(String table, {String? id}) async {
@@ -76,6 +98,24 @@ class DurableSyncQueue {
       whereArgs: [account, if (id != null) id],
     );
     return count > 0;
+  }
+
+  /// 判断捕获的异常是否属于「尚未到达服务端或服务端明确拒绝（未落库）」的可安全自动重试错误。
+  static bool _isSafePreSendOrAuthError(Object? error, String? responseCode) {
+    if (responseCode == '309') return true;
+    if (error == null) return false;
+    if (error is SocketException || error is HandshakeException) return true;
+    final msg = error.toString();
+    if (msg.contains('309_TOKEN_EXPIRED') ||
+        msg.contains('SocketException') ||
+        msg.contains('Failed host lookup') ||
+        msg.contains('Network is unreachable') ||
+        msg.contains('Connection refused') ||
+        msg.contains('同步账号已切换') ||
+        msg.contains('笔记图片尚未上传成功')) {
+      return true;
+    }
+    return false;
   }
 
   static Future<bool> run(
@@ -119,10 +159,12 @@ class DurableSyncQueue {
             whereArgs: [row['id'], account],
           );
           bool success = false;
+          Object? caughtError;
           String? error;
           try {
             success = await execute(Map<String, dynamic>.from(row));
           } catch (e) {
+            caughtError = e;
             error = e.toString();
           }
           // 同 id 的新 payload 不能被旧请求的确认/失败清掉。
@@ -135,27 +177,37 @@ class DurableSyncQueue {
           } else {
             final latest = await db.query(
               table,
-              columns: ['last_response'],
+              columns: ['last_response', 'last_error'],
               where: where,
               whereArgs: args,
             );
             String? code;
-            try {
-              code =
-                  (jsonDecode(latest.single['last_response'] as String)
-                          as Map)['code']
-                      ?.toString();
-            } catch (_) {}
+            String? persistedError;
+            if (latest.isNotEmpty) {
+              persistedError = latest.single['last_error'] as String?;
+              try {
+                code =
+                    (jsonDecode(latest.single['last_response'] as String)
+                            as Map)['code']
+                        ?.toString();
+              } catch (_) {}
+            }
             final nonIdempotent =
                 (table == 'YkbSyncQueue' && row['type'] == 'answer') ||
                 (table == 'NoteSyncQueue' && row['action'] == 'upload');
+            final isPreSendSafe = _isSafePreSendOrAuthError(caughtError, code);
             final uncertain =
                 nonIdempotent &&
+                !isPreSendSafe &&
                 (error != null ||
                     code == 'http_error' ||
                     code == 'protocol_error');
             final retry = (row['retry_count'] as int? ?? 0) + 1;
             final delay = 30 * (1 << (retry.clamp(1, 8) - 1));
+            final hasSpecificError =
+                persistedError != null &&
+                persistedError.isNotEmpty &&
+                !persistedError.startsWith('请求进行中');
             await db.update(
               table,
               {
@@ -163,8 +215,9 @@ class DurableSyncQueue {
                 'queue_state': retry >= 5 || uncertain ? 'paused' : 'pending',
                 'next_attempt_at':
                     DateTime.now().millisecondsSinceEpoch + delay * 1000,
-                if (error != null) 'last_error': error,
-                if (error != null)
+                if (error != null && !hasSpecificError) 'last_error': error,
+                if (error != null &&
+                    (latest.isEmpty || latest.single['last_response'] == null))
                   'last_response': jsonEncode({'error': error}),
               },
               where: where,

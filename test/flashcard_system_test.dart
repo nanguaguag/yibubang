@@ -96,10 +96,12 @@ void main() {
     ''');
     await UserDBHelper().createSpacedRepetitionTablesForTesting(testDb);
     UserDBHelper.setDatabaseForTesting(testDb);
+    DatabaseHelper.setDatabaseForTesting(testDb);
   });
 
   tearDownAll(() async {
     UserDBHelper.setDatabaseForTesting(null);
+    DatabaseHelper.setDatabaseForTesting(null);
     await testDb.close();
     try {
       Directory(testDir).deleteSync(recursive: true);
@@ -143,8 +145,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('制作自制闪卡'), findsOneWidget);
-      expect(find.text('正面 (Front · 问题 / 概念)'), findsOneWidget);
-      expect(find.text('背面 (Back · 答案 / 解析 / 重点总结)'), findsOneWidget);
+      expect(find.text('正面'), findsOneWidget);
+      expect(find.text('背面'), findsOneWidget);
       expect(find.textContaining('已自动关联原题 (ID: q_cardiology_888)'), findsOneWidget);
 
       // 关闭弹窗

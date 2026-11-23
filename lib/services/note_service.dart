@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
 
@@ -11,8 +12,10 @@ import '../common/request.dart';
 import '../common/ykb_encrypt.dart';
 import '../db/database_helper.dart';
 import '../db/durable_sync_queue.dart';
+import '../db/settings.dart';
 import '../models/note.dart';
 import '../models/question.dart';
+import 'auth_service.dart';
 import 'ykb_sync_service.dart';
 
 /// 医考帮笔记业务与同步队列服务
@@ -59,6 +62,7 @@ class NoteService {
     final owner = await DurableSyncQueue.owner();
     final db = await UserDBHelper().database;
     final enabled = await isSyncEnabled();
+    final removedLocalPaths = <String>[];
     await db.transaction((tx) async {
       final deleted = await tx.query(
         'NoteTombstones',
@@ -67,6 +71,19 @@ class NoteService {
       );
       if (deleted.isNotEmpty) throw StateError('笔记已删除，请新建笔记');
       final old = await tx.query('Notes', where: 'id=?', whereArgs: [note.id]);
+      if (old.isNotEmpty) {
+        final oldNote = QuestionNote.fromMap(old.single);
+        final keptPaths = note.images
+            .map((i) => i.localPath)
+            .whereType<String>()
+            .toSet();
+        for (final img in oldNote.images) {
+          final path = img.localPath;
+          if (path != null && path.isNotEmpty && !keptPaths.contains(path)) {
+            removedLocalPaths.add(path);
+          }
+        }
+      }
       final revision = old.isEmpty ? 1 : (old.single['revision'] as int) + 1;
       final saved = note.copyWith(
         syncStatus: enabled ? 1 : 0,
@@ -80,6 +97,11 @@ class NoteService {
         'chapter_id': question?.chapterId ?? '',
         'chapter_parent_id': question?.chapterParentId ?? '',
       }, conflictAlgorithm: ConflictAlgorithm.ignore);
+      await tx.delete(
+        'CloudDeletedNotes',
+        where: 'id=?',
+        whereArgs: [saved.id],
+      );
       await tx.insert('Notes', {
         ...saved.toMap(),
         'revision': revision,
@@ -91,6 +113,7 @@ class NoteService {
       );
       if (enabled) await _queueNote(tx, saved, owner, question: question);
     });
+    _cleanupSandboxImages(removedLocalPaths);
     if (enabled) unawaited(processQueue(question: question));
     notifyNoteChanged();
   }
@@ -100,9 +123,15 @@ class NoteService {
     final owner = await DurableSyncQueue.owner();
     final db = await UserDBHelper().database;
     final enabled = await isSyncEnabled();
+    final removedLocalPaths = <String>[];
     await db.transaction((tx) async {
       final rows = await tx.query('Notes', where: 'id=?', whereArgs: [note.id]);
       final current = rows.isEmpty ? note : QuestionNote.fromMap(rows.single);
+      for (final img in current.images) {
+        if (img.localPath != null && img.localPath!.isNotEmpty) {
+          removedLocalPaths.add(img.localPath!);
+        }
+      }
       final remote = current.remoteId?.isNotEmpty == true
           ? current.remoteId
           : (!current.id.startsWith('local_') ? current.id : null);
@@ -142,8 +171,22 @@ class NoteService {
         );
       }
     });
+    _cleanupSandboxImages(removedLocalPaths);
     if (enabled) unawaited(processQueue(question: question));
     notifyNoteChanged();
+  }
+
+  /// 清理应用沙盒 note_images 目录下不再被引用的孤儿图片文件
+  void _cleanupSandboxImages(List<String> paths) {
+    for (final rawPath in paths) {
+      try {
+        if (p.basename(p.dirname(rawPath)) != 'note_images') continue;
+        final file = File(rawPath);
+        if (file.existsSync()) {
+          file.deleteSync();
+        }
+      } catch (_) {}
+    }
   }
 
   Future<void> _queueNote(
@@ -290,8 +333,14 @@ class NoteService {
       );
 
       final data = jsonDecode(bodyStr);
-      if ((data['code'] == '200' || data['code'] == 200) &&
-          data['data'] != null) {
+      final code = data['code']?.toString() ?? '';
+      if (code == '309') {
+        debugPrint('[NoteService] uploadImage session expired (309)');
+        clearUserInfo();
+        AuthService.instance.notifyTokenExpired();
+        throw const FormatException('309_TOKEN_EXPIRED');
+      }
+      if (code == '200' && data['data'] != null) {
         final bImg = data['data']['b_img']?.toString() ?? '';
         final sImg = data['data']['s_img']?.toString() ?? bImg;
         return NoteImage(bImg: bImg, sImg: sImg, localPath: file.path);
@@ -300,10 +349,88 @@ class NoteService {
           '[NoteService] uploadImage failed with code: ${data['code']}, msg: ${data['message']}',
         );
       }
+    } on FormatException {
+      rethrow;
+    } on StateError {
+      rethrow;
     } catch (e, stack) {
       debugPrint('[NoteService] uploadImage exception: $e\n$stack');
     }
     return null;
+  }
+
+  /// 当 pushNote 返回 code=200 但 data={} 不含新建笔记 id 时，
+  /// 紧跟查询一次 getNote，按正文和首图匹配出服务端刚分配的真实 id。
+  Future<String?> _resolveCreatedRemoteId({
+    required QuestionNote note,
+    required QuestionSyncMeta meta,
+    required String owner,
+  }) async {
+    try {
+      final resp = await basicReq(
+        '/allQuestion/Note/getNote',
+        {
+          'question_id': note.questionId,
+          'subject_id': meta.subjectId,
+          'identity_id': meta.identityId,
+          'app_id': meta.appId,
+          'module_type': '1',
+          'page': '1',
+          'size': '20',
+          'is_vip': '0',
+          'is_svip': '0',
+        },
+        method: 'GET',
+        expectedOwner: owner,
+      );
+      if (resp['code']?.toString() != '200' || resp['data'] is! List) {
+        return null;
+      }
+      final remoteList = resp['data'] as List;
+      final db = await UserDBHelper().database;
+      final localRows = await db.query(
+        'Notes',
+        columns: ['id', 'remote_id'],
+        where: 'question_id = ?',
+        whereArgs: [note.questionId],
+      );
+      final boundRemoteIds = localRows
+          .where((r) => r['id'] != note.id)
+          .map((r) => r['remote_id']?.toString() ?? '')
+          .where((id) => id.isNotEmpty)
+          .toSet();
+      final expectedImg =
+          note.images.isNotEmpty ? note.images.first.bImg : '';
+
+      String? bestId;
+      var bestCtime = -1;
+      for (final raw in remoteList) {
+        if (raw is! Map) continue;
+        final rId = raw['id']?.toString() ?? '';
+        if (rId.isEmpty || boundRemoteIds.contains(rId)) continue;
+        final rContent = raw['content']?.toString() ?? '';
+        if (rContent != note.content) continue;
+        var rImg = '';
+        if (raw['img'] is List && (raw['img'] as List).isNotEmpty) {
+          final first = (raw['img'] as List).first;
+          if (first is Map) {
+            rImg = first['b_img']?.toString() ?? '';
+          }
+        }
+        if (expectedImg.isNotEmpty && rImg.isNotEmpty && expectedImg != rImg) {
+          continue;
+        }
+        final ctime = int.tryParse(raw['ctime']?.toString() ?? '0') ?? 0;
+        if (ctime >= bestCtime) {
+          bestCtime = ctime;
+          bestId = rId;
+        }
+      }
+      return bestId;
+    } catch (e) {
+      debugPrint('[NoteService] _resolveCreatedRemoteId failed: $e');
+      return null;
+    }
   }
 
   /// 为特定题目双向增量同步笔记：
@@ -327,21 +454,18 @@ class NoteService {
 
     // 从医考帮获取笔记
     try {
-      final identityId = question.identityId?.isNotEmpty == true
-          ? question.identityId!
-          : (prefs.getString('identityId') ?? '');
-      final subjectId = question.chapterParentId ?? '';
-      final appId = question.nativeAppId?.isNotEmpty == true
-          ? question.nativeAppId!
-          : (question.appId?.isNotEmpty == true ? question.appId! : '12');
+      final meta = await YkbSyncService.instance.resolveQuestionMeta(
+        question.id,
+        question: question,
+      );
 
       final resp = await basicReq(
         '/allQuestion/Note/getNote',
         {
           'question_id': question.id,
-          'subject_id': subjectId,
-          'identity_id': identityId,
-          'app_id': appId,
+          'subject_id': meta.subjectId,
+          'identity_id': meta.identityId,
+          'app_id': meta.appId,
           'module_type': '1',
           'page': '1',
           'size': '20',
@@ -359,6 +483,7 @@ class NoteService {
         final remoteList = resp['data'] as List;
         final localNotes = await getLocalNotes(question.id);
         final db = await UserDBHelper().database;
+        final claimedLocalIds = <String>{};
 
         for (final item in remoteList) {
           final rId = item['id']?.toString() ?? '';
@@ -399,18 +524,29 @@ class NoteService {
           if (deleted) {
             continue;
           }
-          // 匹配本地记录：按 remote_id 或 id
-          final matchedLocal = localNotes
+          // 匹配本地记录：优先按 remote_id 或 id，其次认领尚未关联 remote_id 但内容一致的本地笔记
+          var matchedLocal = localNotes
               .where((n) => n.remoteId == rId || n.id == rId)
               .firstOrNull;
+          matchedLocal ??= localNotes
+              .where(
+                (n) =>
+                    !claimedLocalIds.contains(n.id) &&
+                    (n.remoteId == null || n.remoteId!.isEmpty) &&
+                    n.content == rContent,
+              )
+              .firstOrNull;
+          if (matchedLocal != null) {
+            claimedLocalIds.add(matchedLocal.id);
+          }
 
           if (matchedLocal == null) {
             // 本地不存在，插入
             // 外键约束已开启：先补 Question 兜底行（查看他人笔记的题可能从未作答）。
             await db.insert('Question', {
               'id': question.id,
-              'chapter_id': question.chapterId ?? '',
-              'chapter_parent_id': question.chapterParentId ?? '',
+              'chapter_id': meta.chapterId,
+              'chapter_parent_id': meta.chapterParentId,
             }, conflictAlgorithm: ConflictAlgorithm.ignore);
             final newNote = QuestionNote(
               id: rId,
@@ -484,10 +620,10 @@ class NoteService {
             'description': jsonEncode({
               'question_id': question.id,
               'pulled_count': remoteList.length,
-              'subject_id': subjectId,
+              'subject_id': meta.subjectId,
             }),
             'question_id': int.tryParse(question.id) ?? 0,
-            'subject_id': subjectId,
+            'subject_id': meta.subjectId,
             'is_right': 'pull',
             'duration': 0,
             'timestamp': DateTime.now().millisecondsSinceEpoch,
@@ -557,9 +693,7 @@ class NoteService {
 
     QuestionNote note = QuestionNote.fromMap(noteRows.first);
     var revision = noteRows.first['revision'] as int;
-    final prefs = await SharedPreferences.getInstance();
 
-    // 优先从 payload 中提取已序列化的参数，避免后台队列无 fallbackQuestion 导致 subject_id 为空
     Map<String, dynamic> itemPayload = {};
     if (item.payload != null && item.payload!.isNotEmpty) {
       try {
@@ -567,45 +701,13 @@ class NoteService {
       } catch (_) {}
     }
 
-    String subjectId = itemPayload['subject_id']?.toString() ?? '';
-    String identityId = itemPayload['identity_id']?.toString() ?? '';
-    String appId = itemPayload['app_id']?.toString() ?? '';
-
-    if (subjectId.isEmpty && fallbackQuestion != null) {
-      subjectId = fallbackQuestion.chapterParentId ?? '';
-    }
-    if (identityId.isEmpty && fallbackQuestion != null) {
-      identityId = fallbackQuestion.identityId ?? '';
-    }
-    if (appId.isEmpty && fallbackQuestion != null) {
-      appId = fallbackQuestion.nativeAppId ?? fallbackQuestion.appId ?? '';
-    }
-
-    // 若依然缺失，从本地数据库反查题目的 chapter_parent_id
-    if (subjectId.isEmpty) {
-      try {
-        final qRows = await db.query(
-          'Question',
-          columns: ['chapter_parent_id'],
-          where: 'id = ?',
-          whereArgs: [item.questionId],
-          limit: 1,
-        );
-        if (qRows.isNotEmpty) {
-          final parentId = qRows.first['chapter_parent_id']?.toString();
-          if (parentId != null && parentId.isNotEmpty) {
-            subjectId = parentId;
-          }
-        }
-      } catch (_) {}
-    }
-
-    if (identityId.isEmpty) {
-      identityId = prefs.getString('identityId') ?? '';
-    }
-    if (appId.isEmpty) {
-      appId = '12';
-    }
+    final meta = await YkbSyncService.instance.resolveQuestionMeta(
+      item.questionId,
+      question: fallbackQuestion,
+      subjectId: itemPayload['subject_id']?.toString(),
+      identityId: itemPayload['identity_id']?.toString(),
+      appId: itemPayload['app_id']?.toString(),
+    );
 
     // 云端优先保存第一张图片：检查第一张图片是否需要上传
     final List<NoteImage> updatedImages = List.from(note.images);
@@ -621,9 +723,9 @@ class NoteService {
           );
           final uploaded = await uploadImage(
             file,
-            subjectId: subjectId,
-            identityId: identityId,
-            appId: appId,
+            subjectId: meta.subjectId,
+            identityId: meta.identityId,
+            appId: meta.appId,
             expectedOwner: owner,
           );
           if (uploaded == null) throw StateError('笔记图片尚未上传成功');
@@ -658,9 +760,9 @@ class NoteService {
       'question_id': note.questionId,
       'content': note.content,
       'module_type': '1',
-      'subject_id': subjectId,
-      'identity_id': identityId,
-      'app_id': appId,
+      'subject_id': meta.subjectId,
+      'identity_id': meta.identityId,
+      'app_id': meta.appId,
       'is_vip': '0',
       'is_svip': '0',
     };
@@ -700,9 +802,16 @@ class NoteService {
 
     if (resp['code'] == '200' || resp['code'] == 200) {
       final data = resp['data'];
-      final remoteId = note.remoteId?.isNotEmpty == true
+      var remoteId = note.remoteId?.isNotEmpty == true
           ? note.remoteId
           : (data is Map ? (data['id'] ?? data['note_id'])?.toString() : null);
+      if (remoteId == null || remoteId.isEmpty) {
+        remoteId = await _resolveCreatedRemoteId(
+          note: note,
+          meta: meta,
+          owner: owner,
+        );
+      }
       if (remoteId == null || remoteId.isEmpty) {
         await db.update(
           'NoteSyncQueue',
@@ -735,7 +844,7 @@ class NoteService {
           await _queueDelete(
             tx,
             note.questionId,
-            remoteId,
+            remoteId!,
             owner,
             metadata: itemPayload,
           );
@@ -766,7 +875,7 @@ class NoteService {
           'title': 'NoteUpload',
           'description': jsonEncode(params),
           'question_id': int.tryParse(note.questionId) ?? 0,
-          'subject_id': subjectId,
+          'subject_id': meta.subjectId,
           'is_right': 'upload',
           'duration': 0,
           'timestamp': DateTime.now().millisecondsSinceEpoch,
@@ -823,7 +932,6 @@ class NoteService {
     if (item.noteId == null || item.noteId!.isEmpty) return true;
 
     final db = await UserDBHelper().database;
-    final prefs = await SharedPreferences.getInstance();
 
     Map<String, dynamic> itemPayload = {};
     if (item.payload != null && item.payload!.isNotEmpty) {
@@ -832,44 +940,13 @@ class NoteService {
       } catch (_) {}
     }
 
-    String subjectId = itemPayload['subject_id']?.toString() ?? '';
-    String identityId = itemPayload['identity_id']?.toString() ?? '';
-    String appId = itemPayload['app_id']?.toString() ?? '';
-
-    if (subjectId.isEmpty && fallbackQuestion != null) {
-      subjectId = fallbackQuestion.chapterParentId ?? '';
-    }
-    if (identityId.isEmpty && fallbackQuestion != null) {
-      identityId = fallbackQuestion.identityId ?? '';
-    }
-    if (appId.isEmpty && fallbackQuestion != null) {
-      appId = fallbackQuestion.nativeAppId ?? fallbackQuestion.appId ?? '';
-    }
-
-    if (subjectId.isEmpty) {
-      try {
-        final qRows = await db.query(
-          'Question',
-          columns: ['chapter_parent_id'],
-          where: 'id = ?',
-          whereArgs: [item.questionId],
-          limit: 1,
-        );
-        if (qRows.isNotEmpty) {
-          final parentId = qRows.first['chapter_parent_id']?.toString();
-          if (parentId != null && parentId.isNotEmpty) {
-            subjectId = parentId;
-          }
-        }
-      } catch (_) {}
-    }
-
-    if (identityId.isEmpty) {
-      identityId = prefs.getString('identityId') ?? '';
-    }
-    if (appId.isEmpty) {
-      appId = '12';
-    }
+    final meta = await YkbSyncService.instance.resolveQuestionMeta(
+      item.questionId,
+      question: fallbackQuestion,
+      subjectId: itemPayload['subject_id']?.toString(),
+      identityId: itemPayload['identity_id']?.toString(),
+      appId: itemPayload['app_id']?.toString(),
+    );
 
     final resp = await basicReq(
       '/allQuestion/Note/cleanNote',
@@ -877,9 +954,9 @@ class NoteService {
         'id': item.noteId,
         'question_id': item.questionId,
         'module_type': '1',
-        'subject_id': subjectId,
-        'identity_id': identityId,
-        'app_id': appId,
+        'subject_id': meta.subjectId,
+        'identity_id': meta.identityId,
+        'app_id': meta.appId,
         'is_vip': '0',
         'is_svip': '0',
       },
@@ -908,10 +985,10 @@ class NoteService {
           'description': jsonEncode({
             'note_id': item.noteId,
             'question_id': item.questionId,
-            'subject_id': subjectId,
+            'subject_id': meta.subjectId,
           }),
           'question_id': int.tryParse(item.questionId) ?? 0,
-          'subject_id': subjectId,
+          'subject_id': meta.subjectId,
           'is_right': 'delete',
           'duration': 0,
           'timestamp': DateTime.now().millisecondsSinceEpoch,

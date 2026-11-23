@@ -77,6 +77,18 @@ void main() {
         description TEXT DEFAULT ''
       )''');
 
+      await db.execute('''CREATE TABLE Notes (
+        id TEXT PRIMARY KEY,
+        remote_id TEXT,
+        question_id TEXT NOT NULL,
+        content TEXT NOT NULL,
+        imgs TEXT NOT NULL DEFAULT '[]',
+        timestamp INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL DEFAULT 0,
+        sync_status INTEGER NOT NULL DEFAULT 0,
+        revision INTEGER NOT NULL DEFAULT 0
+      )''');
+
       await CloudOutbox.install(db);
       await CloudOutbox.bind(db, 'user_test_ext');
     });
@@ -226,6 +238,73 @@ void main() {
       final plans = await db.query('ReviewPlans', where: 'id=?', whereArgs: ['plan_remote']);
       expect(plans.length, 1);
       expect(plans.first['name'], '云端计划');
+    });
+
+    test('笔记新增、编辑、删除与云端拉取合并完整闭环', () async {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      await db.insert('Question', {'id': 'q_note_1'});
+      await db.insert('Notes', {
+        'id': 'local_n1',
+        'remote_id': 'r_100',
+        'question_id': 'q_note_1',
+        'content': '本地笔记内容',
+        'imgs': '[]',
+        'timestamp': now,
+        'updated_at': now,
+        'sync_status': 0,
+      });
+
+      var outbox = await CloudOutbox.snapshot(db, 'user_test_ext');
+      final noteItem = outbox.firstWhere((e) => e['kind'] == 'note');
+      expect(noteItem['entity_id'], 'local_n1');
+      final mut = await CloudOutbox.mutation(db, noteItem);
+      expect((mut['payload'] as Map)['content'], '本地笔记内容');
+
+      // 删除笔记产生 note_delete 墓碑
+      await db.delete('Notes', where: 'id=?', whereArgs: ['local_n1']);
+      outbox = await CloudOutbox.snapshot(db, 'user_test_ext');
+      expect(outbox.any((e) => e['kind'] == 'note'), isFalse);
+      expect(
+        outbox.any(
+          (e) => e['kind'] == 'note_delete' && e['entity_id'] == 'local_n1',
+        ),
+        isTrue,
+      );
+
+      // 合并远端笔记（已删除的 local_n1 不会复活，新笔记 remote_n2 正常入库并自动补齐外键 Question）
+      await CloudOutbox.mergePage(db, 'user_test_ext', {
+        'next_cursor': 20,
+        'high_watermark': 20,
+        'has_more': false,
+        'pull_deleted_activities': <String>[],
+        'pull_activities': <Map<String, dynamic>>[],
+        'pull_questions': <Map<String, dynamic>>[],
+        'pull_notes': [
+          {
+            'id': 'local_n1',
+            'remote_id': 'r_100',
+            'question_id': 'q_note_1',
+            'content': '旧笔记不应复活',
+            'imgs': '[]',
+            'timestamp': now,
+            'updated_at': now,
+          },
+          {
+            'id': 'remote_n2',
+            'remote_id': 'r_200',
+            'question_id': 'q_new_from_cloud',
+            'content': '云端同步过来的新笔记',
+            'imgs': '[]',
+            'timestamp': now + 100,
+            'updated_at': now + 100,
+          },
+        ],
+        'pull_deleted_notes': <String>[],
+      }, 0);
+
+      final notes = await db.query('Notes');
+      expect(notes.map((n) => n['id']).toList(), ['remote_n2']);
+      expect(notes.single['content'], '云端同步过来的新笔记');
     });
   });
 }

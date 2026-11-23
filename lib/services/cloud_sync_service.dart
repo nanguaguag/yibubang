@@ -370,7 +370,9 @@ class CloudSyncService extends ChangeNotifier {
           (page['pull_flashcards'] as List? ?? const []).isNotEmpty ||
           (page['pull_deleted_flashcards'] as List? ?? const []).isNotEmpty ||
           (page['pull_spaced_items'] as List? ?? const []).isNotEmpty ||
-          (page['pull_review_plans'] as List? ?? const []).isNotEmpty;
+          (page['pull_review_plans'] as List? ?? const []).isNotEmpty ||
+          (page['pull_notes'] as List? ?? const []).isNotEmpty ||
+          (page['pull_deleted_notes'] as List? ?? const []).isNotEmpty;
     }
 
     try {

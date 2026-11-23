@@ -19,6 +19,7 @@ import '../models/spaced_review_item.dart';
 import '../repositories/question_bank_repository.dart';
 import '../repositories/spaced_review_repository.dart';
 import 'spaced_repetition_engine.dart';
+import 'ykb_sync_service.dart';
 
 class ReviewUnavailableException implements Exception {
   final String message;
@@ -185,7 +186,7 @@ class DailyReviewService {
     DateTime? now,
     DatabaseExecutor? executor,
   }) async {
-    await _atomic(
+    final isQuestion = await _atomic(
       executor,
       (tx) => _cutInTransaction(
         questionId: questionId,
@@ -196,9 +197,19 @@ class DailyReviewService {
       ),
     );
     notifyAnswersChanged();
+    if (isQuestion) {
+      unawaited(() async {
+        if (!await YkbSyncService.instance.isSyncReviewCutEnabled()) return;
+        await YkbSyncService.instance.syncCutByQuestionId(
+          questionId: questionId,
+          isCut: true,
+          bankId: bankId,
+        );
+      }());
+    }
   }
 
-  Future<void> _cutInTransaction({
+  Future<bool> _cutInTransaction({
     required String questionId,
     required String bankId,
     String? planId,
@@ -283,6 +294,7 @@ class DailyReviewService {
       'duration_ms': 0,
       'timestamp': currentTime.millisecondsSinceEpoch,
     });
+    return !isFlashcard;
   }
 
   /// 提交作答或复习评分结果
@@ -323,6 +335,33 @@ class DailyReviewService {
       ),
     );
     notifyAnswersChanged();
+    if (result.itemType != ReviewItemType.flashcard &&
+        userAnswer != null &&
+        userAnswer.trim().isNotEmpty) {
+      final status = rating != ReviewRating.again ? 1 : 2;
+      unawaited(() async {
+        if (!await YkbSyncService.instance.isSyncReviewAnswersEnabled()) return;
+        await YkbSyncService.instance.syncAnswer(
+          question: Question(
+            id: questionId,
+            userAnswer: userAnswer,
+            sourceBankId: bankId,
+          ),
+          userQuestion: UserQuestion(
+            id: questionId,
+            chapterId: '',
+            chapterParentId: '',
+            userAnswer: userAnswer,
+            status: status,
+            collection: 0,
+          ),
+          durationMs: Duration(
+            seconds: durationSeconds < 0 ? 0 : durationSeconds,
+          ).inMilliseconds,
+          bankId: bankId,
+        );
+      }());
+    }
     return result;
   }
 

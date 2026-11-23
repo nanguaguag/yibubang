@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -10,6 +11,7 @@ import '../db/database_helper.dart';
 import '../db/question_bank_manager.dart';
 import '../models/question.dart';
 import '../models/question_bank.dart';
+import '../services/ykb_sync_service.dart';
 import 'question_bank_repository.dart';
 
 /// 用户题目聚合类型
@@ -571,39 +573,48 @@ class QuestionSearchRepository {
   }
 
   /// 切换某道题的斩题状态
-  Future<bool> setCutQuestion(String questionId, bool value) async {
+  Future<bool> setCutQuestion(
+    String questionId,
+    bool value, {
+    String? bankId,
+  }) async {
     final userDb = await UserDBHelper().database;
-    final cutVal = value ? '1' : '0';
-    final rows = await userDb.query(
+    final uq = UserQuestion(
+      id: questionId,
+      chapterId: '',
+      chapterParentId: '',
+      cutQuestion: value ? '1' : '0',
+      userAnswer: '',
+      status: 0,
+      collection: 0,
+      updatedAt: DateTime.now().millisecondsSinceEpoch,
+    );
+    final qRows = await userDb.query(
       'Question',
-      columns: ['id'],
+      columns: ['chapter_id', 'chapter_parent_id'],
       where: 'id = ?',
       whereArgs: [questionId],
       limit: 1,
     );
-    final now = DateTime.now().millisecondsSinceEpoch;
-    if (rows.isEmpty) {
-      await userDb.insert('Question', {
-        'id': questionId,
-        'chapter_id': '',
-        'chapter_parent_id': '',
-        'cut_question': cutVal,
-        'user_answer': '',
-        'status': 0,
-        'collection': 0,
-        'updated_at': now,
-      });
-    } else {
-      await userDb.update(
-        'Question',
-        {
-          'cut_question': cutVal,
-          'updated_at': now,
-        },
-        where: 'id = ?',
-        whereArgs: [questionId],
-      );
-    }
+    final q = Question(
+      id: questionId,
+      chapterId: qRows.isNotEmpty
+          ? qRows.first['chapter_id']?.toString()
+          : null,
+      chapterParentId: qRows.isNotEmpty
+          ? qRows.first['chapter_parent_id']?.toString()
+          : null,
+      userAnswer: '',
+      sourceBankId: bankId,
+    );
+    await updateQuestionSimple(uq, q, fields: const {'cut_question'});
+    unawaited(
+      YkbSyncService.instance.syncCutByQuestionId(
+        questionId: questionId,
+        isCut: value,
+        bankId: bankId,
+      ),
+    );
     return value;
   }
 }

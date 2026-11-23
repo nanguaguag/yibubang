@@ -71,6 +71,8 @@ class _SettingsPageState extends State<SettingsPage> {
   // 医考帮云端同步设置
   bool syncAnswersToYkb = true;
   bool syncCutToYkb = true;
+  bool syncReviewAnswersToYkb = true;
+  bool syncReviewCutToYkb = true;
   bool syncNotesToYkb = true;
   bool syncRedoToYkb = true;
 
@@ -93,6 +95,10 @@ class _SettingsPageState extends State<SettingsPage> {
   static const String keyFlashcard3DFlip = 'flashcard_3d_flip';
   static const String keySyncAnswersToYkb = 'sync_answers_to_ykb';
   static const String keySyncCutToYkb = 'sync_cut_to_ykb';
+  static const String keySyncReviewAnswersToYkb =
+      YkbSyncService.keySyncReviewAnswersToYkb;
+  static const String keySyncReviewCutToYkb =
+      YkbSyncService.keySyncReviewCutToYkb;
   static const String keySyncNotesToYkb = 'sync_notes_to_ykb';
   static const String keySyncRedoToYkb = 'sync_redo_to_ykb';
   static const String keySyncYkbProgressEnabled = 'sync_ykb_progress_enabled';
@@ -118,6 +124,8 @@ class _SettingsPageState extends State<SettingsPage> {
     autoResume = _prefs.getBool(keyAutoResume) ?? false;
     syncNotesToYkb = _prefs.getBool(keySyncNotesToYkb) ?? true;
     syncCutToYkb = _prefs.getBool(keySyncCutToYkb) ?? true;
+    syncReviewAnswersToYkb = _prefs.getBool(keySyncReviewAnswersToYkb) ?? true;
+    syncReviewCutToYkb = _prefs.getBool(keySyncReviewCutToYkb) ?? true;
     syncRedoToYkb = _prefs.getBool(keySyncRedoToYkb) ?? true;
     syncAnswersToYkb =
         _prefs.getBool(keySyncAnswersToYkb) ??
@@ -776,6 +784,34 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
               ),
               IconTile(
+                icon: Icons.fact_check_outlined,
+                label: '每日复习做题同步到医考帮',
+                trailing: Switch(
+                  value: syncReviewAnswersToYkb,
+                  onChanged: (v) {
+                    setState(() => syncReviewAnswersToYkb = v);
+                    _setBool(keySyncReviewAnswersToYkb, v);
+                    if (v) {
+                      YkbSyncService.instance.processQueue();
+                    }
+                  },
+                ),
+              ),
+              IconTile(
+                icon: Icons.auto_delete_outlined,
+                label: '每日复习熟练斩题同步到医考帮',
+                trailing: Switch(
+                  value: syncReviewCutToYkb,
+                  onChanged: (v) {
+                    setState(() => syncReviewCutToYkb = v);
+                    _setBool(keySyncReviewCutToYkb, v);
+                    if (v) {
+                      YkbSyncService.instance.processQueue();
+                    }
+                  },
+                ),
+              ),
+              IconTile(
                 icon: Icons.note_alt_outlined,
                 label: '同步笔记到医考帮',
                 trailing: Switch(
@@ -817,7 +853,7 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
               IconTile(
                 icon: Icons.visibility_off_outlined,
-                label: '静默同步（启动后后台拉取做题记录）',
+                label: '启动后静默同步',
                 trailing: Switch(
                   value: syncYkbSilent,
                   onChanged: (v) {
@@ -828,7 +864,7 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
               IconTile(
                 icon: Icons.timer_outlined,
-                label: '模拟延迟抖动（拉取时随机加延迟）',
+                label: '拉取时模拟延迟抖动',
                 trailing: Switch(
                   value: syncYkbJitter,
                   onChanged: (v) {
@@ -839,7 +875,7 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
               IconTile(
                 icon: Icons.person_outline,
-                label: '模拟刷题节奏（章节间随机等候）',
+                label: '模拟刷题节奏',
                 trailing: Switch(
                   value: syncYkbPacing,
                   onChanged: (v) {
@@ -853,7 +889,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   listenable: CourseSyncActions.instance,
                   builder: (context, _) => IconTile(
                     icon: action.icon,
-                    label: '我的课程：显示「${action.label}」按钮',
+                    label: '首页显示「${action.label}」',
                     trailing: Switch(
                       value: CourseSyncActions.instance.isVisible(action),
                       onChanged: (value) =>
@@ -1106,7 +1142,8 @@ class _SettingsPageState extends State<SettingsPage> {
                     ),
                     const SizedBox(height: 12),
                     const InfoHintBanner(
-                      message: '轻量化 FSRS 采用成熟神经记忆参数集，无需在手机本地运行耗电拟合，切换后新复习题目即刻生效。',
+                      message:
+                          '轻量化 FSRS 采用成熟神经记忆参数集，无需在手机本地运行耗电拟合，切换后新复习题目即刻生效。',
                     ),
                   ],
                 ),

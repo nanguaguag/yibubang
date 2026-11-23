@@ -187,3 +187,32 @@ END;
 CREATE TRIGGER IF NOT EXISTS sync_review_plan_update AFTER UPDATE ON sync_review_plans BEGIN
   INSERT INTO sync_changes(user_id,kind,entity_id) VALUES(NEW.user_id,'review_plan',NEW.id);
 END;
+
+-- 9. 题目笔记表与删除墓碑 (Notes)
+CREATE TABLE IF NOT EXISTS sync_notes (
+    user_id TEXT NOT NULL,
+    id TEXT NOT NULL,
+    remote_id TEXT,
+    question_id TEXT NOT NULL,
+    content TEXT NOT NULL DEFAULT '',
+    imgs TEXT NOT NULL DEFAULT '[]',
+    timestamp INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (user_id, id)
+);
+CREATE INDEX IF NOT EXISTS idx_sync_notes_question ON sync_notes(user_id, question_id);
+CREATE INDEX IF NOT EXISTS idx_sync_notes_updated ON sync_notes(user_id, updated_at);
+CREATE TRIGGER IF NOT EXISTS sync_note_insert AFTER INSERT ON sync_notes BEGIN
+  INSERT INTO sync_changes(user_id,kind,entity_id) VALUES(NEW.user_id,'note',NEW.id);
+END;
+CREATE TRIGGER IF NOT EXISTS sync_note_update AFTER UPDATE ON sync_notes BEGIN
+  INSERT INTO sync_changes(user_id,kind,entity_id) VALUES(NEW.user_id,'note',NEW.id);
+END;
+
+CREATE TABLE IF NOT EXISTS sync_deleted_notes(user_id TEXT NOT NULL, id TEXT NOT NULL, PRIMARY KEY(user_id, id));
+CREATE TRIGGER IF NOT EXISTS sync_note_tombstone AFTER INSERT ON sync_deleted_notes BEGIN
+  INSERT INTO sync_changes(user_id,kind,entity_id) VALUES(NEW.user_id,'note_delete',NEW.id);
+END;
+CREATE TRIGGER IF NOT EXISTS sync_note_no_resurrection BEFORE INSERT ON sync_notes
+  WHEN EXISTS(SELECT 1 FROM sync_deleted_notes WHERE user_id=NEW.user_id AND id=NEW.id)
+  BEGIN SELECT RAISE(IGNORE); END;

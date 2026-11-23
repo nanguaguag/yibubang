@@ -114,23 +114,52 @@ void main() {
     expect(await db.query('NoteSyncQueue'), isEmpty);
     expect((await db.query('NoteTombstones')).single['remote_id'], 'created');
   });
-  test('创建响应不含真实ID时不会猜测关联第一条笔记或自动重传', () async {
+  test('创建响应不含真实ID时通过getNote精确回查关联；若远端无匹配则不盲目猜测关联其他笔记且暂停自动重传', () async {
     await prepare(note());
-    var calls = 0;
+    var pushCalls = 0;
+    var getCalls = 0;
     await http.runWithClient(
       () => NoteService.instance.processQueue(),
       () => MockClient((req) async {
-        calls++;
-        return http.Response('{"code":200}', 200);
+        if (req.url.path.endsWith('/pushNote')) {
+          pushCalls++;
+          return http.Response('{"code":200,"data":{}}', 200);
+        }
+        getCalls++;
+        // 远端返回另一条内容不同的笔记，验证不会盲目关联第一条
+        return http.Response(
+          '{"code":200,"data":[{"id":"other_note","content":"different_content","ctime":"1"}]}',
+          200,
+        );
       }),
     );
-    expect(calls, 1);
+    expect(pushCalls, 1);
+    expect(getCalls, 1);
     expect((await db.query('Notes')).single['remote_id'], isNull);
     expect((await db.query('NoteSyncQueue')).single['queue_state'], 'paused');
     expect(
       (await db.query('NoteSyncQueue')).single['last_error'],
       contains('可靠笔记ID'),
     );
+  });
+  test('创建响应data为空对象(真实医考帮返回格式)时，自动回查getNote绑定真实ID并完成出队', () async {
+    await prepare(note());
+    await http.runWithClient(
+      () => NoteService.instance.processQueue(),
+      () => MockClient((req) async {
+        if (req.url.path.endsWith('/pushNote')) {
+          return http.Response('{"code":"200","message":"ok","data":{}}', 200);
+        }
+        return http.Response(
+          '{"code":"200","data":[{"id":"1346299","question_id":"q","content":"old","img":[],"ctime":"1792323827"}]}',
+          200,
+        );
+      }),
+    );
+    final saved = (await db.query('Notes')).single;
+    expect(saved['remote_id'], '1346299');
+    expect(saved['sync_status'], 0);
+    expect(await db.query('NoteSyncQueue'), isEmpty);
   });
   test('入队失败时正文及修订号回滚，删除入队失败时删除标记也回滚', () async {
     final n = note().copyWith(remoteId: 'known');
