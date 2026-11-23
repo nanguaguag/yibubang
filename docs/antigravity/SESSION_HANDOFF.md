@@ -14,7 +14,8 @@
      - 更新 `README.md`、`README_EN.md`、`docs/CURRENT_STATUS.md`、`docs/project/` 与知识库索引。
   3. **[门禁与 Git 标记]**：
      - `dart analyze lib/ test/` 0 issues，全量测试 100% 通过；
-     - 提交发布 commit 并打上带附注 Git tag `v2.2.5`。
+     - 补齐 `comment_service.dart` 中 `try` 块内异步返回的 `await`，解决新版本 Dart (Flutter 3.50+) `unawaited_return_in_try_block` 的 warning 触发 CI 失败问题；
+     - 提交发布 commit 并更新带附注 Git tag `v2.2.5`。
 
 ## 前次交接：2026-11-23 医考帮点赞评论后台同步全局状态机、防并发互斥与跨页面生命周期保持
 

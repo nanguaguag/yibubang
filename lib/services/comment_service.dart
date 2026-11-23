@@ -422,11 +422,11 @@ class CommentService {
       if (code == '309') {
         await clearUserInfo();
         AuthService.instance.notifyTokenExpired();
-        return getLocalComments(question.id, category: category);
+        return await getLocalComments(question.id, category: category);
       }
 
       if (await DurableSyncQueue.owner() != pullOwner) {
-        return getLocalComments(question.id, category: category);
+        return await getLocalComments(question.id, category: category);
       }
 
       if (code == '200' && resp['data'] is Map) {
