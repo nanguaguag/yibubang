@@ -156,11 +156,12 @@ class RecordSyncService {
 
     Database? srcDb;
     try {
-      srcDb = await openDatabase(tmpPath, readOnly: true);
+      final sourceDb = await openDatabase(tmpPath, readOnly: true);
+      srcDb = sourceDb;
       final userDb = await UserDBHelper().database;
 
-      final srcQuestions = await srcDb.query('Question');
-      final srcActivities = await srcDb.query('Activities');
+      final srcQuestions = await sourceDb.query('Question');
+      final srcActivities = await sourceDb.query('Activities');
 
       final localRows = await userDb.query('Question');
       final localMap = <String, Map<String, dynamic>>{
@@ -240,8 +241,8 @@ class RecordSyncService {
         }
 
         // 3) 合并个人笔记（Notes）
-        if (await _hasTable(srcDb!, 'Notes') && await _hasTable(txn, 'Notes')) {
-          final srcNotes = await srcDb.query('Notes');
+        if (await _hasTable(sourceDb, 'Notes') && await _hasTable(txn, 'Notes')) {
+          final srcNotes = await sourceDb.query('Notes');
           final localNotes = await txn.query('Notes');
           final localNoteColumns = (await txn.rawQuery("PRAGMA table_info(Notes)"))
               .map((r) => r['name'] as String)
@@ -286,9 +287,9 @@ class RecordSyncService {
         }
 
         // 4) 合并我的点赞与我的评论（SavedComments）
-        if (await _hasTable(srcDb, 'SavedComments') &&
+        if (await _hasTable(sourceDb, 'SavedComments') &&
             await _hasTable(txn, 'SavedComments')) {
-          final srcComments = await srcDb.query('SavedComments');
+          final srcComments = await sourceDb.query('SavedComments');
           final localComments = await txn.query('SavedComments');
           final localCommentColumns =
               (await txn.rawQuery("PRAGMA table_info(SavedComments)"))
@@ -335,9 +336,9 @@ class RecordSyncService {
         }
 
         // 5) 合并自制闪卡（CustomFlashcards）
-        if (await _hasTable(srcDb, 'CustomFlashcards') &&
+        if (await _hasTable(sourceDb, 'CustomFlashcards') &&
             await _hasTable(txn, 'CustomFlashcards')) {
-          final srcCards = await srcDb.query('CustomFlashcards');
+          final srcCards = await sourceDb.query('CustomFlashcards');
           final localCards = await txn.query('CustomFlashcards');
           final localCardColumns =
               (await txn.rawQuery("PRAGMA table_info(CustomFlashcards)"))
@@ -379,9 +380,9 @@ class RecordSyncService {
         }
 
         // 6) 合并间隔复习状态（SpacedReviewItem）
-        if (await _hasTable(srcDb, 'SpacedReviewItem') &&
+        if (await _hasTable(sourceDb, 'SpacedReviewItem') &&
             await _hasTable(txn, 'SpacedReviewItem')) {
-          final srcItems = await srcDb.query('SpacedReviewItem');
+          final srcItems = await sourceDb.query('SpacedReviewItem');
           final localItems = await txn.query('SpacedReviewItem');
           final localItemMap = <String, Map<String, dynamic>>{
             for (final item in localItems)
@@ -414,9 +415,9 @@ class RecordSyncService {
         }
 
         // 7) 合并答题计时（QuestionTestTime）
-        if (await _hasTable(srcDb, 'QuestionTestTime') &&
+        if (await _hasTable(sourceDb, 'QuestionTestTime') &&
             await _hasTable(txn, 'QuestionTestTime')) {
-          final srcTimes = await srcDb.query('QuestionTestTime');
+          final srcTimes = await sourceDb.query('QuestionTestTime');
           final localTimes = await txn.query('QuestionTestTime');
           final localTimeMap = <String, Map<String, dynamic>>{
             for (final t in localTimes) t['question_id'].toString(): t,
