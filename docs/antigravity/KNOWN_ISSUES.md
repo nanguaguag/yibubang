@@ -10,6 +10,7 @@
 
 | 问题 | 状态与验证 |
 | --- | --- |
+| GitHub Actions 自动化发布 APK 签名漂移，各版本无法覆盖升级 | 已修复；根因为 `android/app/build.gradle` 依赖 `signingConfigs.debug`，在 GitHub 临时 Ubuntu 虚拟机中每次动态生成不同的调试证书；已生成 50 年官方长期正式密钥库 `yibubang-release.jks` 并通过 GitHub Secrets 注入 CI/CD，配置 `signingConfigs.release` 自动注入与本地优雅降级；使用正式密钥对 `v2.2.5` 全量 4 个 APK 救火重签并通过 `gh release upload --clobber` 覆盖更新；`apksigner verify` 确认 SHA-256 证书指纹 100% 对齐 |
 | 云同步万题上传单批 500 耗时 43s 报 HTTP 500 | 已修复；重构 `sync_v2.ts` 为并发幂等查重 + 多行 `ON CONFLICT DO UPDATE`（严格 $\le 91$ 参数守住 D1 100 参数上限），500 题耗时由 43s 降至 4.3s；客户端增加 >16KB 自动 GZip 压缩（压缩率 ~95%）、中间分片 `push_only` 及 500/超时自动缩减批次降级；MockClient 15/15 PASS，Worker 已上线 |
 | 云同步第 ~3400 条后稳定报黑盒 500 (Internal Server Error) | 已修复；Hono 原先缺失 `app.onError` 导致 D1 报错（如远程 D1 未执行最新 `schema.sql` 建表 `sync_flashcards`/`sync_spaced_items`）或旧迁移题目 `user_answer: null` 校验异常均被吞成 `"Internal Server Error"`；现已补全全局异常透传与历史 `NULL` 字段兼容默认值 |
 | AppMarkdown 图片加载时居中、加载后闪跳至左侧 | 已修复；`AppNetworkImage` 默认占位无尺寸导致加载时撑满全宽、加载后缩回配合 `Alignment.centerLeft` 闪跳；已改为 `Center` 居中与 `200×140` 固定占位尺寸，10/10 PASS |

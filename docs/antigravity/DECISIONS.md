@@ -15,5 +15,6 @@
 | 教材处理 | 本地复用OCR/按坐标去重；原PDF不上传，Google收清洗文本，私有R2存独立页图/小图；源版本与物理页定位 |
 | 可迁移资产 | 保留本地规范文字/稳定ID/坐标/来源和云成功账本；换Embedding重算向量，不需再清洗PDF |
 | 文档 | docs为唯一维护目录，根README导航，当前与历史分开；忽略私有抓包/数据库/环境。Release工作流读取docs/release-notes |
+| Android 发布签名 | 放弃默认 debug.keystore 临时生成，采用 50 年官方专用发布密钥库（yibubang-release.jks）+ GitHub Secrets Base64 注入 CI/CD，无密钥环境优雅降级，确立自 v2.2.5 永久统一签名基准并就地重签救火 |
 
 详情：[题库管理](QUESTION_BANK_MANAGEMENT_DESIGN.md)、[AI手册](../ai-search/README.md)、[检索限制](../ai-search/RETRIEVAL_LIMITS.md)、[费用](../ai-search/COSTS_AND_BUILTIN_MODELS.md)、[教材实施](../knowledge-base/TEXTBOOK_EXECUTION.md)。实际赠金抵扣仍待账单，不由架构选择自动保证。

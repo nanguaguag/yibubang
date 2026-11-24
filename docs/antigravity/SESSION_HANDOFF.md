@@ -18,6 +18,15 @@
      - 使用官方正式密钥重新签署 `v2.2.5` 的 4 个 Android APK（Universal、arm64、armeabi-v7a、x86_64），验证证书指纹一致；
      - 通过 `gh release upload v2.2.5 *.apk --clobber` 成功替换 GitHub Release 资产；
      - 更新 `docs/release-notes/v2.2.5.md` 并使用 `gh release edit` 同步至网页端 Release 说明，指导旧版用户在升级时先通过「设置 - 数据与备份」导出数据，再全新安装并导入恢复。
+- **质量门禁与验证**：
+  - `dart analyze lib/ test/`：**No issues found!**
+  - Android Gradle 构建脚本：`./gradlew tasks --dry-run` **BUILD SUCCESSFUL**
+  - `apksigner verify --verbose --print-certs`：v2.2.5 全量 4 个 APK 签名公钥 SHA-256 均为 `BF:97:10:BE:87:90:11:93:25:26:55:55:BB:4B:6C:12:28:27:70:00:35:37:7F:89:D8:5A:75:96:69:E8:36:58`
+  - GitHub Release Assets 验证：`gh release view v2.2.5` 确认 4 个 APK 的 `updatedAt` 已成功更新为最新重签包。
+- **未完成项 / 下一次会话第一步**：
+  - 当前本地 `main` 分支领先远端 1 个 commit（`49bf7e6`）；
+  - 下一次第一步：在终端执行 `git push origin main` 将配置与文档推送到 GitHub 远端；
+  - 后续新版本构建（如 v2.2.6）将完全由 GitHub Actions 自动化读取 Secrets 签名并发布，不再需要手动干预。
 
 ## 前次交接：2026-11-23 v2.2.5+215 版本升级与发布交付
 
