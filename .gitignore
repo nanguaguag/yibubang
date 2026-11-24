@@ -70,3 +70,9 @@ docs/**/*.sqlite*
 AGENTS.md
 
 yibubang-web/
+
+# Keystores & Signing credentials
+*.jks
+*.keystore
+**/key.properties
+

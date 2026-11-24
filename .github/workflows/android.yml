@@ -45,8 +45,25 @@ jobs:
       - name: Run tests
         run: flutter test
 
+      - name: Setup Android Signing Keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        if: env.KEYSTORE_BASE64 != ''
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 --decode > android/app/release.jks
+
       - name: Build release APK
+        env:
+          KEYSTORE_PATH: "release.jks"
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: flutter build apk --release
+
+      - name: Clean Keystore
+        if: always()
+        run: |
+          rm -f android/app/release.jks
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

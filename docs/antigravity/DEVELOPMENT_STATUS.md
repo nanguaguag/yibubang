@@ -1,5 +1,19 @@
 # 当前开发状态
 
+## 2026-11-24 Android 官方发布签名统一与 v2.2.5 Assets 救火重签（完成）
+
+1. **白盒排查与问题根因**：
+   - 本地下载并使用 `apksigner` 实测比对确认历史 `v2.2.3`、`v2.2.4`、`v2.2.5` 的 APK 签名各不相同，根因为 `android/app/build.gradle` 硬编码使用 `signingConfigs.debug`，在 GitHub Actions 临时空白虚拟机中每次动态随机生成不同的 debug.keystore。
+2. **官方正式签名密钥库闭环**：
+   - 确立有效期至 2076 年（50年）的官方发布密钥 `yibubang-release.jks`（SHA256: `BF:97:10:BE:87:90:11:93:25:26:55:55:BB:4B:6C:12:28:27:70:00:35:37:7F:89:D8:5A:75:96:69:E8:36:58`）；
+   - 在 `.gitignore` 中完善全局防护，严禁密钥库与凭据泄露；
+   - 改造 `android/app/build.gradle`，支持同时从 `key.properties` 和系统环境变量注入 `release` 签名，无密钥时平滑回退 `debug`；
+   - 改造 `.github/workflows/release.yml` 与 `android.yml`，在 CI 构建时自动从 GitHub Secrets 解码并注入签名配置。
+3. **v2.2.5 现存 Assets 救火重签与覆盖更新**：
+   - 本地使用官方正式密钥库对 `v2.2.5` 的 4 个 APK（Universal、arm64、armeabi-v7a、x86_64）进行完整重新签名，并通过 `apksigner` 确认证书指纹已 100% 切换为官方签名；
+   - 通过 `gh release upload v2.2.5 *.apk --clobber` 成功替换 GitHub Release 资产；
+   - 更新 `docs/release-notes/v2.2.5.md` 并同步至网页端 Release 说明，指导旧版用户在升级时先通过「设置 - 数据与备份」导出数据，再全新安装并导入恢复。
+
 ## 2026-11-23 版本发布：v2.2.5+215（已完成）
 
 - **版本号升级**：`pubspec.yaml` 正式递增至 `2.2.5+215`。

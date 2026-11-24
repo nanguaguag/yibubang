@@ -1,5 +1,8 @@
 # 当前进度与验证
 
+2026-11-24 Android 官方统一发布签名锁定与 v2.2.5 Assets 救火重签（完成）：
+排查确认历史版本因临时 Ubuntu Runner 动态生成 Debug Keystore 导致发包签名漂移的问题；正式建立 50 年长期有效的官方 Release Keystore（`yibubang-release.jks`）并通过 GitHub Secrets 注入 CI/CD；重构 `android/app/build.gradle` 与 `release.yml` 签名流程；完成 GitHub Release `v2.2.5` 全量 4 个 Android APK（Universal、arm64、armeabi-v7a、x86_64）的官方证书重签与覆盖更新，彻底闭环 Android 覆盖安装签名冲突问题。详见 [最新交接](antigravity/SESSION_HANDOFF.md)。
+
 2026-11-23 版本升级与医考帮双向同步全链路加固（v2.2.5+215）：
 完成医考帮官方做题、斩题、重做、笔记双向同步链路的白盒深度审计与加固（主观题自评本地隔离、离线队列退避重试与队头死锁解除、做题记录 100% 完整落库）；新增用户点赞与个人历史评论归纳管理及后台全库扫描同步机制（Issue #24）；新增题目评论区「最多点赞/最高热度/最多回复/最新发布」四维排序看板；精确对齐卡片池各板块筛选范围数量并修复闪卡详情返回层级。App 版本正式更新至 2.2.5+215，更新清单 `yibubang_update.json` 与发布说明已同步更新，详见 [最新交接](antigravity/SESSION_HANDOFF.md) 与 [v2.2.5 发布说明](release-notes/v2.2.5.md)。
 

@@ -1,6 +1,25 @@
 # 跨会话交接
 
-## 最新交接：2026-11-23 v2.2.5+215 版本升级与发布交付
+## 最新交接：2026-11-24 Android 官方统一发布签名锁定与 v2.2.5 资产重签救火
+
+- **用户授权与操作目标**：
+  1. 排查并确认 `v2.2.5`、`v2.2.4`、`v2.2.3` APK 签名是否不同；
+  2. 定位根本原因并彻底解决后续发版签名漂移问题；
+  3. 完成官方密钥库与 CI 签名流程闭环，对已有 `v2.2.5` Release 进行重签覆盖救火。
+- **完成项**：
+  1. **[实测排查与根因确认]**：
+     - 下载历史三版 APK 并通过 `apksigner` 实测确保证书 SHA-256 各不相同，根因为 `build.gradle` 依赖 `signingConfigs.debug` 并在 GitHub Actions 临时空白虚拟机中动态生成临时证书；
+  2. **[官方发布密钥库闭环]**：
+     - 用户生成 50 年长期有效的官方正式密钥库 `yibubang-release.jks`（SHA-256: `BF:97:10:BE:87:90:11:93:25:26:55:55:BB:4B:6C:12:28:27:70:00:35:37:7F:89:D8:5A:75:96:69:E8:36:58`）并配置 GitHub Secrets；
+     - 在 `.gitignore` 中明确加入 `*.jks`、`*.keystore`、`key.properties` 阻断泄露；
+     - 改造 `android/app/build.gradle`，支持环境变量与 `key.properties` 注入 `release` 签名，无密钥时平滑回退；
+     - 改造 `.github/workflows/release.yml` 与 `android.yml`，在构建时自动注入 release 密钥并在结束时安全清理。
+  3. **[v2.2.5 Assets 救火重签与发布说明同步]**：
+     - 使用官方正式密钥重新签署 `v2.2.5` 的 4 个 Android APK（Universal、arm64、armeabi-v7a、x86_64），验证证书指纹一致；
+     - 通过 `gh release upload v2.2.5 *.apk --clobber` 成功替换 GitHub Release 资产；
+     - 更新 `docs/release-notes/v2.2.5.md` 并使用 `gh release edit` 同步至网页端 Release 说明，指导旧版用户在升级时先通过「设置 - 数据与备份」导出数据，再全新安装并导入恢复。
+
+## 前次交接：2026-11-23 v2.2.5+215 版本升级与发布交付
 
 - **用户授权与操作目标**：
   1. 在 `flutter test` 和 `flutter analyze` 全量验证通过后，将应用正式升级发布到 `2.2.5`（更新版本号至 `2.2.5+215`、更新 `yibubang_update.json`、编写发布说明 `docs/release-notes/v2.2.5.md`、更新相关文档、完成中文 release commit 并打 tag `v2.2.5`）。
