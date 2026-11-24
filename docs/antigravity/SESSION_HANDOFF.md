@@ -1,6 +1,26 @@
 # 跨会话交接
 
-## 最新交接：2026-11-24 Android 官方统一发布签名锁定与 v2.2.5 资产重签救火
+## 最新交接：2026-11-24 做题记录全量数据导入导出加固与 macOS 自动更新替换重启
+
+- **用户授权与操作目标**：
+  1. 修复 macOS 端下载更新后无法自动替换 `/Applications/` 里的 App 并重启的问题；
+  2. 修复导出做题记录并在新设备导入时丢失全部笔记、闪卡、我的点赞、我的评论的严重缺陷。
+- **完成项**：
+  1. **[做题记录全量数据导出与导入闭环 (`lib/db/record_sync_service.dart`, `lib/screens/settings_page.dart`)]**：
+     - **导出 WAL 强制截断**：`exportRecords()` 在读文件前执行 `PRAGMA wal_checkpoint(TRUNCATE)`，解决内存与 WAL 中的最新笔记、闪卡、点赞、评论未落盘导致导出空表的问题；
+     - **导入合并全面扩充**：`importMerge` 全面扩充对 `Notes`、`SavedComments`、`CustomFlashcards`、`SpacedReviewItem`、`QuestionTestTime` 的智能合并，新增 `_sanitizeRow` 兼容旧版/跨版本缺失字段并补充默认值，杜绝 NOT NULL 约束失败；
+     - **支持直接导入 SQLite 文件**：`_extractSqlite` 支持通过 `SQLite format 3\0` 魔数识别原始 `.sqlite` 文件，同时在文件选择器中开放 `['zip', 'sqlite', 'db']`，免解压直接恢复。
+  2. **[macOS 端应用更新自动原子替换与平滑重启 (`lib/services/app_update_service.dart`)]**：
+     - 实现 `findRunningMacOSAppPath()` 精确提取当前 `.app` 包路径（未在 `.app` 中则回退 `/Applications/yibubang.app`）；
+     - 使用 macOS 原生 `/usr/bin/ditto -xk` 工具解压更新 zip 包，完整保留扩展属性、软链接与代码签名；
+     - 启动 detached 后台守护脚本：循环等待当前进程退出 -> 备份移动旧版本 -> 移入新应用 -> 递归清除隔离属性 (`com.apple.quarantine`) -> `open -n` 拉起新版本，主程序调用 `exit(0)`，实现全自动平滑重启升级。
+- **质量门禁与验证**：
+  - `dart analyze lib/ test/`：**No issues found!**
+  - 自动化单元测试 `test/record_sync_full_merge_test.dart` & `test/record_replace_safety_test.dart`：**5/5 PASS**
+- **未完成项 / 下一次会话第一步**：
+  - 代码与测试已就绪，待提交 commit 并按用户意愿推送到 GitHub。
+
+## 前次交接：2026-11-24 Android 官方统一发布签名锁定与 v2.2.5 资产重签救火
 
 - **用户授权与操作目标**：
   1. 排查并确认 `v2.2.5`、`v2.2.4`、`v2.2.3` APK 签名是否不同；

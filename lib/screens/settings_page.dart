@@ -244,7 +244,7 @@ class _SettingsPageState extends State<SettingsPage> {
       final result = await FilePicker.platform.pickFiles(
         dialogTitle: '导入做题记录',
         type: FileType.custom,
-        allowedExtensions: ['zip'],
+        allowedExtensions: ['zip', 'sqlite', 'db'],
         withData: true,
       );
       if (result == null || result.files.isEmpty) return; // 用户取消

@@ -1,5 +1,17 @@
 # 当前开发状态
 
+## 2026-11-24 做题记录全量数据导入导出加固与 macOS 自动更新替换重启（完成）
+
+1. **做题记录与个人数据导出导入全量闭环 ([lib/db/record_sync_service.dart](../../lib/db/record_sync_service.dart) / [lib/screens/settings_page.dart](../../lib/screens/settings_page.dart))**：
+   - **导出 WAL 截断**：`exportRecords()` 在读取前强制触发 `PRAGMA wal_checkpoint(TRUNCATE)`，确保内存与 WAL sidecar 中的最新笔记、闪卡、点赞、评论 100% 合并入主数据库文件后再打包；
+   - **导入合并扩充**：`importMerge` 突破原先仅支持 `Question` 与 `Activities` 的局限，全面扩充对 `Notes`、`SavedComments`、`CustomFlashcards`、`SpacedReviewItem` 与 `QuestionTestTime` 的智能合并，采用 `_sanitizeRow` 进行动态字段过滤与默认值保护（避免历史/跨版本数据库 NOT NULL 约束报错）；
+   - **原生 SQLite 魔数直读**：`_extractSqlite` 支持通过 `SQLite format 3\0` 魔数识别未压缩的原始 `.sqlite` 文件，并在文件选择器中开放 `['zip', 'sqlite', 'db']`，使用户无论是导出的 zip 还是直接提取的 `user_data.sqlite` 都能直接导入恢复。
+2. **macOS 端更新包自动替换与平滑重启 ([lib/services/app_update_service.dart](../../lib/services/app_update_service.dart))**：
+   - 提取 `findRunningMacOSAppPath()` 精确判定当前正在运行的 `.app` 包路径（非 `.app` 运行则回退默认目标 `/Applications/yibubang.app`）；
+   - 使用 macOS 系统级原生 `/usr/bin/ditto -xk` 解压更新 zip，完整保留符号链接与系统代码签名；
+   - 启动独立 detached 后台 Shell 脚本：等待旧进程退出 -> 原地原子备份移动 -> 移入新应用 -> 递归清除 `com.apple.quarantine` 隔离属性 -> `open -n` 自动拉起新版本，主进程优雅 `exit(0)`，实现无感知静默替换与平滑重启；
+   - 异常情况下自动平滑回退，保留原有安全机制。
+
 ## 2026-11-24 Android 官方发布签名统一与 v2.2.5 Assets 救火重签（完成）
 
 1. **白盒排查与问题根因**：

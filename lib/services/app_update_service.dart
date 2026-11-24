@@ -224,13 +224,138 @@ class AppUpdateService {
       await sink.flush();
       await sink.close();
 
-      // 拉起安装程序或打开下载的文件
+      // 如果是 macOS 平台，优先自动解压替换目标 App 并自动平滑重启
+      if (Platform.isMacOS) {
+        final success = await installMacOSUpdateAndRestart(file);
+        if (success) {
+          return;
+        }
+      }
+
+      // 拉起安装程序或打开下载的文件（非 macOS 平台或 macOS 自动替换回退）
       final result = await OpenFilex.open(filePath);
       if (result.type != ResultType.done) {
         debugPrint('[AppUpdateService] 拉起安装返回结果: ${result.message}');
       }
     } finally {
       client.close();
+    }
+  }
+
+  /// 获取当前运行的 macOS .app 目录路径
+  static String? findRunningMacOSAppPath() {
+    if (!Platform.isMacOS) return null;
+    try {
+      var current = File(Platform.resolvedExecutable).parent;
+      while (current.path != current.parent.path) {
+        if (current.path.endsWith('.app')) {
+          return current.path;
+        }
+        current = current.parent;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// macOS 自动解压更新包、原子替换目标 App 并自动平滑重启
+  static Future<bool> installMacOSUpdateAndRestart(File zipFile) async {
+    if (!Platform.isMacOS) return false;
+
+    // 1. 确定目标被替换的应用路径（如果当前运行在 .app 中则替换当前运行的 app，否则默认替换 /Applications/yibubang.app）
+    final targetAppPath =
+        findRunningMacOSAppPath() ?? '/Applications/yibubang.app';
+
+    // 2. 创建临时解压目录
+    final tempDir =
+        await Directory.systemTemp.createTemp('yibubang_macos_update_');
+    try {
+      // 3. 使用 macOS 系统原生 ditto 工具解压 zip，完整保留权限、扩展属性与软链接
+      final dittoRes = await Process.run('/usr/bin/ditto', [
+        '-xk',
+        zipFile.path,
+        tempDir.path,
+      ]);
+      if (dittoRes.exitCode != 0) {
+        debugPrint('[AppUpdateService] ditto 解压失败: ${dittoRes.stderr}');
+        return false;
+      }
+
+      // 4. 找到解压出来的 .app 目录
+      String? extractedAppPath;
+      await for (final entity in tempDir.list()) {
+        if (entity is Directory && entity.path.endsWith('.app')) {
+          extractedAppPath = entity.path;
+          break;
+        }
+      }
+
+      if (extractedAppPath == null) {
+        debugPrint('[AppUpdateService] 解压目录未找到 .app: ${tempDir.path}');
+        return false;
+      }
+
+      // 5. 生成后台 detached 重启维护脚本
+      final scriptFile = File(p.join(tempDir.path, 'update_and_restart.sh'));
+      final scriptContent = '''#!/bin/bash
+PID=\$1
+TARGET_APP="\$2"
+NEW_APP="\$3"
+TEMP_DIR="\$4"
+
+# 等待旧进程完全退出（最多等 10 秒）
+for i in {1..50}; do
+  if ! kill -0 "\$PID" 2>/dev/null; then
+    break
+  fi
+  sleep 0.2
+done
+
+# 清理历史旧备份
+rm -rf "\$TARGET_APP.old" 2>/dev/null || true
+
+# 移动旧版本到备份目录
+if [ -e "\$TARGET_APP" ]; then
+  mv "\$TARGET_APP" "\$TARGET_APP.old" 2>/dev/null || true
+fi
+
+# 将新版本移入目标位置
+mv "\$NEW_APP" "\$TARGET_APP"
+
+# 清理旧版本备份与解压临时文件
+rm -rf "\$TARGET_APP.old" 2>/dev/null || true
+rm -rf "\$TEMP_DIR" 2>/dev/null || true
+
+# 清除 macOS 隔离属性，防止弹出“无法打开”安全警告
+xattr -rd com.apple.quarantine "\$TARGET_APP" 2>/dev/null || true
+
+# 重新启动新版本应用
+open -n "\$TARGET_APP"
+''';
+      await scriptFile.writeAsString(scriptContent, flush: true);
+      await Process.run('/bin/chmod', ['+x', scriptFile.path]);
+
+      // 6. 以 detached 模式启动后台替换重启脚本
+      await Process.start(
+        '/bin/bash',
+        [
+          scriptFile.path,
+          pid.toString(),
+          targetAppPath,
+          extractedAppPath,
+          tempDir.path,
+        ],
+        mode: ProcessStartMode.detached,
+      );
+
+      // 7. 短暂等待确保脚本已被操作系统调度，随后退出当前进程以允许文件替换
+      Future.delayed(const Duration(milliseconds: 300), () {
+        exit(0);
+      });
+
+      return true;
+    } catch (e) {
+      debugPrint('[AppUpdateService] macOS 自动替换重启异常: $e');
+      return false;
     }
   }
 
@@ -353,7 +478,9 @@ class AppUpdateService {
                               },
                             );
                             setDialogState(() {
-                              downloadBtnText = '100% (拉起安装)';
+                              downloadBtnText = Platform.isMacOS
+                                  ? '100% (正在重启)'
+                                  : '100% (拉起安装)';
                               isDownloading = false;
                             });
                           } catch (e) {

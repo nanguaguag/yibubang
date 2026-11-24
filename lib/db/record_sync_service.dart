@@ -42,8 +42,14 @@ class RecordSyncService {
       return null;
     }
 
-    // 关闭连接，确保 WAL/journal 落盘后再读取文件字节。
+    // 关闭连接前，先触发 checkpoint 截断 WAL，确保所有内存与 sidecar 写入完整合入主 db 文件
     final bytes = await UserDatabaseCoordinator.instance.run(() async {
+      try {
+        final db = await UserDBHelper().database;
+        await db.rawQuery('PRAGMA wal_checkpoint(TRUNCATE)');
+      } catch (e) {
+        debugPrint('[record-sync] 导出 wal_checkpoint 警告: $e');
+      }
       await UserDBHelper().close();
       return dbFile.readAsBytes();
     });
@@ -141,7 +147,7 @@ class RecordSyncService {
     return true;
   });
 
-  /// 导入做题记录（合并）。返回合并涉及的题目数量。
+  /// 导入做题记录（合并）。返回合并涉及的题目与个人数据总数量。
   static Future<int> importMerge(Uint8List zipBytes) async {
     final sqliteBytes = _extractSqlite(zipBytes);
     final tmpDir = await getTemporaryDirectory();
@@ -233,10 +239,216 @@ class RecordSyncService {
           );
         }
 
+        // 3) 合并个人笔记（Notes）
+        if (await _hasTable(srcDb!, 'Notes') && await _hasTable(txn, 'Notes')) {
+          final srcNotes = await srcDb.query('Notes');
+          final localNotes = await txn.query('Notes');
+          final localNoteColumns = (await txn.rawQuery("PRAGMA table_info(Notes)"))
+              .map((r) => r['name'] as String)
+              .toSet();
+          final localNoteMap = <String, Map<String, dynamic>>{
+            for (final n in localNotes) n['id'].toString(): n,
+          };
+          for (final note in srcNotes) {
+            final id = note['id'].toString();
+            final sanitized = _sanitizeRow(note, localNoteColumns, const {
+              'sync_status': 0,
+              'revision': 0,
+              'imgs': '[]',
+              'updated_at': 0,
+            });
+            final local = localNoteMap[id];
+            if (local == null) {
+              batch.insert(
+                'Notes',
+                sanitized,
+                conflictAlgorithm: ConflictAlgorithm.replace,
+              );
+              merged++;
+            } else {
+              final srcUpdated = (note['updated_at'] as num?)?.toInt() ??
+                  (note['timestamp'] as num?)?.toInt() ??
+                  0;
+              final localUpdated = (local['updated_at'] as num?)?.toInt() ??
+                  (local['timestamp'] as num?)?.toInt() ??
+                  0;
+              if (srcUpdated > localUpdated) {
+                batch.update(
+                  'Notes',
+                  sanitized,
+                  where: 'id = ?',
+                  whereArgs: [id],
+                );
+                merged++;
+              }
+            }
+          }
+        }
+
+        // 4) 合并我的点赞与我的评论（SavedComments）
+        if (await _hasTable(srcDb, 'SavedComments') &&
+            await _hasTable(txn, 'SavedComments')) {
+          final srcComments = await srcDb.query('SavedComments');
+          final localComments = await txn.query('SavedComments');
+          final localCommentColumns =
+              (await txn.rawQuery("PRAGMA table_info(SavedComments)"))
+                  .map((r) => r['name'] as String)
+                  .toSet();
+          final localCommentMap = <String, Map<String, dynamic>>{
+            for (final c in localComments)
+              '${c['comment_id']}_${c['category']}': c,
+          };
+          for (final comment in srcComments) {
+            final key = '${comment['comment_id']}_${comment['category']}';
+            final sanitized = _sanitizeRow(comment, localCommentColumns, const {
+              'praise_count': 0,
+              'reply_count': 0,
+              'updated_at': 0,
+              'extra_json': '{}',
+            });
+            final local = localCommentMap[key];
+            if (local == null) {
+              batch.insert(
+                'SavedComments',
+                sanitized,
+                conflictAlgorithm: ConflictAlgorithm.replace,
+              );
+              merged++;
+            } else {
+              final srcUpdated = (comment['updated_at'] as num?)?.toInt() ??
+                  (comment['timestamp'] as num?)?.toInt() ??
+                  0;
+              final localUpdated = (local['updated_at'] as num?)?.toInt() ??
+                  (local['timestamp'] as num?)?.toInt() ??
+                  0;
+              if (srcUpdated > localUpdated) {
+                batch.update(
+                  'SavedComments',
+                  sanitized,
+                  where: 'comment_id = ? AND category = ?',
+                  whereArgs: [comment['comment_id'], comment['category']],
+                );
+                merged++;
+              }
+            }
+          }
+        }
+
+        // 5) 合并自制闪卡（CustomFlashcards）
+        if (await _hasTable(srcDb, 'CustomFlashcards') &&
+            await _hasTable(txn, 'CustomFlashcards')) {
+          final srcCards = await srcDb.query('CustomFlashcards');
+          final localCards = await txn.query('CustomFlashcards');
+          final localCardColumns =
+              (await txn.rawQuery("PRAGMA table_info(CustomFlashcards)"))
+                  .map((r) => r['name'] as String)
+                  .toSet();
+          final localCardMap = <String, Map<String, dynamic>>{
+            for (final c in localCards) c['id'].toString(): c,
+          };
+          for (final card in srcCards) {
+            final id = card['id'].toString();
+            final sanitized = _sanitizeRow(card, localCardColumns, const {
+              'is_mastered': 0,
+              'review_count': 0,
+              'tags': '[]',
+              'updated_at': 0,
+            });
+            final local = localCardMap[id];
+            if (local == null) {
+              batch.insert(
+                'CustomFlashcards',
+                sanitized,
+                conflictAlgorithm: ConflictAlgorithm.replace,
+              );
+              merged++;
+            } else {
+              final srcUpdated = (card['updated_at'] as num?)?.toInt() ?? 0;
+              final localUpdated = (local['updated_at'] as num?)?.toInt() ?? 0;
+              if (srcUpdated > localUpdated) {
+                batch.update(
+                  'CustomFlashcards',
+                  sanitized,
+                  where: 'id = ?',
+                  whereArgs: [id],
+                );
+                merged++;
+              }
+            }
+          }
+        }
+
+        // 6) 合并间隔复习状态（SpacedReviewItem）
+        if (await _hasTable(srcDb, 'SpacedReviewItem') &&
+            await _hasTable(txn, 'SpacedReviewItem')) {
+          final srcItems = await srcDb.query('SpacedReviewItem');
+          final localItems = await txn.query('SpacedReviewItem');
+          final localItemMap = <String, Map<String, dynamic>>{
+            for (final item in localItems)
+              item['question_id']?.toString() ?? item['id'].toString(): item,
+          };
+          for (final item in srcItems) {
+            final qid = item['question_id']?.toString() ?? item['id'].toString();
+            final local = localItemMap[qid];
+            if (local == null) {
+              batch.insert(
+                'SpacedReviewItem',
+                item,
+                conflictAlgorithm: ConflictAlgorithm.replace,
+              );
+              merged++;
+            } else {
+              final srcReps = (item['reps'] as num?)?.toInt() ?? 0;
+              final localReps = (local['reps'] as num?)?.toInt() ?? 0;
+              if (localReps == 0 && srcReps > 0) {
+                batch.update(
+                  'SpacedReviewItem',
+                  item,
+                  where: 'id = ?',
+                  whereArgs: [local['id']],
+                );
+                merged++;
+              }
+            }
+          }
+        }
+
+        // 7) 合并答题计时（QuestionTestTime）
+        if (await _hasTable(srcDb, 'QuestionTestTime') &&
+            await _hasTable(txn, 'QuestionTestTime')) {
+          final srcTimes = await srcDb.query('QuestionTestTime');
+          final localTimes = await txn.query('QuestionTestTime');
+          final localTimeMap = <String, Map<String, dynamic>>{
+            for (final t in localTimes) t['question_id'].toString(): t,
+          };
+          for (final t in srcTimes) {
+            final qid = t['question_id'].toString();
+            final local = localTimeMap[qid];
+            if (local == null) {
+              batch.insert(
+                'QuestionTestTime',
+                t,
+                conflictAlgorithm: ConflictAlgorithm.replace,
+              );
+            } else {
+              final srcDuration = (t['duration_ms'] as num?)?.toInt() ?? 0;
+              final localDuration = (local['duration_ms'] as num?)?.toInt() ?? 0;
+              if (srcDuration > localDuration) {
+                batch.update(
+                  'QuestionTestTime',
+                  {'duration_ms': srcDuration},
+                  where: 'question_id = ?',
+                  whereArgs: [qid],
+                );
+              }
+            }
+          }
+        }
+
         await batch.commit(noResult: true);
       });
 
-      debugPrint('[record-sync] 合并完成：题目 $merged、流水 ${srcActivities.length}');
+      debugPrint('[record-sync] 合并完成：共合并/更新 $merged 项记录、流水 ${srcActivities.length}');
       return merged;
     } finally {
       if (srcDb != null && srcDb.isOpen) await srcDb.close();
@@ -248,12 +460,28 @@ class RecordSyncService {
     }
   }
 
-  /// 解压 zip 并取出其中的 SQLite 字节。
-  static Uint8List _extractSqlite(Uint8List zipBytes) {
-    if (zipBytes.length > 256 * 1024 * 1024) {
-      throw const FormatException('做题记录压缩包过大');
+  static Future<bool> _hasTable(DatabaseExecutor db, String tableName) async {
+    final res = await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name = ?",
+      [tableName],
+    );
+    return res.isNotEmpty;
+  }
+
+  /// 解压 zip 并取出其中的 SQLite 字节，或直接识别已有的 SQLite 数据库字节。
+  static Uint8List _extractSqlite(Uint8List bytes) {
+    if (bytes.length > 512 * 1024 * 1024) {
+      throw const FormatException('做题记录文件过大');
     }
-    final archive = ZipDecoder().decodeBytes(zipBytes);
+    // 检查是否本身就是有效的 SQLite 数据库文件（魔数: "SQLite format 3\0"）
+    if (bytes.length >= 16) {
+      final header = String.fromCharCodes(bytes.sublist(0, 15));
+      if (header == 'SQLite format 3' && bytes[15] == 0) {
+        return bytes;
+      }
+    }
+
+    final archive = ZipDecoder().decodeBytes(bytes);
     if (archive.files.fold<int>(0, (n, f) => n + f.size) > 512 * 1024 * 1024) {
       throw const FormatException('做题记录解压内容过大');
     }
@@ -267,16 +495,32 @@ class RecordSyncService {
       }
     }
     if (file == null) {
-      throw const FormatException('压缩包中未找到做题记录数据库（.sqlite）');
+      throw const FormatException('文件/压缩包中未找到做题记录数据库（.sqlite）');
     }
     if (!file.isFile || file.size > 512 * 1024 * 1024) {
       throw const FormatException('做题记录数据库文件无效或过大');
     }
     final content = file.content;
     if (content is! Uint8List) {
-      throw const FormatException('压缩包内容读取失败');
+      throw const FormatException('做题记录内容读取失败');
     }
     return content;
+  }
+
+  static Map<String, dynamic> _sanitizeRow(
+    Map<String, dynamic> row,
+    Set<String> validColumns,
+    Map<String, dynamic> defaults,
+  ) {
+    final sanitized = <String, dynamic>{};
+    for (final col in validColumns) {
+      if (row.containsKey(col) && row[col] != null) {
+        sanitized[col] = row[col];
+      } else if (defaults.containsKey(col)) {
+        sanitized[col] = defaults[col];
+      }
+    }
+    return sanitized;
   }
 
   static String _defaultFileName() {
