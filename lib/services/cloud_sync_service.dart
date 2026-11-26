@@ -10,6 +10,7 @@ import '../db/data_transfer.dart';
 import '../db/cloud_outbox.dart';
 import '../db/database_helper.dart';
 import 'cloud_backup_service.dart';
+import 'sync_debug_log.dart';
 
 /// 云服务健康检查状态
 class HealthCheckResult {
@@ -359,6 +360,7 @@ class CloudSyncService extends ChangeNotifier {
     _isSyncing = true;
     _lastError = null;
     notifyListeners();
+    unawaited(SyncDebugLog.instance.record('医不帮多端同步 · 开始'));
 
     var mergedData = false;
     void trackCommittedData(Map<String, dynamic> page) {
@@ -525,10 +527,12 @@ class CloudSyncService extends ChangeNotifier {
       );
 
       debugPrint('[cloud-sync] $result');
+      unawaited(SyncDebugLog.instance.record('医不帮多端同步 · $result'));
       return result;
     } catch (e) {
       _lastError = e.toString();
       debugPrint('[cloud-sync] 同步异常: $e');
+      unawaited(SyncDebugLog.instance.record('医不帮多端同步 · 失败 · ${e.runtimeType}'));
       return SyncResult(success: false, message: e.toString());
     } finally {
       _isSyncing = false;

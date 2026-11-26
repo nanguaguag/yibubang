@@ -14,6 +14,7 @@ import '../repositories/question_search_repository.dart';
 import '../services/app_update_service.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/note_service.dart';
+import '../services/sync_debug_log.dart';
 import '../services/course_sync_actions.dart';
 import '../services/ykb_sync_service.dart';
 import '../widgets/common/info_card.dart';
@@ -27,6 +28,7 @@ import 'bottom_nav_settings_page.dart';
 import 'cloud_sync_page.dart';
 import 'developer_page.dart';
 import 'question_sections_page.dart';
+import 'sync_debug_log_page.dart';
 import 'set_duration_page.dart';
 import 'set_theme_color_page.dart';
 import 'shortcut_settings_page.dart';
@@ -66,6 +68,7 @@ class _SettingsPageState extends State<SettingsPage> {
   int mode = 0; // 默认刷题模式，对应 AppStrings.modesList
   double fontScale = 1.0; // 刷题字号缩放比例
   bool developerModeEnabled = false;
+  bool syncDebugLogEnabled = false;
   String selectedProxyName = '直连 (官方 GitHub)';
 
   // 医考帮云端同步设置
@@ -143,6 +146,7 @@ class _SettingsPageState extends State<SettingsPage> {
     fontScale = _normalizeFontScale(_prefs.getDouble('fontScale') ?? 1.0);
     developerModeEnabled =
         _prefs.getBool(AppStrings.keyDeveloperModeEnabled) ?? false;
+    syncDebugLogEnabled = _prefs.getBool(SyncDebugLog.enabledKey) ?? false;
     selectedProxyName = await GitHubProxyConfig.getSelectedName();
     await CloudSyncService.instance.init();
 
@@ -914,6 +918,33 @@ class _SettingsPageState extends State<SettingsPage> {
           const SizedBox(height: 14),
           const _SectionTitle(title: '题库更新'),
           const BankSubscriptionSettings(),
+          const SizedBox(height: 14),
+          _SectionTitle(title: '同步调试'),
+          InfoCard(
+            children: [
+              IconTile(
+                icon: Icons.bug_report_outlined,
+                label: '记录同步调试日志',
+                trailing: Switch(
+                  value: syncDebugLogEnabled,
+                  onChanged: (value) {
+                    setState(() => syncDebugLogEnabled = value);
+                    _setBool(SyncDebugLog.enabledKey, value);
+                  },
+                ),
+              ),
+              if (syncDebugLogEnabled)
+                IconTile(
+                  icon: Icons.receipt_long_outlined,
+                  label: '查看同步调试日志',
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => SyncDebugLogPage(preferences: _prefs),
+                    ),
+                  ),
+                ),
+            ],
+          ),
           const SizedBox(height: 14),
           const _SectionTitle(title: '做题记录'),
           InfoCard(

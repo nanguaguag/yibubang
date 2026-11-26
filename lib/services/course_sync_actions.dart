@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../repositories/question_bank_repository.dart';
+import 'sync_debug_log.dart';
 import 'ykb_bank_smart_sync_service.dart';
 import 'ykb_bank_sync_service.dart';
 import 'ykb_pull_service.dart';
@@ -130,6 +133,7 @@ class CourseSyncActions extends ChangeNotifier {
           );
           message = result.summary;
         case CourseSyncAction.rebuild:
+          unawaited(SyncDebugLog.instance.record('全量重建 · ${bank.name} · 开始'));
           await YkbBankSyncService.syncBank(
             bank,
             pacing: SyncPacing(
@@ -138,6 +142,7 @@ class CourseSyncActions extends ChangeNotifier {
             ),
             onBankProgress: (value) => progress.value = value,
           );
+          unawaited(SyncDebugLog.instance.record('全量重建 · ${bank.name} · 完成'));
           message = '题库「${bank.name}」重建完成';
       }
       if (messenger.mounted) {
