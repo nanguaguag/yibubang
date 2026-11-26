@@ -26,6 +26,7 @@ import 'about_page.dart';
 import 'bottom_nav_settings_page.dart';
 import 'cloud_sync_page.dart';
 import 'developer_page.dart';
+import 'font_settings_page.dart';
 import 'question_sections_page.dart';
 import 'set_duration_page.dart';
 import 'set_theme_color_page.dart';
@@ -699,6 +700,15 @@ class _SettingsPageState extends State<SettingsPage> {
                         child: Text(_fontScaleLabels[i]),
                       ),
                   ],
+                ),
+              ),
+              IconTile(
+                icon: Icons.font_download_outlined,
+                label: '字体',
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => pushAdaptiveModalPage(
+                  context,
+                  builder: (_) => const FontSettingsPage(),
                 ),
               ),
               IconTile(
