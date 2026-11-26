@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:yibubang/db/database_helper.dart';
 import 'package:yibubang/services/ykb_bank_smart_sync_service.dart';
@@ -52,6 +53,59 @@ void main() {
       state: {'local_chapter_id': 'local'},
     );
     expect(mapping, {'id': 'local', 'method': 'state'});
+  });
+  test('科目范围按名称校验身份漂移，只接受选中科目的章节', () {
+    final remote = <Map<String, dynamic>>[
+      {'id': 'wrong-reused', 'subjectId': '45', 'subjectTitle': '局部解剖学'},
+      {'id': 'sy-a', 'subjectId': '145', 'subjectTitle': '系统解剖学'},
+      {'id': 'sy-b', 'subjectId': '145', 'subjectTitle': '系统解剖学'},
+    ];
+    expect(
+      service.subjectChaptersForTesting(
+        remote,
+        subjectId: '45',
+        subjectName: '系统解剖学',
+      ),
+      ['sy-a', 'sy-b'],
+    );
+    expect(
+      () => service.subjectChaptersForTesting(
+        [...remote, {'id': 'sy-c', 'subjectId': '245', 'subjectTitle': '系统解剖学'}],
+        subjectId: '45',
+        subjectName: '系统解剖学',
+      ),
+      throwsStateError,
+    );
+    expect(
+      () => service.subjectChaptersForTesting(
+        remote,
+        subjectId: '45',
+        subjectName: '不存在',
+      ),
+      throwsStateError,
+    );
+  });
+  test('科目同步不可复用其他科目的同名章节或旧映射', () async {
+    final mapping = await service.mappingForTesting(
+      db: db,
+      remote: {'id': 'reused', 'title': '绪论', 'subjectId': '45'},
+      local: [
+        {'id': 'reused', 'name': '绪论', 'subjectId': 'other'},
+        {'id': 'target', 'name': '绪论', 'subjectId': '45'},
+      ],
+      state: {'local_chapter_id': 'reused'},
+      subjectId: '45',
+    );
+    expect(mapping, {'id': 'target', 'method': 'title'});
+  });
+  test('智能同步科目按题库保存，可以恢复整库', () async {
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    await service.setSubjectScope(prefs, 'clinical_final', '45');
+    expect(service.subjectScope(prefs, 'clinical_final'), '45');
+    expect(service.subjectScope(prefs, 'dental_final'), isNull);
+    await service.setSubjectScope(prefs, 'clinical_final', null);
+    expect(service.subjectScope(prefs, 'clinical_final'), isNull);
   });
   test('question overlap recovers renamed chapters', () async {
     for (var i = 0; i < 5; i++) {
