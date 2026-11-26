@@ -30,49 +30,49 @@ android {
         versionName = flutter.versionName
     }
 
+    def keystorePropertiesFile = rootProject.file("key.properties")
+    def keystoreProperties = new Properties()
+    if (keystorePropertiesFile.exists()) {
+        keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+    }
+    def hasKeystoreProperties = keystorePropertiesFile.exists() && keystoreProperties['storeFile']
+
+    def envStorePath = System.getenv("KEYSTORE_PATH")
+    def envStorePassword = System.getenv("KEYSTORE_PASSWORD")
+    def envKeyAlias = System.getenv("KEY_ALIAS")
+    def envKeyPassword = System.getenv("KEY_PASSWORD")
+    def hasEnvKeystore = envStorePath && envStorePassword && envKeyAlias && envKeyPassword
+    def hasReleaseSigning = hasKeystoreProperties || hasEnvKeystore
+
     signingConfigs {
-        release {
-            def keystorePropertiesFile = rootProject.file("key.properties")
-            def keystoreProperties = new Properties()
-            if (keystorePropertiesFile.exists()) {
-                keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
-            }
-
-            def envStorePath = System.getenv("KEYSTORE_PATH")
-            def envStorePassword = System.getenv("KEYSTORE_PASSWORD")
-            def envKeyAlias = System.getenv("KEY_ALIAS")
-            def envKeyPassword = System.getenv("KEY_PASSWORD")
-
-            if (keystorePropertiesFile.exists() && keystoreProperties['storeFile']) {
-                def propFile = file(keystoreProperties['storeFile'])
-                storeFile propFile.isAbsolute() ? propFile : rootProject.file(keystoreProperties['storeFile'])
-                storePassword keystoreProperties['storePassword']
-                keyAlias keystoreProperties['keyAlias']
-                keyPassword keystoreProperties['keyPassword']
-            } else if (envStorePath && envStorePassword && envKeyAlias && envKeyPassword) {
-                def candidate = file(envStorePath)
-                if (!candidate.exists()) {
-                    candidate = rootProject.file(envStorePath)
+        if (hasReleaseSigning) {
+            release {
+                if (hasKeystoreProperties) {
+                    def propFile = file(keystoreProperties['storeFile'])
+                    storeFile propFile.isAbsolute() ? propFile : rootProject.file(keystoreProperties['storeFile'])
+                    storePassword keystoreProperties['storePassword']
+                    keyAlias keystoreProperties['keyAlias']
+                    keyPassword keystoreProperties['keyPassword']
+                } else {
+                    def candidate = file(envStorePath)
+                    if (!candidate.exists()) {
+                        candidate = rootProject.file(envStorePath)
+                    }
+                    if (!candidate.exists()) {
+                        candidate = new File(projectDir, envStorePath)
+                    }
+                    storeFile candidate
+                    storePassword envStorePassword
+                    keyAlias envKeyAlias
+                    keyPassword envKeyPassword
                 }
-                if (!candidate.exists()) {
-                    candidate = new File(projectDir, envStorePath)
-                }
-                storeFile candidate
-                storePassword envStorePassword
-                keyAlias envKeyAlias
-                keyPassword envKeyPassword
-            } else {
-                storeFile signingConfigs.debug.storeFile
-                storePassword signingConfigs.debug.storePassword
-                keyAlias signingConfigs.debug.keyAlias
-                keyPassword signingConfigs.debug.keyPassword
             }
         }
     }
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.release
+            signingConfig = hasReleaseSigning ? signingConfigs.release : signingConfigs.debug
         }
     }
 }
