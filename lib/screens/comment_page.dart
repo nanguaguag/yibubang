@@ -8,7 +8,6 @@ import 'package:yibubang/common/ykb_encrypt.dart';
 import '../common/adaptive_route.dart';
 import '../common/request.dart';
 import '../db/database_helper.dart';
-import '../db/settings.dart';
 import '../models/comment.dart';
 import '../models/note.dart';
 import '../models/question.dart';
@@ -299,7 +298,6 @@ class _CommentPageState extends State<CommentPage>
     final dynamic code = response['code'];
     final bool isTokenExpired = code == 309 || code == '309';
     if (isTokenExpired) {
-      clearUserInfo();
       return CommentData.fromJson({'hot': [], 'time_line': []});
     }
     final dynamic rawData = response['data'];

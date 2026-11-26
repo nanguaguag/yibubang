@@ -4,10 +4,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../common/platform_adaptive.dart';
 import '../common/request.dart';
+import '../db/settings.dart';
 import '../main.dart';
 import '../screens/my_page.dart';
 import 'note_service.dart';
 import 'ykb_sync_service.dart';
+
+enum _ReloginChoice { mute, signIn }
 
 /// 账号自检结果
 class AuthCheckResult {
@@ -31,6 +34,7 @@ class AuthCheckResult {
 /// 医考帮账号鉴权与登录状态守护服务
 class AuthService {
   static final AuthService instance = AuthService._internal();
+  static const showReloginPromptKey = 'ykb_show_relogin_prompt';
   AuthService._internal();
 
   bool _isPromptingRelogin = false;
@@ -68,6 +72,7 @@ class AuthService {
         '/User/Main/getUserInfo',
         params,
         method: 'GET',
+        promptRelogin: promptRelogin,
       );
       sw.stop();
 
@@ -95,10 +100,6 @@ class AuthService {
           elapsedMs: sw.elapsedMilliseconds,
         );
       } else {
-        // Token 过期或被顶掉 (如 309)
-        if (code == '309' && promptRelogin) {
-          notifyTokenExpired();
-        }
         return AuthCheckResult(
           isValid: false,
           code: code,
@@ -116,8 +117,23 @@ class AuthService {
     }
   }
 
-  /// 当检测到 Token 失效 (309) 时触发弹窗提示，带防抖保护
-  void notifyTokenExpired() {
+  /// 只处理本机当前会话的失效响应。
+  Future<void> handleExpiredSession(
+    String? requestToken, {
+    bool promptRelogin = true,
+  }) async {
+    if (requestToken == null || requestToken.isEmpty) return;
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool('loggedin') != true ||
+        prefs.getString('token') != requestToken) {
+      return;
+    }
+    await clearUserInfo();
+    if (promptRelogin) unawaited(_showReloginPrompt(prefs));
+  }
+
+  Future<void> _showReloginPrompt(SharedPreferences prefs) async {
+    if (prefs.getBool(showReloginPromptKey) == false) return;
     final now = DateTime.now();
     if (_lastPromptTime != null &&
         now.difference(_lastPromptTime!) < const Duration(seconds: 15)) {
@@ -125,18 +141,18 @@ class AuthService {
     }
     if (_isPromptingRelogin) return;
 
-    _lastPromptTime = now;
     _isPromptingRelogin = true;
-
-    // 延迟到下一帧，确保 context 处于安全状态
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    try {
+      await WidgetsBinding.instance.endOfFrame;
       final context = rootNavigatorKey.currentContext;
-      if (context == null) {
-        _isPromptingRelogin = false;
+      if (context == null ||
+          !context.mounted ||
+          prefs.getBool(showReloginPromptKey) == false ||
+          prefs.getBool('loggedin') == true) {
         return;
       }
-
-      showDialog(
+      _lastPromptTime = DateTime.now();
+      final choice = await showDialog<_ReloginChoice>(
         context: context,
         barrierDismissible: false,
         builder: (ctx) => AlertDialog(
@@ -148,40 +164,44 @@ class AuthService {
             ],
           ),
           content: const Text(
-            '检测到您的医考帮登录状态已失效（Token 过期），无法正常向云端同步做题记录与笔记。\n\n请重新登录以恢复完整同步。',
+            '医考帮登录已失效。重新登录可恢复医考帮的记录与笔记同步。本地刷题和医不帮多端同步仍可使用。',
           ),
           actions: [
             TextButton(
-              onPressed: () {
-                _isPromptingRelogin = false;
-                Navigator.of(ctx).pop();
-              },
+              onPressed: () => Navigator.of(ctx).pop(),
               child: const Text('稍后处理'),
             ),
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(_ReloginChoice.mute),
+              child: const Text('不再提示'),
+            ),
             FilledButton(
-              onPressed: () {
-                _isPromptingRelogin = false;
-                Navigator.of(ctx).pop();
-                pushAdaptiveModalPage(
-                  context,
-                  desktopConstraints: const BoxConstraints(maxWidth: 480, maxHeight: 560),
-                  builder: (_) => LoginPage(
-                    onLoggedIn: () {
-                      // 登录成功后重新触发自检与队列
-                      checkTokenValidity(promptRelogin: false);
-                      unawaited(YkbSyncService.instance.processQueue());
-                      unawaited(NoteService.instance.processQueue());
-                    },
-                  ),
-                );
-              },
+              onPressed: () => Navigator.of(ctx).pop(_ReloginChoice.signIn),
               child: const Text('重新登录'),
             ),
           ],
         ),
-      ).then((_) {
-        _isPromptingRelogin = false;
-      });
-    });
+      );
+      if (choice == _ReloginChoice.mute) {
+        await prefs.setBool(showReloginPromptKey, false);
+      } else if (choice == _ReloginChoice.signIn && context.mounted) {
+        pushAdaptiveModalPage(
+          context,
+          desktopConstraints: const BoxConstraints(
+            maxWidth: 480,
+            maxHeight: 560,
+          ),
+          builder: (_) => LoginPage(
+            onLoggedIn: () {
+              unawaited(checkTokenValidity(promptRelogin: false));
+              unawaited(YkbSyncService.instance.processQueue());
+              unawaited(NoteService.instance.processQueue());
+            },
+          ),
+        );
+      }
+    } finally {
+      _isPromptingRelogin = false;
+    }
   }
 }

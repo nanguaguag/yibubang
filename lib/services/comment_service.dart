@@ -8,10 +8,8 @@ import '../common/request.dart';
 import '../common/ykb_encrypt.dart';
 import '../db/database_helper.dart';
 import '../db/durable_sync_queue.dart';
-import '../db/settings.dart';
 import '../models/comment.dart';
 import '../models/question.dart';
-import 'auth_service.dart';
 import 'ykb_sync_service.dart';
 
 /// 医考帮评论四维排序分类（对应 /comment/main/hot 的 type 参数）
@@ -420,8 +418,6 @@ class CommentService {
 
       final code = resp['code']?.toString() ?? '';
       if (code == '309') {
-        await clearUserInfo();
-        AuthService.instance.notifyTokenExpired();
         return await getLocalComments(question.id, category: category);
       }
 
@@ -496,8 +492,6 @@ class CommentService {
 
     final dynamic code = response['code'];
     if (code == 309 || code == '309') {
-      await clearUserInfo();
-      AuthService.instance.notifyTokenExpired();
       return CommentData(hot: const [], timeLine: const []);
     }
 
@@ -552,12 +546,6 @@ class CommentService {
     });
 
     final code = resp['code']?.toString() ?? '';
-    if (code == '309') {
-      await clearUserInfo();
-      AuthService.instance.notifyTokenExpired();
-      return resp;
-    }
-
     if (code == '200') {
       final currentPraise = int.tryParse(comment.praiseNum) ?? 0;
       final praisedComment = Comment(
@@ -621,12 +609,6 @@ class CommentService {
     });
 
     final code = resp['code']?.toString() ?? '';
-    if (code == '309') {
-      await clearUserInfo();
-      AuthService.instance.notifyTokenExpired();
-      return resp;
-    }
-
     if (code == '200') {
       Comment created;
       if (resp['data'] is Map) {
