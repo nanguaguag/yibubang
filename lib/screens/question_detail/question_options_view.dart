@@ -377,6 +377,7 @@ class _QuestionOptionsViewState extends State<QuestionOptionsView> {
                   padding: const EdgeInsets.all(12.0),
                   child: Text(
                     "${option['key']}. ${option['title']}",
+                    textAlign: DefaultTextStyle.of(context).textAlign,
                     style: TextStyle(
                       fontSize: 16.5,
                       color: option['color'] as Color?,
@@ -408,7 +409,14 @@ class _QuestionOptionsViewState extends State<QuestionOptionsView> {
           switch (widget.question.type) {
             case '1': // 单选题
               return RadioListTile<String>(
-                title: Text("$optKey. $optTitle"),
+                title: Text(
+                  "$optKey. $optTitle",
+                  textAlign: DefaultTextStyle.of(context).textAlign,
+                  style: TextStyle(
+                    height: DefaultTextStyle.of(context).style.height,
+                    letterSpacing: DefaultTextStyle.of(context).style.letterSpacing,
+                  ),
+                ),
                 value: optKey,
                 // ignore: deprecated_member_use
                 groupValue: getLastAnswer(widget.userQuestion.userAnswer),
@@ -435,7 +443,14 @@ class _QuestionOptionsViewState extends State<QuestionOptionsView> {
                   getLastAnswer(widget.userQuestion.userAnswer);
               final bool checked = currentAns.contains(optKey);
               return CheckboxListTile(
-                title: Text("$optKey. $optTitle"),
+                title: Text(
+                  "$optKey. $optTitle",
+                  textAlign: DefaultTextStyle.of(context).textAlign,
+                  style: TextStyle(
+                    height: DefaultTextStyle.of(context).style.height,
+                    letterSpacing: DefaultTextStyle.of(context).style.letterSpacing,
+                  ),
+                ),
                 value: checked,
                 controlAffinity: ListTileControlAffinity.leading,
                 onChanged: (bool? value) {

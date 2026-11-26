@@ -13,6 +13,7 @@ import 'common/app_strings.dart';
 import 'common/shortcut_config.dart';
 import 'db/settings.dart';
 import 'repositories/question_bank_repository.dart';
+import 'widgets/reading_layout.dart';
 import 'services/auth_service.dart';
 import 'services/cloud_sync_service.dart';
 import 'services/note_service.dart';
@@ -87,6 +88,7 @@ Future main() async {
   );
 
   await initSettings();
+  await ReadingLayoutController.instance.load();
   await ShortcutConfig.load();
   await ThemeController.instance.recoverTheme();
   debugPrint('[startup] initSettings 完成(${swStartup.elapsedMilliseconds}ms)');
