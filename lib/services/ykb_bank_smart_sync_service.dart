@@ -16,6 +16,7 @@ import '../models/question_bank.dart';
 import '../models/bank_progress.dart';
 import 'bank_creation_service.dart';
 import 'question_bank_file_service.dart';
+import 'sync_debug_log.dart';
 import '../repositories/question_bank_repository.dart';
 import 'ykb_bank_sync_service.dart';
 
@@ -214,6 +215,41 @@ class YkbBankSmartSyncService {
     int? maxChapters,
     void Function(BankProgress)? onProgress,
   }) async {
+    _recordDebug('${manual ? '手动' : '自动'}开始${bank == null ? '' : ' · ${bank.name}'}');
+    final result = await _run(
+      bank: bank,
+      manual: manual,
+      forceManifest: forceManifest,
+      maxChapters: maxChapters,
+      onProgress: (value) {
+        final stage = value.stage.startsWith('同步失败：') ? '同步失败' : value.stage;
+        _recordDebug([
+          stage,
+          if (value.chapter.isNotEmpty) value.chapter,
+          if (value.total > 0) '章节 ${value.completed}/${value.total}',
+          if (value.expectedQuestions > 0)
+            '题目 ${value.questions}/${value.expectedQuestions}',
+        ].join(' · '));
+        onProgress?.call(value);
+      },
+    );
+    _recordDebug('${result.isSuccess ? '检查完成' : '本批暂停'} · '
+        '新增 ${result.addedQuestions} 题 · 更新 ${result.updatedQuestions} 题 · '
+        '无权限 ${result.restrictedChapters} 章 · 剩余 ${result.remainingChapters} 章 · '
+        '请求 ${result.requestsUsed} 次 · ${result.elapsedMs} ms');
+    return result;
+  }
+
+  void _recordDebug(String message) =>
+      unawaited(SyncDebugLog.instance.record('智能同步 · $message'));
+
+  Future<YkbBankSmartSyncResult> _run({
+    QuestionBank? bank,
+    bool manual = false,
+    bool forceManifest = false,
+    int? maxChapters,
+    void Function(BankProgress)? onProgress,
+  }) async {
     if (_running) {
       return const YkbBankSmartSyncResult(error: '正在同步中');
     }
@@ -370,6 +406,7 @@ class YkbBankSmartSyncService {
           'queue=${manifest.pending.length}, bootstrap=${manifest.bootstraps.length}',
         );
         pending.addAll(manifest.pending);
+        _recordDebug('目录 ${manifest.leaves.length} 章 · 待同步 ${pending.length} 章');
       }
 
       final limit = maxChapters ?? (manual ? 12 : _defaultMaxChapters);
@@ -428,6 +465,7 @@ class YkbBankSmartSyncService {
             );
         _requestsUsed++;
         if (fetchResult.isRestricted) {
+          _recordDebug('${rc.title} · 无权限（203）');
           // 203：当前账号无该章节查看权限。按周重试，避免每轮都撞 203。
           restricted++;
           restrictedStates.add(
@@ -446,6 +484,9 @@ class YkbBankSmartSyncService {
           continue;
         }
         if (!fetchResult.isOk || fetchResult.questions == null) {
+          final code = fetchResult.code;
+          final status = RegExp(r'^\d{1,5}$').hasMatch(code) ? '（$code）' : '';
+          _recordDebug('${rc.title} · 拉取失败$status，待重试');
           debugPrint(
             '[ykb-smart-sync] 章节 ${rc.id} 拉取失败: '
             '${fetchResult.code} ${fetchResult.message}',
@@ -456,6 +497,7 @@ class YkbBankSmartSyncService {
         final questions = fetchResult.questions!;
         fetchedQuestions += questions.length;
         if (questions.length != rc.count) {
+          _recordDebug('${rc.title} · 题量不符（${questions.length}/${rc.count}），待重试');
           // count 与列表不一致：宁可留到下一轮，不把半章数据写进题库。
           debugPrint(
             '[ykb-smart-sync] 章节 ${rc.id} 数量不一致: '
