@@ -21,6 +21,7 @@ import 'services/ykb_sync_service.dart';
 import 'services/bank_subscription_service.dart';
 import 'widgets/theme_controller.dart';
 import 'widgets/app_fullscreen_shortcut.dart';
+import 'widgets/navigation_shortcuts.dart';
 import 'package:flutter/foundation.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:sqflite_common_ffi_web/sqflite_ffi_web.dart';
@@ -247,7 +248,13 @@ class Yibubang extends StatelessWidget {
       builder: (context, _) {
         return MaterialApp(
           navigatorKey: rootNavigatorKey,
-          builder: (context, child) => AppFullscreenShortcut(child: child!),
+          builder: (context, child) => AppBackShortcut(
+            navigatorKey: rootNavigatorKey,
+            child: AppFullscreenShortcut(
+              navigatorKey: rootNavigatorKey,
+              child: child!,
+            ),
+          ),
           debugShowCheckedModeBanner: false,
           title: AppStrings.appTitle,
           theme: _buildTheme(Brightness.light),

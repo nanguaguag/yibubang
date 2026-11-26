@@ -703,7 +703,7 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
               IconTile(
                 icon: Icons.keyboard_outlined,
-                label: '刷题快捷键',
+                label: '快捷键',
                 value: '${ShortcutConfig.boundActionCount} 项已绑定',
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () async {

@@ -469,8 +469,6 @@ class QuestionDetailController extends ChangeNotifier
         userQuestion.status == 3) {
       return false;
     }
-    if (getLastAnswer(userQuestion.userAnswer).isEmpty) return false;
-
     submitAnswer(question, userQuestion, index, context);
     notifyListeners();
     return true;
@@ -479,11 +477,11 @@ class QuestionDetailController extends ChangeNotifier
   /// 在当前题目内容中滚动。[direction] 为 1 向下、-1 向上。
   ///
   /// [byPage] 为 true 时按「翻页步长」滚动，否则按「连续滚动步长」滚动。
-  void scrollCurrentPage(int direction, {bool byPage = true}) {
+  bool scrollCurrentPage(int direction, {bool byPage = true}) {
     final ScrollController scrollController = controllerFor(_currentPage);
-    if (!scrollController.hasClients) return;
+    if (!scrollController.hasClients) return false;
     final ScrollPosition position = scrollController.position;
-    if (!position.hasContentDimensions) return;
+    if (!position.hasContentDimensions) return false;
 
     final double distance = byPage
         ? position.viewportDimension * ShortcutConfig.pageScrollPercent / 100
@@ -492,12 +490,13 @@ class QuestionDetailController extends ChangeNotifier
       position.minScrollExtent,
       position.maxScrollExtent,
     );
-    if ((target - position.pixels).abs() < 1) return;
+    if ((target - position.pixels).abs() < 1) return false;
     scrollController.animateTo(
       target,
       duration: Duration(milliseconds: byPage ? 180 : 80),
       curve: byPage ? Curves.easeOutCubic : Curves.easeOut,
     );
+    return true;
   }
 
   void submitAnswer(
