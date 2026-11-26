@@ -10,6 +10,7 @@ import '../db/data_transfer.dart';
 import '../db/database_helper.dart';
 import '../db/question_bank_manager.dart';
 import '../models/question_bank.dart';
+import 'sync_debug_log.dart';
 import 'ykb_bank_sync_service.dart' show SyncPacing;
 
 /// 医考帮做题记录拉取结果
@@ -120,12 +121,20 @@ class YkbPullService {
         return const YkbPullResult(error: '没有活动题库');
       }
 
+      unawaited(SyncDebugLog.instance.record(
+        '拉取医考帮记录 · $bankId · ${manual ? '手动' : '自动'}',
+      ));
       final result = await _pullBank(bankId, sw, pacing);
       if (result.isSuccess) {
         await prefs.setInt(throttleKey, now);
       }
+      unawaited(SyncDebugLog.instance.record(
+        '拉取医考帮记录 · ${result.isSuccess ? '完成' : '未全部完成'} · '
+        '远端 ${result.fetched} 条 · 合并 ${result.applied} 条 · 跳过 ${result.skipped} 条',
+      ));
       return result;
     } catch (e, stack) {
+      unawaited(SyncDebugLog.instance.record('拉取医考帮记录 · 失败 · ${e.runtimeType}'));
       debugPrint('[YkbPullService] 拉取异常: $e');
       debugPrint('$stack');
       return YkbPullResult(

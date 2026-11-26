@@ -1,7 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:crypto/crypto.dart';
@@ -12,6 +15,8 @@ import 'package:yibubang/repositories/question_bank_repository.dart';
 import 'package:yibubang/services/bank_creation_service.dart';
 import 'package:yibubang/services/bank_export_service.dart';
 import 'package:yibubang/services/question_bank_file_service.dart';
+import 'package:yibubang/services/sync_debug_log.dart';
+import 'package:yibubang/services/ykb_bank_smart_sync_service.dart';
 import 'package:yibubang/services/ykb_bank_sync_service.dart';
 
 void main() {
@@ -47,6 +52,112 @@ void main() {
     ).build(root: BankIdentityNode({'identity_id': '38', 'title': '医学'}, []),
       bankId: 'fixture', name: '医学', version: version, directory: target);
   }
+
+  test('切换到系统解剖学后按科目更新并丢弃旧整库待处理队列', () async {
+    const bankId = 'clinical_final';
+    final subjects = [
+      {
+        'chapter_id': '45',
+        'title': '系统解剖学',
+        'children': [
+          {'chapter_id': 'anatomy', 'title': '骨学', 'count': 1},
+        ],
+      },
+      {
+        'chapter_id': '37',
+        'title': '局部解剖学',
+        'children': [
+          {'chapter_id': 'regional', 'title': '上肢', 'count': 1},
+        ],
+      },
+    ];
+    final initialFile = await BankCreationService(
+      request: (_, _) async => {'code': 200, 'data': subjects},
+      fetchChapter: (_, chapterId) async => YkbChapterFetchResult(
+        code: '200',
+        message: '',
+        questions: [{'id': chapterId, 'title': '旧题干'}],
+      ),
+    ).build(
+      root: BankIdentityNode({'identity_id': '20101', 'title': '期末考试'}, []),
+      bankId: bankId,
+      name: '临床期末',
+      version: '1.0.0',
+      directory: directory,
+    );
+    final writer = await openDatabase(initialFile.path);
+    await writer.update('BankMeta', {'source': 'fixture-built-in'});
+    await writer.close();
+    final installed = await repository.importFile(initialFile.path);
+    final userDb = await UserDBHelper().database;
+    await userDb.insert('YkbBankSyncState', {
+      'bank_id': bankId,
+      'manifest_fetched_at': DateTime.now().millisecondsSinceEpoch,
+      'pending_json': jsonEncode([
+        {'id': 'regional', 'identityId': '201010', 'subjectId': '37', 'count': 1},
+      ]),
+    });
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('loggedin', true);
+    await prefs.setString('token', 'fixture-token');
+    await prefs.setBool(SyncDebugLog.enabledKey, true);
+    final service = YkbBankSmartSyncService.instance;
+    expect(
+      await service.subjectOptions(installed),
+      contains((id: '45', name: '系统解剖学')),
+    );
+    await service.setSubjectScope(prefs, bankId, '45');
+
+    final requestedChapters = <String>[];
+    final result = await http.runWithClient(
+      () => service.run(bank: installed),
+      () => MockClient((request) async {
+        final path = request.url.path.replaceFirst('/index.php', '');
+        final payload = switch (path) {
+          '/allQuestion/question/subjectV2' => {
+            'code': 200,
+            'data': [
+              {
+                'identity_id': '20101',
+                'children': [{'identity_id': '201010'}],
+              },
+            ],
+          },
+          '/allquestion/question/chapter' => {'code': 200, 'data': subjects},
+          '/allquestion/question/list' => {
+            'code': 200,
+            'data': [
+              {
+                'id': request.bodyFields['primary_id']!,
+                'title': '新题干',
+              },
+            ],
+          },
+          _ => throw StateError('意外请求: $path'),
+        };
+        if (path == '/allquestion/question/list') {
+          requestedChapters.add(request.bodyFields['primary_id']!);
+        }
+        return http.Response(
+          jsonEncode(payload),
+          200,
+          headers: {'content-type': 'application/json; charset=utf-8'},
+        );
+      }),
+    );
+    expect(result.error, isNull);
+    expect(result.installed, isTrue);
+    expect(requestedChapters, ['anatomy']);
+    final updated = await QuestionBankDatabaseManager().openBank(bankId);
+    expect(
+      {for (final row in await updated.query('Question')) row['id']: row['title']},
+      {'anatomy': '新题干', 'regional': '旧题干'},
+    );
+    final log = SyncDebugLog.instance;
+    await log.record('测试完成');
+    expect(log.entries(prefs), anyElement(contains('系统解剖学')));
+    expect(log.entries(prefs).join('\n'), isNot(contains('fixture-token')));
+  });
 
   test('installation shares global answers, recounts with ATTACH and records actual new IDs', () async {
     final userDb = await UserDBHelper().database;

@@ -151,6 +151,8 @@ class _HomePageState extends State<HomePage> {
     return HomeTabShortcuts(
       tabIndexes: {
         ShortcutAction.homeCourses: tabIndex('subjects'),
+        ShortcutAction.homeDailyPlan: tabIndex('daily_plan'),
+        ShortcutAction.homeAiSearch: tabIndex('ai_search'),
         ShortcutAction.homeStatistics: tabIndex('statistics'),
         ShortcutAction.homeMyPage: tabIndex('profile'),
       },

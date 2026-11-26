@@ -597,7 +597,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
       return KeyEventResult.ignored;
     }
     // 文本输入框获得焦点时，按键交给输入框处理
-    if (_isTextInputFocused()) {
+    if (isShortcutTextInputFocused()) {
       return KeyEventResult.ignored;
     }
 
@@ -622,24 +622,8 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
     return KeyEventResult.ignored;
   }
 
-  bool _isTextInputFocused() {
-    final BuildContext? focusContext =
-        FocusManager.instance.primaryFocus?.context;
-    if (focusContext == null) return false;
-    if (focusContext.widget is EditableText) return true;
-    return focusContext.findAncestorWidgetOfExactType<EditableText>() != null;
-  }
-
   /// 将按下的键解析为当前题目的选项序号（0 起），未命中返回 null。
   int? _resolveOptionIndex(LogicalKeyboardKey key) {
-    // 带 Ctrl / Alt / Meta 的组合键不应误触发选项选择
-    final HardwareKeyboard keyboard = HardwareKeyboard.instance;
-    if (keyboard.isControlPressed ||
-        keyboard.isAltPressed ||
-        keyboard.isMetaPressed) {
-      return null;
-    }
-
     final int index = _controller.currentPage;
     if (index < 0 || index >= _questions.length) return null;
     final Question question = _questions[index];
@@ -656,33 +640,10 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
       return null;
     }
 
-    final List<dynamic> options = QuestionDetailController.getOptionJson(
-      question,
+    return ShortcutConfig.resolveOptionIndex(
+      key,
+      QuestionDetailController.getOptionJson(question),
     );
-    if (options.isEmpty) return null;
-
-    final OptionKeyMode mode = ShortcutConfig.optionKeyMode;
-    if (mode != OptionKeyMode.letter) {
-      final int? index = ShortcutConfig.numberOptionIndex(key);
-      if (index != null && index < options.length) return index;
-    }
-
-    if (mode != OptionKeyMode.number) {
-      final String? letter = ShortcutConfig.letterOptionKey(key);
-      if (letter != null) {
-        for (int i = 0; i < options.length; i++) {
-          final Object? item = options[i];
-          final String optionKey = item is Map
-              ? (item['key']?.toString().toUpperCase() ?? '')
-              : '';
-          if (optionKey == letter) return i;
-        }
-        // 选项未使用字母作为 key 时，按顺序退化映射
-        final int fallback = letter.codeUnitAt(0) - 65;
-        if (fallback >= 0 && fallback < options.length) return fallback;
-      }
-    }
-    return null;
   }
 
   bool _runShortcutAction(ShortcutAction action) {
@@ -691,9 +652,15 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
       case ShortcutAction.toggleFullscreen:
         return runGlobalShortcut(context, action);
       case ShortcutAction.homeCourses:
+      case ShortcutAction.homeDailyPlan:
+      case ShortcutAction.homeAiSearch:
       case ShortcutAction.homeStatistics:
       case ShortcutAction.homeMyPage:
-        return false; // 首页切换仅在首页生效。
+      case ShortcutAction.reviewAgain:
+      case ShortcutAction.reviewHard:
+      case ShortcutAction.reviewGood:
+      case ShortcutAction.reviewEasy:
+        return false;
       case ShortcutAction.nextQuestion:
         if (_controller.currentPage < _questions.length - 1) {
           _controller.nextPage();

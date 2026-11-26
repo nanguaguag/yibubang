@@ -34,8 +34,10 @@ void main() {
               tabIndexes ??
               const {
                 ShortcutAction.homeCourses: 0,
-                ShortcutAction.homeStatistics: 1,
-                ShortcutAction.homeMyPage: 2,
+                ShortcutAction.homeDailyPlan: 1,
+                ShortcutAction.homeAiSearch: 2,
+                ShortcutAction.homeStatistics: 3,
+                ShortcutAction.homeMyPage: 4,
               },
           onSelected: onSelected,
           child: const Scaffold(body: TextField()),
@@ -55,21 +57,25 @@ void main() {
         LogicalKeyboardKey.digit1,
         LogicalKeyboardKey.digit2,
         LogicalKeyboardKey.digit3,
+        LogicalKeyboardKey.digit4,
+        LogicalKeyboardKey.digit5,
         LogicalKeyboardKey.numpad1,
         LogicalKeyboardKey.numpad2,
         LogicalKeyboardKey.numpad3,
+        LogicalKeyboardKey.numpad4,
+        LogicalKeyboardKey.numpad5,
       ]) {
         await tester.sendKeyEvent(key);
       }
-      expect(selected, [0, 1, 2, 0, 1, 2]);
+      expect(selected, [0, 1, 2, 3, 4, 0, 1, 2, 3, 4]);
       await tester.sendKeyDownEvent(LogicalKeyboardKey.digit2);
       await tester.sendKeyRepeatEvent(LogicalKeyboardKey.digit2);
       await tester.sendKeyUpEvent(LogicalKeyboardKey.digit2);
-      expect(selected.length, 7);
+      expect(selected.length, 11);
       await tester.tap(find.byType(TextField));
       await tester.pump();
       await tester.sendKeyEvent(LogicalKeyboardKey.digit3);
-      expect(selected.length, 7);
+      expect(selected.length, 11);
     },
   );
 
@@ -87,8 +93,8 @@ void main() {
         },
       );
       await tester.sendKeyEvent(LogicalKeyboardKey.digit1);
-      await tester.sendKeyEvent(LogicalKeyboardKey.digit2);
-      await tester.sendKeyEvent(LogicalKeyboardKey.digit3);
+      await tester.sendKeyEvent(LogicalKeyboardKey.digit4);
+      await tester.sendKeyEvent(LogicalKeyboardKey.digit5);
       expect(selected, [2, 0]);
 
       await ShortcutConfig.assignBinding(
@@ -167,7 +173,7 @@ void main() {
         const KeyBinding(LogicalKeyboardKey.f6),
       );
       await tester.sendKeyEvent(LogicalKeyboardKey.f6);
-      expect(selected, [1]);
+      expect(selected, [3]);
     },
   );
 }

@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../repositories/question_bank_repository.dart';
+import 'sync_debug_log.dart';
 import 'ykb_bank_smart_sync_service.dart';
 import 'ykb_bank_sync_service.dart';
 import 'ykb_pull_service.dart';
@@ -69,6 +72,44 @@ class CourseSyncActions extends ChangeNotifier {
         messenger.showSnackBar(const SnackBar(content: Text('请先启用并下载题库')));
         return;
       }
+      if (action == CourseSyncAction.smart) {
+        final service = YkbBankSmartSyncService.instance;
+        final options = await service.subjectOptions(bank);
+        if (!context.mounted) return;
+        final current = service.subjectScope(prefs, bank.bankId);
+        if (options.isNotEmpty || current != null) {
+          final scope = await showDialog<String>(
+            context: context,
+            builder: (context) => SimpleDialog(
+              title: Text('${bank.name} · 智能同步范围'),
+              children: [
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(24, 0, 24, 10),
+                  child: Text('范围保存在本机，手动和自动智能同步都会使用。'),
+                ),
+                for (final option in [(id: '', name: '整个题库'), ...options])
+                  SimpleDialogOption(
+                    onPressed: () => Navigator.of(context).pop(option.id),
+                    child: Row(
+                      children: [
+                        Expanded(child: Text(option.name)),
+                        if ((current ?? '') == option.id)
+                          const Icon(Icons.check, size: 20),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          );
+          if (scope == null || !context.mounted) return;
+          await service.setSubjectScope(
+            prefs,
+            bank.bankId,
+            scope.isEmpty ? null : scope,
+          );
+          if (!context.mounted) return;
+        }
+      }
       if (action == CourseSyncAction.rebuild) {
         final confirmed = await showDialog<bool>(
           context: context,
@@ -130,6 +171,7 @@ class CourseSyncActions extends ChangeNotifier {
           );
           message = result.summary;
         case CourseSyncAction.rebuild:
+          unawaited(SyncDebugLog.instance.record('全量重建 · ${bank.name} · 开始'));
           await YkbBankSyncService.syncBank(
             bank,
             pacing: SyncPacing(
@@ -138,6 +180,7 @@ class CourseSyncActions extends ChangeNotifier {
             ),
             onBankProgress: (value) => progress.value = value,
           );
+          unawaited(SyncDebugLog.instance.record('全量重建 · ${bank.name} · 完成'));
           message = '题库「${bank.name}」重建完成';
       }
       if (messenger.mounted) {

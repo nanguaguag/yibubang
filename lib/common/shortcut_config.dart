@@ -174,22 +174,40 @@ enum ShortcutAction {
       KeyBinding(LogicalKeyboardKey.numpad1),
     ],
   ),
-  homeStatistics(
-    id: 'home_statistics',
-    label: '统计',
-    description: '主页面切换到统计，默认 2',
+  homeDailyPlan(
+    id: 'home_daily_plan',
+    label: '每日计划',
+    description: '主页面切换到每日计划，默认 2',
     defaultBindings: <KeyBinding>[
       KeyBinding(LogicalKeyboardKey.digit2),
       KeyBinding(LogicalKeyboardKey.numpad2),
     ],
   ),
-  homeMyPage(
-    id: 'home_my_page',
-    label: '我的',
-    description: '主页面切换到我的，默认 3',
+  homeAiSearch(
+    id: 'home_ai_search',
+    label: 'AI 搜索',
+    description: '主页面切换到 AI 搜索，默认 3',
     defaultBindings: <KeyBinding>[
       KeyBinding(LogicalKeyboardKey.digit3),
       KeyBinding(LogicalKeyboardKey.numpad3),
+    ],
+  ),
+  homeStatistics(
+    id: 'home_statistics',
+    label: '统计',
+    description: '主页面切换到统计，默认 4',
+    defaultBindings: <KeyBinding>[
+      KeyBinding(LogicalKeyboardKey.digit4),
+      KeyBinding(LogicalKeyboardKey.numpad4),
+    ],
+  ),
+  homeMyPage(
+    id: 'home_my_page',
+    label: '我的',
+    description: '主页面切换到我的，默认 5',
+    defaultBindings: <KeyBinding>[
+      KeyBinding(LogicalKeyboardKey.digit5),
+      KeyBinding(LogicalKeyboardKey.numpad5),
     ],
   ),
   toggleFullscreen(
@@ -258,7 +276,43 @@ enum ShortcutAction {
     label: '显示已斩题目',
     description: '显示 / 隐藏当前已斩题目的内容',
   ),
-  submitTest(id: 'submit_test', label: '交卷', description: '测试模式下交卷');
+  submitTest(id: 'submit_test', label: '交卷', description: '测试模式下交卷'),
+  reviewAgain(
+    id: 'review_again',
+    label: '重来',
+    description: '每日计划揭晓答案后评为重来',
+    defaultBindings: <KeyBinding>[
+      KeyBinding(LogicalKeyboardKey.digit1),
+      KeyBinding(LogicalKeyboardKey.numpad1),
+    ],
+  ),
+  reviewHard(
+    id: 'review_hard',
+    label: '困难',
+    description: '每日计划揭晓答案后评为困难',
+    defaultBindings: <KeyBinding>[
+      KeyBinding(LogicalKeyboardKey.digit2),
+      KeyBinding(LogicalKeyboardKey.numpad2),
+    ],
+  ),
+  reviewGood(
+    id: 'review_good',
+    label: '良好',
+    description: '每日计划揭晓答案后评为良好',
+    defaultBindings: <KeyBinding>[
+      KeyBinding(LogicalKeyboardKey.digit3),
+      KeyBinding(LogicalKeyboardKey.numpad3),
+    ],
+  ),
+  reviewEasy(
+    id: 'review_easy',
+    label: '简单',
+    description: '每日计划揭晓答案后评为简单',
+    defaultBindings: <KeyBinding>[
+      KeyBinding(LogicalKeyboardKey.digit4),
+      KeyBinding(LogicalKeyboardKey.numpad4),
+    ],
+  );
 
   const ShortcutAction({
     required this.id,
@@ -272,6 +326,14 @@ enum ShortcutAction {
   final String label;
   final String description;
   final List<KeyBinding> defaultBindings;
+
+  bool get isReviewRating => switch (this) {
+    ShortcutAction.reviewAgain ||
+    ShortcutAction.reviewHard ||
+    ShortcutAction.reviewGood ||
+    ShortcutAction.reviewEasy => true,
+    _ => false,
+  };
 
   /// 是否允许长按连续触发（仅滚动类动作）。
   bool get allowsRepeat {
@@ -572,5 +634,29 @@ class ShortcutConfig {
     final int end = LogicalKeyboardKey.keyZ.keyId;
     if (id < start || id > end) return null;
     return String.fromCharCode(65 + (id - start));
+  }
+
+  /// 按选项键位模式解析序号，字母优先匹配题库中的实际选项键。
+  static int? resolveOptionIndex(LogicalKeyboardKey key, List<dynamic> options) {
+    final keyboard = HardwareKeyboard.instance;
+    if (keyboard.isControlPressed ||
+        keyboard.isAltPressed ||
+        keyboard.isMetaPressed) {
+      return null;
+    }
+    if (optionKeyMode != OptionKeyMode.letter) {
+      final index = numberOptionIndex(key);
+      if (index != null && index < options.length) return index;
+    }
+    if (optionKeyMode == OptionKeyMode.number) return null;
+    final letter = letterOptionKey(key);
+    if (letter == null) return null;
+    final index = options.indexWhere(
+      (option) =>
+          option is Map && option['key']?.toString().toUpperCase() == letter,
+    );
+    if (index >= 0) return index;
+    final fallback = letter.codeUnitAt(0) - 65;
+    return fallback < options.length ? fallback : null;
   }
 }

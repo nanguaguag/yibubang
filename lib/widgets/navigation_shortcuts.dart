@@ -24,7 +24,7 @@ bool _matches(ShortcutAction action, KeyEvent event) =>
       action,
     ).any((binding) => binding.matches(event.logicalKey));
 
-bool _isTyping() {
+bool isShortcutTextInputFocused() {
   final context = FocusManager.instance.primaryFocus?.context;
   return context?.widget is EditableText ||
       context?.findAncestorWidgetOfExactType<EditableText>() != null;
@@ -48,7 +48,7 @@ class AppBackShortcut extends StatelessWidget {
       if (event is! KeyDownEvent || !_matches(ShortcutAction.goBack, event)) {
         return KeyEventResult.ignored;
       }
-      if (_isTyping() &&
+      if (isShortcutTextInputFocused() &&
           event.logicalKey.keyLabel.length == 1 &&
           !HardwareKeyboard.instance.isControlPressed &&
           !HardwareKeyboard.instance.isAltPressed &&
@@ -86,7 +86,7 @@ class HomeTabShortcuts extends StatelessWidget {
     onKeyEvent: (_, event) {
       if (event is! KeyDownEvent ||
           ModalRoute.of(context)?.isCurrent != true ||
-          _isTyping()) {
+          isShortcutTextInputFocused()) {
         return KeyEventResult.ignored;
       }
       for (final action in ShortcutConfig.actionsByPriority) {

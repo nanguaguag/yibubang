@@ -73,20 +73,12 @@ class _ShortcutSettingsPageState extends State<ShortcutSettingsPage> {
       return;
     }
 
-    final List<ShortcutAction> conflicts = ShortcutConfig.actionsSharing(
-      binding,
-      except: action,
-    );
+    final feedback = _bindingFeedback(action, binding);
     await ShortcutConfig.assignBinding(action, binding);
     if (!mounted) return;
     setState(() {});
 
-    final String conflictText = conflicts.isEmpty
-        ? ''
-        : '，与「${conflicts.map((ShortcutAction a) => a.label).join('、')}」共用，按优先级执行';
-    _showMessage(
-      '「${action.label}」新增 ${binding.label}$conflictText${_optionKeyWarning(binding)}',
-    );
+    _showMessage('「${action.label}」新增 ${binding.label}$feedback');
   }
 
   Future<void> _replaceBinding(
@@ -96,22 +88,26 @@ class _ShortcutSettingsPageState extends State<ShortcutSettingsPage> {
     final KeyBinding? binding = await _captureBinding(action);
     if (binding == null || !mounted || binding == oldBinding) return;
 
-    final List<ShortcutAction> conflicts = ShortcutConfig.actionsSharing(
-      binding,
-      except: action,
-    );
+    final feedback = _bindingFeedback(action, binding);
     await ShortcutConfig.removeBinding(action, oldBinding);
     await ShortcutConfig.assignBinding(action, binding);
     if (!mounted) return;
     setState(() {});
 
-    final String conflictText = conflicts.isEmpty
-        ? ''
-        : '，与「${conflicts.map((ShortcutAction a) => a.label).join('、')}」共用，按优先级执行';
     _showMessage(
-      '「${action.label}」按键 ${oldBinding.label} 已改为 ${binding.label}'
-      '$conflictText${_optionKeyWarning(binding)}',
+      '「${action.label}」按键 ${oldBinding.label} 已改为 ${binding.label}$feedback',
     );
+  }
+
+  String _bindingFeedback(ShortcutAction action, KeyBinding binding) {
+    final conflicts = ShortcutConfig.actionsSharing(binding, except: action)
+        .where((other) => other.isReviewRating == action.isReviewRating)
+        .map((other) => other.label)
+        .join('、');
+    final conflictText = conflicts.isEmpty ? '' : '，与「$conflicts」共用，按优先级执行';
+    return action.isReviewRating
+        ? conflictText
+        : '$conflictText${_optionKeyWarning(binding)}';
   }
 
   Future<void> _removeBinding(ShortcutAction action, KeyBinding binding) async {
@@ -173,6 +169,13 @@ class _ShortcutSettingsPageState extends State<ShortcutSettingsPage> {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final priority = ShortcutConfig.actionsByPriority;
+    final ratingActions = priority
+        .where((action) => action.isReviewRating)
+        .toList();
+    final generalActions = priority
+        .where((action) => !action.isReviewRating)
+        .toList();
 
     return Scaffold(
       appBar: AppBar(title: const Text('快捷键')),
@@ -189,6 +192,18 @@ class _ShortcutSettingsPageState extends State<ShortcutSettingsPage> {
           const SizedBox(height: 10),
           const InfoHintBanner(
             message: '单选题：按选项键直接判题；多选题：按选项键勾选，再按「提交答案」键（默认 Enter）提交。',
+          ),
+          const SizedBox(height: 14),
+          _sectionTitle('认知状态选择'),
+          InfoCard(
+            children: [
+              for (final action in ratingActions)
+                _buildActionTile(action, ratingActions),
+            ],
+          ),
+          const SizedBox(height: 10),
+          const InfoHintBanner(
+            message: '每日计划揭晓答案后，默认按 1–4 选择重来、困难、良好、简单。作答时数字键可继续用于选择选项。',
           ),
           const SizedBox(height: 14),
           _sectionTitle('滚动'),
@@ -232,9 +247,8 @@ class _ShortcutSettingsPageState extends State<ShortcutSettingsPage> {
                   style: theme.textTheme.bodySmall,
                 ),
               ),
-              for (final ShortcutAction action
-                  in ShortcutConfig.actionsByPriority)
-                _buildActionTile(action),
+              for (final action in generalActions)
+                _buildActionTile(action, generalActions),
               IconTile(
                 icon: Icons.restart_alt,
                 label: '恢复默认快捷键',
@@ -247,7 +261,7 @@ class _ShortcutSettingsPageState extends State<ShortcutSettingsPage> {
             message:
                 '← / → 切换上一题 / 下一题；PgUp / PgDn 在当前题目内上下翻页；'
                 '↑ / ↓ 连续滚动（可长按）。F11 在应用内切换全屏，可在上方改键。'
-                'Esc 返回；首页 1 / 2 / 3 切换我的课程、统计、我的。'
+                'Esc 返回。首页 1–5 切换我的课程、每日计划、AI 搜索、统计、我的。'
                 '刷题快捷键在输入笔记、评论时让位给输入框。'
                 '选项键优先于刷题功能快捷键。',
           ),
@@ -300,11 +314,10 @@ class _ShortcutSettingsPageState extends State<ShortcutSettingsPage> {
     );
   }
 
-  Widget _buildActionTile(ShortcutAction action) {
+  Widget _buildActionTile(ShortcutAction action, List<ShortcutAction> group) {
     final ThemeData theme = Theme.of(context);
     final List<KeyBinding> bindings = ShortcutConfig.bindingsFor(action);
-    final priority = ShortcutConfig.actionsByPriority;
-    final position = priority.indexOf(action);
+    final position = group.indexOf(action);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
@@ -332,15 +345,17 @@ class _ShortcutSettingsPageState extends State<ShortcutSettingsPage> {
               ),
               IconButton(
                 tooltip: '提高优先级',
-                onPressed: position == 0 ? null : () => _moveAction(action, -1),
+                onPressed: position == 0
+                    ? null
+                    : () => _moveAction(action, group[position - 1]),
                 icon: const Icon(Icons.arrow_upward, size: 18),
                 visualDensity: VisualDensity.compact,
               ),
               IconButton(
                 tooltip: '降低优先级',
-                onPressed: position == priority.length - 1
+                onPressed: position == group.length - 1
                     ? null
-                    : () => _moveAction(action, 1),
+                    : () => _moveAction(action, group[position + 1]),
                 icon: const Icon(Icons.arrow_downward, size: 18),
                 visualDensity: VisualDensity.compact,
               ),
@@ -384,8 +399,15 @@ class _ShortcutSettingsPageState extends State<ShortcutSettingsPage> {
     );
   }
 
-  Future<void> _moveAction(ShortcutAction action, int offset) async {
-    await ShortcutConfig.moveAction(action, offset);
+  Future<void> _moveAction(
+    ShortcutAction action,
+    ShortcutAction neighbor,
+  ) async {
+    final priority = ShortcutConfig.actionsByPriority;
+    await ShortcutConfig.moveAction(
+      action,
+      priority.indexOf(neighbor) - priority.indexOf(action),
+    );
     if (mounted) setState(() {});
   }
 
@@ -430,6 +452,8 @@ class _ShortcutSettingsPageState extends State<ShortcutSettingsPage> {
     return switch (action) {
       ShortcutAction.goBack => Icons.arrow_back,
       ShortcutAction.homeCourses => Icons.book_outlined,
+      ShortcutAction.homeDailyPlan => Icons.psychology_outlined,
+      ShortcutAction.homeAiSearch => Icons.auto_awesome_outlined,
       ShortcutAction.homeStatistics => Icons.insights,
       ShortcutAction.homeMyPage => Icons.person_outline,
       ShortcutAction.toggleFullscreen => Icons.fullscreen,
@@ -445,6 +469,10 @@ class _ShortcutSettingsPageState extends State<ShortcutSettingsPage> {
       ShortcutAction.copyQuestion => Icons.copy_rounded,
       ShortcutAction.toggleCutContent => Icons.visibility_outlined,
       ShortcutAction.submitTest => Icons.assignment_turned_in_outlined,
+      ShortcutAction.reviewAgain => Icons.replay,
+      ShortcutAction.reviewHard => Icons.psychology_outlined,
+      ShortcutAction.reviewGood => Icons.thumb_up_outlined,
+      ShortcutAction.reviewEasy => Icons.done_all,
     };
   }
 }

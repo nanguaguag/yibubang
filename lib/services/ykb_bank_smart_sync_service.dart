@@ -16,6 +16,7 @@ import '../models/question_bank.dart';
 import '../models/bank_progress.dart';
 import 'bank_creation_service.dart';
 import 'question_bank_file_service.dart';
+import 'sync_debug_log.dart';
 import '../repositories/question_bank_repository.dart';
 import 'ykb_bank_sync_service.dart';
 
@@ -98,6 +99,50 @@ class YkbBankSmartSyncService {
   bool _running = false;
   int _requestsUsed = 0;
 
+  static String _subjectPreference(String bankId) => 'smart_bank_subject_$bankId';
+
+  String? subjectScope(SharedPreferences prefs, String bankId) =>
+      prefs.getString(_subjectPreference(bankId));
+
+  Future<void> setSubjectScope(
+    SharedPreferences prefs,
+    String bankId,
+    String? subjectId,
+  ) async {
+    final key = _subjectPreference(bankId);
+    if (subjectId == null) {
+      await prefs.remove(key);
+    } else {
+      await prefs.setString(key, subjectId);
+    }
+  }
+
+  Future<List<({String id, String name})>> subjectOptions(QuestionBank bank) async {
+    if (QuestionBankDefaults.byId(bank.bankId) == null ||
+        await _usesCompleteTree(bank)) {
+      return const [];
+    }
+    final db = await QuestionBankDatabaseManager().openBank(bank.bankId);
+    final rows = await db.rawQuery(
+      'SELECT DISTINCT s.id, s.name FROM Subject s '
+      'JOIN IdentitySubject i ON i.subject_id = s.id '
+      'WHERE i.identity_id = ? ORDER BY s.name, s.id',
+      [bank.identityId],
+    );
+    return [
+      for (final row in rows)
+        (id: row['id'].toString(), name: row['name'].toString()),
+    ];
+  }
+
+  Future<bool> _usesCompleteTree(QuestionBank bank) async {
+    if (bank.bankId.startsWith('custom_')) return true;
+    if (bank.bankId == 'legacy_combined') return false;
+    final db = await QuestionBankDatabaseManager().openBank(bank.bankId);
+    final rows = await db.query('BankMeta', limit: 1);
+    return rows.firstOrNull?['source'] == 'ykb-created';
+  }
+
   @visibleForTesting
   String contentHashForTesting(Map<String, dynamic> row) => _rowHash(row);
 
@@ -107,12 +152,23 @@ class YkbBankSmartSyncService {
   ).map((chapter) => chapter.toJson()).toList();
 
   @visibleForTesting
+  List<String> subjectChaptersForTesting(
+    List<Map<String, dynamic>> remote, {
+    required String subjectId,
+    required String subjectName,
+  }) => _subjectLeaves(
+    remote.map(_RemoteChapter.fromJson),
+    _LocalSubject(id: subjectId, name: subjectName),
+  ).map((chapter) => chapter.id).toList();
+
+  @visibleForTesting
   Future<Map<String, String>> mappingForTesting({
     required Database db,
     required Map<String, dynamic> remote,
     required List<Map<String, dynamic>> local,
     List<Map<String, dynamic>> questions = const [],
     Map<String, dynamic>? state,
+    String? subjectId,
   }) async {
     final chapters = <String, _LocalChapter>{};
     for (final row in local) {
@@ -134,6 +190,7 @@ class YkbBankSmartSyncService {
       {},
       db,
       'bank',
+      scope: subjectId == null ? null : _LocalSubject(id: subjectId, name: ''),
     );
     return {'id': mapping.localChapterId, 'method': mapping.method};
   }
@@ -166,9 +223,26 @@ class YkbBankSmartSyncService {
     final sw = Stopwatch()..start();
     Directory? stagingDir;
     var stagingPath = '';
+    String? stateBankId;
+
+    void log(String message) =>
+        unawaited(SyncDebugLog.instance.record('智能同步 · $message'));
+
+    void report(BankProgress progress) {
+      log([
+        progress.stage,
+        if (progress.chapter.isNotEmpty) progress.chapter,
+        if (progress.total > 0) '章节 ${progress.completed}/${progress.total}',
+        if (progress.expectedQuestions > 0)
+          '题目 ${progress.questions}/${progress.expectedQuestions}',
+      ].join(' · '));
+      onProgress?.call(progress);
+    }
+
     try {
       final prefs = await SharedPreferences.getInstance();
       if (!(prefs.getBool('loggedin') ?? false)) {
+        log('跳过 · 未登录医考帮');
         return const YkbBankSmartSyncResult(error: '未登录医考帮');
       }
       if (!manual && !await isEnabled()) {
@@ -177,16 +251,40 @@ class YkbBankSmartSyncService {
 
       final resolvedBank = bank ?? await _activeBank();
       if (resolvedBank == null || !resolvedBank.isInstalled) {
+        log('跳过 · 当前题库未安装');
         return const YkbBankSmartSyncResult(error: '当前题库未安装');
       }
+      final subjectId = subjectScope(prefs, resolvedBank.bankId);
+      final completeTreeBank = await _usesCompleteTree(resolvedBank);
+      if (subjectId != null && completeTreeBank) {
+        log('${resolvedBank.name} · 题库来源不支持按科目增量');
+        return const YkbBankSmartSyncResult(error: '当前题库来源只支持整库同步，请调整同步范围');
+      }
+      final scopeKey = subjectId == null ? null : jsonEncode({'subject_id': subjectId});
       final userDb = await UserDBHelper().database;
       await _ensureBankState(userDb, resolvedBank.bankId);
-      final bankState = await _loadBankState(userDb, resolvedBank.bankId);
+      var bankState = await _loadBankState(userDb, resolvedBank.bankId);
+      // 队列和退避只适用于生成时的范围，已落库的章节状态可继续使用。
+      if (bankState['manifest_json'] != scopeKey) {
+        final reset = <String, dynamic>{
+          'manifest_json': scopeKey,
+          'manifest_hash': '',
+          'manifest_fetched_at': 0,
+          'pending_json': null,
+          'next_retry_at': 0,
+          'failure_count': 0,
+          'last_error': null,
+        };
+        await _saveBankState(userDb, resolvedBank.bankId, reset);
+        bankState = {...bankState, ...reset};
+      }
+      stateBankId = resolvedBank.bankId;
       final nowMs = DateTime.now().millisecondsSinceEpoch;
 
       if (!manual) {
         final nextRetry = (bankState['next_retry_at'] as num?)?.toInt() ?? 0;
         if (nextRetry > nowMs) {
+          log('${resolvedBank.name} · 等待重试 ${((nextRetry - nowMs) / 60000).ceil()} 分钟');
           return YkbBankSmartSyncResult(
             error: '退避中，${((nextRetry - nowMs) / 60000).ceil()} 分钟后重试',
             elapsedMs: sw.elapsedMilliseconds,
@@ -194,12 +292,8 @@ class YkbBankSmartSyncService {
         }
       }
 
-      var completeTreeBank = resolvedBank.bankId.startsWith('custom_');
-      if (!completeTreeBank && resolvedBank.bankId != 'legacy_combined') {
-        final contentDb = await QuestionBankDatabaseManager().openBank(resolvedBank.bankId);
-        completeTreeBank = (await contentDb.query('BankMeta')).first['source'] == 'ykb-created';
-      }
       if (completeTreeBank) {
+        log('${resolvedBank.name} · 整库同步开始');
         final creation = BankCreationService();
         final nodes = await creation.identities();
         final root = BankIdentityNode.find(nodes, resolvedBank.identityId);
@@ -208,7 +302,7 @@ class YkbBankSmartSyncService {
         try {
           final file = await creation.build(root: root, bankId: resolvedBank.bankId,
             name: resolvedBank.name, version: QuestionBankFileService.nextVersion(resolvedBank.version),
-            directory: directory, onProgress: onProgress,
+            directory: directory, onProgress: report,
             pacing: SyncPacing(
               jitterEnabled: prefs.getBool('sync_ykb_jitter_enabled') ?? false,
               pacingEnabled: prefs.getBool('sync_ykb_pacing_enabled') ?? false,
@@ -221,22 +315,20 @@ class YkbBankSmartSyncService {
           });
           if (!await QuestionBankFileService.hasChanges(resolvedBank.localPath, file.path)) {
             await markChecked();
-            onProgress?.call(const BankProgress(stage: '题库内容已是最新', finished: true));
+            report(const BankProgress(stage: '题库内容已是最新', finished: true));
             return YkbBankSmartSyncResult(elapsedMs: sw.elapsedMilliseconds);
           }
-          onProgress?.call(const BankProgress(stage: '比较与合并题库'));
+          report(const BankProgress(stage: '比较与合并题库'));
           await QuestionBankRepository().importFile(file.path,
             onConflict: (_) async => BankImportMode.merge);
           await markChecked();
-          onProgress?.call(const BankProgress(stage: '同步完成', finished: true));
+          report(BankProgress(stage: '同步完成 · 新增 $added 题', finished: true));
           return YkbBankSmartSyncResult(installed: true, elapsedMs: sw.elapsedMilliseconds,
             addedQuestions: added);
         } finally {
           await directory.delete(recursive: true);
         }
       }
-
-      onProgress?.call(const BankProgress(stage: '检查远端章节目录'));
 
       final chapterStates = await _loadChapterStates(
         userDb,
@@ -250,6 +342,13 @@ class YkbBankSmartSyncService {
         resolvedBank.identityId,
       );
       final localSubjects = await _loadLocalSubjects(bankDb);
+      final scope = localSubjects[subjectId];
+      if (subjectId != null && scope == null) {
+        log('${resolvedBank.name} · 本地科目已不存在');
+        return const YkbBankSmartSyncResult(error: '所选科目已不存在，请重新选择同步范围');
+      }
+      log('${resolvedBank.name} · ${scope?.name ?? '整库'} · ${manual ? '手动' : '自动'}');
+      report(const BankProgress(stage: '检查远端章节目录'));
       var bankGeneratedAt = 0;
       try {
         bankGeneratedAt =
@@ -270,7 +369,11 @@ class YkbBankSmartSyncService {
           pendingRaw != null &&
           pendingRaw.isNotEmpty &&
           nowMs - pendingAt < _pendingTtlMs) {
-        pending.addAll(_decodePending(pendingRaw));
+        final cached = _decodePending(pendingRaw);
+        if (scope == null || cached.every((chapter) =>
+            _normTitle(chapter.subjectTitle) == _normTitle(scope.name))) {
+          pending.addAll(cached);
+        }
       }
 
       _Manifest? manifest;
@@ -281,6 +384,7 @@ class YkbBankSmartSyncService {
           localChapters,
           chapterStates,
           bankGeneratedAt: bankGeneratedAt,
+          scope: scope,
         );
         debugPrint(
           '[ykb-smart-sync] ${resolvedBank.bankId} '
@@ -288,6 +392,9 @@ class YkbBankSmartSyncService {
           'queue=${manifest.pending.length}, bootstrap=${manifest.bootstraps.length}',
         );
         pending.addAll(manifest.pending);
+        log('目录 ${manifest.leaves.length} 章 · 待同步 ${pending.length} 章');
+      } else {
+        log('从历史队列续传 ${pending.length} 章');
       }
 
       final limit = maxChapters ?? (manual ? 12 : _defaultMaxChapters);
@@ -308,7 +415,7 @@ class YkbBankSmartSyncService {
           'last_error': null,
         });
         await _upsertChapterStates(userDb, chapterStateUpdates);
-        onProgress?.call(const BankProgress(stage: '题库内容已是最新', finished: true));
+        report(const BankProgress(stage: '题库内容已是最新', finished: true));
         return YkbBankSmartSyncResult(
           manifestChapters: manifest?.leaves.length ?? 0,
           queuedChapters: pending.length,
@@ -329,7 +436,7 @@ class YkbBankSmartSyncService {
       final expectedQuestions = batch.fold<int>(0, (sum, c) => sum + c.count);
 
       for (final rc in batch) {
-        onProgress?.call(BankProgress(stage: '拉取并比较章节', chapter: rc.title,
+        report(BankProgress(stage: '拉取并比较章节', chapter: rc.title,
           completed: completed++, total: batch.length,
           questions: fetchedQuestions, expectedQuestions: expectedQuestions));
         if (_requestsUsed >= _maxRequestsPerRun) {
@@ -346,6 +453,7 @@ class YkbBankSmartSyncService {
             );
         _requestsUsed++;
         if (fetchResult.isRestricted) {
+          log('${rc.title} · 无权限（203）');
           // 203：当前账号无该章节查看权限。按周重试，避免每轮都撞 203。
           restricted++;
           restrictedStates.add(
@@ -364,6 +472,9 @@ class YkbBankSmartSyncService {
           continue;
         }
         if (!fetchResult.isOk || fetchResult.questions == null) {
+          final code = fetchResult.code;
+          final status = RegExp(r'^\d{1,5}$').hasMatch(code) ? '（$code）' : '';
+          log('${rc.title} · 拉取失败$status，待重试');
           debugPrint(
             '[ykb-smart-sync] 章节 ${rc.id} 拉取失败: '
             '${fetchResult.code} ${fetchResult.message}',
@@ -374,6 +485,7 @@ class YkbBankSmartSyncService {
         final questions = fetchResult.questions!;
         fetchedQuestions += questions.length;
         if (questions.length != rc.count) {
+          log('${rc.title} · 题量不一致：返回 ${questions.length}，目录 ${rc.count}');
           // count 与列表不一致：宁可留到下一轮，不把半章数据写进题库。
           debugPrint(
             '[ykb-smart-sync] 章节 ${rc.id} 数量不一致: '
@@ -385,6 +497,7 @@ class YkbBankSmartSyncService {
         final remoteHash = _chapterHash(questions, rc, resolvedBank.identityId);
         final oldState = chapterStates[rc.id];
         if (oldState != null &&
+            (scope == null || oldState['local_subject_id'] == scope.id) &&
             (oldState['remote_hash']?.toString() ?? '') == remoteHash) {
           stateOnly.add(
             _chapterStateRow(
@@ -410,6 +523,7 @@ class YkbBankSmartSyncService {
           localSubjects,
           bankDb,
           resolvedBank.identityId,
+          scope: scope,
         );
         fetched.add(
           _FetchedChapter(
@@ -437,7 +551,7 @@ class YkbBankSmartSyncService {
           'failure_count': failed.isEmpty ? 0 : 1,
           'last_error': failed.isEmpty ? null : '${failed.length} 个章节待重试',
         });
-        onProgress?.call(BankProgress(
+        report(BankProgress(
           stage: failed.isNotEmpty ? '${failed.length} 章失败，已安排重试'
               : restricted > 0 ? '$restricted 章无权限，其余内容已检查'
               : remaining.isNotEmpty ? '本批检查完成，还有 ${remaining.length} 章待处理' : '题库内容已是最新',
@@ -458,7 +572,7 @@ class YkbBankSmartSyncService {
       }
 
       // 3) 复制当前题库 -> staging，事务内应用增量。
-      onProgress?.call(BankProgress(stage: '写入暂存题库', completed: batch.length,
+      report(BankProgress(stage: '写入暂存题库', completed: batch.length,
         total: batch.length, questions: fetchedQuestions, expectedQuestions: expectedQuestions));
       final baseVersion =
           RegExp(
@@ -483,7 +597,7 @@ class YkbBankSmartSyncService {
       );
 
       // 4) 校验 + 原子替换。importFile 内部会做 SHA-256、备份和 rename。
-      onProgress?.call(BankProgress(stage: '校验与安装', completed: batch.length,
+      report(BankProgress(stage: '校验与安装', completed: batch.length,
         total: batch.length, questions: fetchedQuestions, expectedQuestions: expectedQuestions));
       // 同步后的题库不再跟随旧的远端 3.0.0 包更新，避免覆盖官方 API 增量。
       final installed = await QuestionBankRepository().importFile(
@@ -537,7 +651,9 @@ class YkbBankSmartSyncService {
         '剩余=${failed.length + remaining.length} '
         '请求=$_requestsUsed',
       );
-      onProgress?.call(BankProgress(stage: failed.isNotEmpty
+      log('结果 · 新增 ${apply.added} 题 · 更新 ${apply.updated} 题 · '
+          '无权限 $restricted 章 · 剩余 ${failed.length + remaining.length} 章 · 请求 $_requestsUsed 次');
+      report(BankProgress(stage: failed.isNotEmpty
           ? '本批已安装，${failed.length} 章待重试'
           : '本批同步完成，剩余 ${remaining.length} 章',
         completed: fetched.length + stateOnly.length + restricted, total: batch.length,
@@ -559,6 +675,7 @@ class YkbBankSmartSyncService {
       );
     } catch (e, stack) {
       onProgress?.call(BankProgress(stage: '同步失败：$e'));
+      log('同步失败 · ${e.runtimeType} · 已请求 $_requestsUsed 次');
       debugPrint('[ykb-smart-sync] 失败: $e');
       debugPrint('$stack');
       try {
@@ -569,9 +686,7 @@ class YkbBankSmartSyncService {
       try {
         final prefs = await SharedPreferences.getInstance();
         if (prefs.getBool('loggedin') ?? false) {
-          final bankId =
-              bank?.bankId ??
-              (await SharedPreferences.getInstance()).getString('activeBankId');
+          final bankId = stateBankId;
           if (bankId != null && bankId.isNotEmpty) {
             final userDb = await UserDBHelper().database;
             await _ensureBankState(userDb, bankId);
@@ -624,6 +739,7 @@ class YkbBankSmartSyncService {
     Map<String, _LocalChapter> localChapters,
     Map<String, Map<String, dynamic>> chapterStates, {
     required int bankGeneratedAt,
+    _LocalSubject? scope,
   }) async {
     await _jitter();
     final identityResp = await basicReq('/allQuestion/question/subjectV2', {
@@ -681,7 +797,7 @@ class YkbBankSmartSyncService {
 
     // 同一章节可能被多个入口返回，按远端章节 ID 去重。
     final byId = <String, _RemoteChapter>{};
-    for (final leaf in leaves) {
+    for (final leaf in scope == null ? leaves : _subjectLeaves(leaves, scope)) {
       byId.putIfAbsent(leaf.id, () => leaf);
     }
     final unique = byId.values.toList()..sort((a, b) => a.id.compareTo(b.id));
@@ -700,7 +816,10 @@ class YkbBankSmartSyncService {
       final state = chapterStates[leaf.id];
       if (state != null &&
           (state['remote_count'] as num?)?.toInt() == leaf.count &&
-          (state['remote_updated_at']?.toString() ?? '') == leaf.updatedAt) {
+          (state['remote_updated_at']?.toString() ?? '') == leaf.updatedAt &&
+          (scope == null ||
+              state['local_subject_id'] == scope.id ||
+              state['match_method'] == 'restricted')) {
         final method = state['match_method']?.toString() ?? '';
         final lastSynced = (state['last_synced_at'] as num?)?.toInt() ?? 0;
         // 无权限章节按周重试；期间不占用请求预算。
@@ -713,7 +832,9 @@ class YkbBankSmartSyncService {
       if (state == null) {
         final sameId = localChapters[leaf.id];
         if (sameId != null && sameId.norm == leaf.norm) {
-          if (sameId.total == leaf.count &&
+          if (scope == null &&
+              !bank.version.contains('+delta.') &&
+              sameId.total == leaf.count &&
               !_updatedAfterBank(leaf.updatedAt, bankGeneratedAt)) {
             bootstraps.add(
               _chapterStateRow(
@@ -753,6 +874,27 @@ class YkbBankSmartSyncService {
       pending: pending,
       bootstraps: bootstraps,
       hash: hash,
+    );
+  }
+
+  Iterable<_RemoteChapter> _subjectLeaves(
+    Iterable<_RemoteChapter> leaves,
+    _LocalSubject scope,
+  ) {
+    final name = _normTitle(scope.name);
+    final matches = leaves.where((chapter) =>
+        chapter.subjectId.isNotEmpty &&
+        name.isNotEmpty &&
+        _normTitle(chapter.subjectTitle) == name);
+    final subjectIds = matches.map((chapter) => chapter.subjectId).toSet();
+    if (subjectIds.contains(scope.id)) {
+      return matches.where((chapter) => chapter.subjectId == scope.id);
+    }
+    if (subjectIds.length == 1) return matches;
+    throw StateError(
+      subjectIds.isEmpty
+          ? '远端目录中找不到科目「${scope.name}」'
+          : '远端存在多个同名科目「${scope.name}」',
     );
   }
 
@@ -833,11 +975,16 @@ class YkbBankSmartSyncService {
     Map<String, _LocalChapter> localChapters,
     Map<String, _LocalSubject> localSubjects,
     Database bankDb,
-    String bankIdentityId,
-  ) async {
+    String bankIdentityId, {
+    _LocalSubject? scope,
+  }) async {
+    final candidates = scope == null ? localChapters : {
+      for (final chapter in localChapters.values)
+        if (chapter.subjectId == scope.id) chapter.id: chapter,
+    };
     final oldLocalId = oldState?['local_chapter_id']?.toString() ?? '';
-    if (oldLocalId.isNotEmpty && localChapters.containsKey(oldLocalId)) {
-      final local = localChapters[oldLocalId]!;
+    if (oldLocalId.isNotEmpty && candidates.containsKey(oldLocalId)) {
+      final local = candidates[oldLocalId]!;
       return _ChapterMapping(
         localChapterId: local.id,
         localSubjectId: local.subjectId,
@@ -850,7 +997,7 @@ class YkbBankSmartSyncService {
       );
     }
 
-    final same = localChapters[rc.id];
+    final same = candidates[rc.id];
     if (same != null && same.norm == rc.norm) {
       return _ChapterMapping(
         localChapterId: same.id,
@@ -864,7 +1011,7 @@ class YkbBankSmartSyncService {
       );
     }
 
-    final exact = localChapters.values.where((c) => c.norm == rc.norm).toList();
+    final exact = candidates.values.where((c) => c.norm == rc.norm).toList();
     if (exact.length == 1) {
       final c = exact.first;
       return _ChapterMapping(
@@ -899,7 +1046,7 @@ class YkbBankSmartSyncService {
 
     _LocalChapter? best;
     var bestScore = 0.0;
-    for (final c in localChapters.values) {
+    for (final c in candidates.values) {
       if (c.norm.isEmpty) continue;
       final score =
           _similarity(rc.norm, c.norm) +
@@ -925,13 +1072,13 @@ class YkbBankSmartSyncService {
     final overlap = await _matchByOverlap(
       rc,
       questions,
-      localChapters,
+      candidates,
       bankDb,
       bankIdentityId,
     );
     if (overlap != null) return overlap;
 
-    return _newChapterMapping(rc, localChapters, localSubjects);
+    return _newChapterMapping(rc, localChapters, localSubjects, scope: scope);
   }
 
   Future<_ChapterMapping?> _matchByOverlap(
@@ -1009,11 +1156,25 @@ class YkbBankSmartSyncService {
   _ChapterMapping _newChapterMapping(
     _RemoteChapter rc,
     Map<String, _LocalChapter> localChapters,
-    Map<String, _LocalSubject> localSubjects,
-  ) {
+    Map<String, _LocalSubject> localSubjects, {
+    _LocalSubject? scope,
+  }) {
+    final collisionName = scope == null ? rc.title : '${scope.id}|${rc.title}';
     final localChapterId = localChapters.containsKey(rc.id)
-        ? 'ykb_${rc.id}_${_hash8(rc.title)}'
+        ? 'ykb_${rc.id}_${_hash8(collisionName)}'
         : rc.id;
+    if (scope != null) {
+      return _ChapterMapping(
+        localChapterId: localChapterId,
+        localSubjectId: scope.id,
+        localTitle: rc.title,
+        method: 'new',
+        confidence: 0,
+        isNewChapter: true,
+        isNewSubject: false,
+        subjectName: scope.name,
+      );
+    }
     var subjectId = rc.subjectId;
     var subjectName = rc.subjectTitle;
     var isNewSubject = true;
