@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../common/adaptive_route.dart';
 import '../common/app_shapes.dart';
+import '../common/shortcut_config.dart';
 import '../models/chapter.dart';
 import '../db/database_helper.dart';
 import '../models/daily_review_session.dart';
@@ -21,6 +24,7 @@ import '../widgets/daily_review_celebration_dialog.dart';
 import '../widgets/daily_review_plan_dialog.dart';
 import '../widgets/flashcard_flip_card.dart';
 import '../widgets/image_view.dart';
+import '../widgets/navigation_shortcuts.dart';
 
 /// 百词斩风格：每日抽题与记忆曲线刷题页面
 class DailyReviewPage extends StatefulWidget {
@@ -49,6 +53,7 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
   bool _loading = true;
   bool _submitting = false;
   String _reviewEventId = generateSimpleId();
+  GlobalKey<FlashcardFlipCardState> _flashcardKey = GlobalKey();
   String? _errorMessage;
 
   final List<DailyReviewQueueItem> _queue = [];
@@ -65,6 +70,15 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
   bool _isCramMode = false;
   bool _reviewNoteWithQuestion = false;
   bool _enableFlashcard3DFlip = true;
+
+  static const _reviewRatings = {
+    ShortcutAction.reviewAgain: ReviewRating.again,
+    ShortcutAction.reviewHard: ReviewRating.hard,
+    ShortcutAction.reviewGood: ReviewRating.good,
+    ShortcutAction.reviewEasy: ReviewRating.easy,
+  };
+
+  bool get _canRate => _isAnswerSubmitted || _isAnswerRevealed;
 
   int _sessionNewCount = 0;
   int _sessionReviewCount = 0;
@@ -167,6 +181,7 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
     _currentNotes = [];
     _questionStartTime = DateTime.now();
     _reviewEventId = generateSimpleId();
+    _flashcardKey = GlobalKey();
 
     final item = _currentItem;
     final isDirectNoteReview =
@@ -205,6 +220,90 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
     if (_currentIndex < 0 || _currentIndex >= _queue.length) return null;
     return _queue[_currentIndex];
   }
+
+  void _selectChoice(String key, {required bool isMulti}) {
+    setState(() {
+      if (isMulti) {
+        if (!_selectedOptions.remove(key)) _selectedOptions.add(key);
+      } else {
+        _selectedOption = key;
+        _isAnswerSubmitted = true;
+      }
+    });
+  }
+
+  void _submitChoices() {
+    final sorted = _selectedOptions.toList()..sort();
+    setState(() {
+      _selectedOption = sorted.join('');
+      _isAnswerSubmitted = true;
+    });
+  }
+
+  bool _matchesShortcut(ShortcutAction action, KeyEvent event) =>
+      ShortcutConfig.bindingsFor(
+        action,
+      ).any((binding) => binding.matches(event.logicalKey));
+
+  KeyEventResult _handleReviewShortcut(FocusNode node, KeyEvent event) {
+    final item = _currentItem;
+    if (event is! KeyDownEvent ||
+        item == null ||
+        _loading ||
+        _errorMessage != null ||
+        _submitting ||
+        ModalRoute.of(context)?.isCurrent == false ||
+        isShortcutTextInputFocused()) {
+      return KeyEventResult.ignored;
+    }
+
+    if (_canRate) {
+      for (final action in ShortcutConfig.actionsByPriority) {
+        final rating = _reviewRatings[action];
+        if (rating != null && _matchesShortcut(action, event)) {
+          unawaited(_onRatingSelected(rating));
+          return KeyEventResult.handled;
+        }
+      }
+      return KeyEventResult.ignored;
+    }
+
+    final isFlashcard = item.itemType == ReviewItemType.flashcard;
+    final question = item.question;
+    if (!isFlashcard &&
+        question != null &&
+        !question.isSubjective &&
+        question.option != null) {
+      final options = QuestionDetailController.getOptionJson(question);
+      final index = ShortcutConfig.resolveOptionIndex(event.logicalKey, options);
+      final option = index == null ? null : options[index];
+      if (option is Map) {
+        _selectChoice(
+          option['key']?.toString() ?? '',
+          isMulti: _isMultiChoice(question),
+        );
+        return KeyEventResult.handled;
+      }
+      if (_selectedOptions.isNotEmpty &&
+          _matchesShortcut(ShortcutAction.submitAnswer, event)) {
+        _submitChoices();
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
+    }
+
+    if (!_matchesShortcut(ShortcutAction.submitAnswer, event)) {
+      return KeyEventResult.ignored;
+    }
+    if (isFlashcard) {
+      _flashcardKey.currentState?.flip();
+    } else {
+      _revealAnswer();
+    }
+    return KeyEventResult.handled;
+  }
+
+  void _revealAnswer() => setState(() => _isAnswerRevealed = true);
 
   /// 跳转至原题目详情页面（查看完整题干、解析、全科评论与全部历史记录）
   void _openOriginalQuestion(DailyReviewQueueItem item) {
@@ -405,19 +504,23 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
     final scheme = theme.colorScheme;
     final isFlashcard = _currentItem?.itemType == ReviewItemType.flashcard;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(isFlashcard ? '今日闪卡记忆' : '今日记忆卡片'),
-        actions: [
-          if (_currentItem != null)
-            IconButton(
-              tooltip: isFlashcard ? '熟练斩卡' : '熟练斩题',
-              icon: const Icon(Icons.content_cut_rounded),
-              onPressed: _submitting ? null : _handleCutQuestion,
-            ),
-        ],
+    return Focus(
+      autofocus: true,
+      onKeyEvent: _handleReviewShortcut,
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(isFlashcard ? '今日闪卡记忆' : '今日记忆卡片'),
+          actions: [
+            if (_currentItem != null)
+              IconButton(
+                tooltip: isFlashcard ? '熟练斩卡' : '熟练斩题',
+                icon: const Icon(Icons.content_cut_rounded),
+                onPressed: _submitting ? null : _handleCutQuestion,
+              ),
+          ],
+        ),
+        body: _buildBody(context, theme, scheme),
       ),
-      body: _buildBody(context, theme, scheme),
     );
   }
 
@@ -469,7 +572,7 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
                 if (item.itemType == ReviewItemType.flashcard) ...[
                   // 专属 3D 物理翻牌动效卡片
                   FlashcardFlipCard(
-                    key: ValueKey(_reviewEventId),
+                    key: _flashcardKey,
                     queueItem: item,
                     enable3DAnimation: _enableFlashcard3DFlip,
                     onFlipped: (isBack) {
@@ -544,7 +647,7 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
         AnimatedSize(
           duration: const Duration(milliseconds: 250),
           curve: Curves.easeOutCubic,
-          child: (_isAnswerSubmitted || _isAnswerRevealed)
+          child: _canRate
               ? _buildRatingBar(item, theme, scheme)
               : const SizedBox.shrink(),
         ),
@@ -987,24 +1090,9 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
             ),
             child: InkWell(
               borderRadius: BorderRadius.circular(AppShapes.medium),
-              onTap: (_isAnswerSubmitted || readOnlyHighlightCorrect)
+              onTap: (_canRate || readOnlyHighlightCorrect)
                   ? null
-                  : () {
-                      if (isMulti) {
-                        setState(() {
-                          if (_selectedOptions.contains(key)) {
-                            _selectedOptions.remove(key);
-                          } else {
-                            _selectedOptions.add(key);
-                          }
-                        });
-                      } else {
-                        setState(() {
-                          _selectedOption = key;
-                          _isAnswerSubmitted = true;
-                        });
-                      }
-                    },
+                  : () => _selectChoice(key, isMulti: isMulti),
               child: Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 14,
@@ -1062,13 +1150,7 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
             ),
             onPressed: _selectedOptions.isEmpty
                 ? null
-                : () {
-                    final sorted = _selectedOptions.toList()..sort();
-                    setState(() {
-                      _selectedOption = sorted.join('');
-                      _isAnswerSubmitted = true;
-                    });
-                  },
+                : _submitChoices,
             child: Text(
               _selectedOptions.isEmpty
                   ? '请勾选选项（多选题）'
@@ -1101,11 +1183,7 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
             ),
             icon: const Icon(Icons.visibility_outlined),
             label: const Text('查看参考答案 / 翻转卡片', style: TextStyle(fontSize: 16)),
-            onPressed: () {
-              setState(() {
-                _isAnswerRevealed = true;
-              });
-            },
+            onPressed: _revealAnswer,
           ),
         ),
       );

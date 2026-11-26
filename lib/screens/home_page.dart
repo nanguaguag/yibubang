@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../common/shortcut_config.dart';
 import '../common/animation.dart';
 import '../common/platform_adaptive.dart';
 import '../db/data_transfer.dart';
@@ -12,6 +13,7 @@ import '../screens/my_page.dart';
 import '../screens/statistics_page.dart';
 import '../services/app_update_service.dart';
 import '../widgets/gemini_mark.dart';
+import '../widgets/navigation_shortcuts.dart';
 import 'ai_search_page.dart';
 
 class HomePage extends StatefulWidget {
@@ -140,6 +142,25 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  Widget _withHomeShortcuts(List<BottomNavItem> items, Widget child) {
+    int? tabIndex(String id) {
+      final index = items.indexWhere((item) => item.id == id);
+      return index < 0 ? null : index;
+    }
+
+    return HomeTabShortcuts(
+      tabIndexes: {
+        ShortcutAction.homeCourses: tabIndex('subjects'),
+        ShortcutAction.homeDailyPlan: tabIndex('daily_plan'),
+        ShortcutAction.homeAiSearch: tabIndex('ai_search'),
+        ShortcutAction.homeStatistics: tabIndex('statistics'),
+        ShortcutAction.homeMyPage: tabIndex('profile'),
+      },
+      onSelected: _onItemTapped,
+      child: child,
+    );
+  }
+
   /// 检查应用更新，如果有新版本则弹窗提示
   Future<void> _checkForAppUpdate() async {
     final prefs = await SharedPreferences.getInstance();
@@ -248,35 +269,41 @@ class _HomePageState extends State<HomePage> {
         ];
 
         if (isDesktop) {
-          return Scaffold(
-            body: Row(
-              children: [
-                NavigationRail(
-                  selectedIndex: clampedIndex,
-                  onDestinationSelected: _onItemTapped,
-                  groupAlignment: -1.0,
-                  labelType: NavigationRailLabelType.all,
-                  destinations: railDestinations,
-                ),
-                const VerticalDivider(width: 1, thickness: 1),
-                Expanded(
-                  child: IndexedStack(index: clampedIndex, children: tabPages),
-                ),
-              ],
+          return _withHomeShortcuts(
+            validItems,
+            Scaffold(
+              body: Row(
+                children: [
+                  NavigationRail(
+                    selectedIndex: clampedIndex,
+                    onDestinationSelected: _onItemTapped,
+                    groupAlignment: -1.0,
+                    labelType: NavigationRailLabelType.all,
+                    destinations: railDestinations,
+                  ),
+                  const VerticalDivider(width: 1, thickness: 1),
+                  Expanded(
+                    child: IndexedStack(index: clampedIndex, children: tabPages),
+                  ),
+                ],
+              ),
             ),
           );
         }
 
-        return Scaffold(
-          body: PageView(
-            controller: _pageController,
-            onPageChanged: _onPageChanged,
-            children: tabPages,
-          ),
-          bottomNavigationBar: NavigationBar(
-            selectedIndex: clampedIndex,
-            onDestinationSelected: _onItemTapped,
-            destinations: destinations,
+        return _withHomeShortcuts(
+          validItems,
+          Scaffold(
+            body: PageView(
+              controller: _pageController,
+              onPageChanged: _onPageChanged,
+              children: tabPages,
+            ),
+            bottomNavigationBar: NavigationBar(
+              selectedIndex: clampedIndex,
+              onDestinationSelected: _onItemTapped,
+              destinations: destinations,
+            ),
           ),
         );
       },

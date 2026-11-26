@@ -5,8 +5,22 @@ import 'package:flutter/services.dart';
 import '../common/shortcut_config.dart';
 
 class AppFullscreenShortcut extends StatefulWidget {
-  const AppFullscreenShortcut({super.key, required this.child});
+  const AppFullscreenShortcut({
+    super.key,
+    required this.child,
+    this.navigatorKey,
+  });
   final Widget child;
+  final GlobalKey<NavigatorState>? navigatorKey;
+
+  static bool toggleOf(BuildContext context) {
+    final state = context
+        .findAncestorStateOfType<_AppFullscreenShortcutState>();
+    if (state == null) return false;
+    unawaited(state._toggle());
+    return true;
+  }
+
   @override
   State<AppFullscreenShortcut> createState() => _AppFullscreenShortcutState();
 }
@@ -41,6 +55,15 @@ class _AppFullscreenShortcutState extends State<AppFullscreenShortcut> {
 
   KeyEventResult _handle(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    final priority = ShortcutConfig.actionsByPriority;
+    if ((widget.navigatorKey?.currentState?.canPop() ?? false) &&
+        priority.indexOf(ShortcutAction.goBack) <
+            priority.indexOf(ShortcutAction.toggleFullscreen) &&
+        ShortcutConfig.bindingsFor(
+          ShortcutAction.goBack,
+        ).any((binding) => binding.matches(event.logicalKey))) {
+      return KeyEventResult.ignored;
+    }
     final matches = ShortcutConfig.bindingsFor(
       ShortcutAction.toggleFullscreen,
     ).where((binding) => binding.matches(event.logicalKey));
