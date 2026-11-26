@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../models/question.dart';
+import '../../widgets/reading_layout.dart';
 import 'question_detail_controller.dart';
 import 'question_explain_view.dart';
 import 'question_header_view.dart';
@@ -231,18 +232,25 @@ class _QuestionPageItemState extends State<QuestionPageItem> {
         shrinkWrap: true,
         physics: const ClampingScrollPhysics(),
         children: [
-          QuestionHeaderView(
-            question: widget.question,
-            index: widget.index,
-            totalCount: widget.controller.questions.length,
-          ),
-          const SizedBox(height: 12),
-          QuestionOptionsView(
-            question: widget.question,
-            userQuestion: widget.userQuestion,
-            index: widget.index,
-            controller: widget.controller,
-            onStateChanged: _onStateChanged,
+          ReadingContent(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                QuestionHeaderView(
+                  question: widget.question,
+                  index: widget.index,
+                  totalCount: widget.controller.questions.length,
+                ),
+                const SizedBox(height: 12),
+                QuestionOptionsView(
+                  question: widget.question,
+                  userQuestion: widget.userQuestion,
+                  index: widget.index,
+                  controller: widget.controller,
+                  onStateChanged: _onStateChanged,
+                ),
+              ],
+            ),
           ),
         ],
       ),

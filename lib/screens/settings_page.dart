@@ -33,6 +33,7 @@ import 'sync_debug_log_page.dart';
 import 'set_duration_page.dart';
 import 'set_theme_color_page.dart';
 import 'shortcut_settings_page.dart';
+import 'typography_settings_page.dart';
 
 enum _UpdateCheckState { idle, checking, hasUpdate, latest }
 
@@ -688,6 +689,19 @@ class _SettingsPageState extends State<SettingsPage> {
                       ),
                   ],
                 ),
+              ),
+              IconTile(
+                icon: Icons.format_align_left,
+                label: '排版',
+                value: '正文宽度与对齐',
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () async {
+                  await pushAdaptiveModalPage(
+                    context,
+                    builder: (context) => const TypographySettingsPage(),
+                  );
+                  if (mounted) setState(() {});
+                },
               ),
               IconTile(
                 icon: Icons.format_size,
