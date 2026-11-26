@@ -12,6 +12,7 @@ import '../db/data_transfer.dart';
 import '../db/record_sync_service.dart';
 import '../repositories/question_search_repository.dart';
 import '../services/app_update_service.dart';
+import '../services/auth_service.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/note_service.dart';
 import '../services/course_sync_actions.dart';
@@ -69,6 +70,7 @@ class _SettingsPageState extends State<SettingsPage> {
   String selectedProxyName = '直连 (官方 GitHub)';
 
   // 医考帮云端同步设置
+  bool showYkbReloginPrompt = true;
   bool syncAnswersToYkb = true;
   bool syncCutToYkb = true;
   bool syncReviewAnswersToYkb = true;
@@ -122,6 +124,8 @@ class _SettingsPageState extends State<SettingsPage> {
 
     acceptUpdate = _prefs.getBool(keyAcceptUpdate) ?? true;
     autoResume = _prefs.getBool(keyAutoResume) ?? false;
+    showYkbReloginPrompt =
+        _prefs.getBool(AuthService.showReloginPromptKey) ?? true;
     syncNotesToYkb = _prefs.getBool(keySyncNotesToYkb) ?? true;
     syncCutToYkb = _prefs.getBool(keySyncCutToYkb) ?? true;
     syncReviewAnswersToYkb = _prefs.getBool(keySyncReviewAnswersToYkb) ?? true;
@@ -754,6 +758,17 @@ class _SettingsPageState extends State<SettingsPage> {
           const _SectionTitle(title: '医考帮'),
           InfoCard(
             children: [
+              IconTile(
+                icon: Icons.notifications_outlined,
+                label: '登录失效弹窗',
+                trailing: Switch(
+                  value: showYkbReloginPrompt,
+                  onChanged: (value) {
+                    setState(() => showYkbReloginPrompt = value);
+                    _setBool(AuthService.showReloginPromptKey, value);
+                  },
+                ),
+              ),
               IconTile(
                 icon: Icons.cloud_upload_outlined,
                 label: '做题同步到医考帮',

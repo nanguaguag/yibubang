@@ -6,7 +6,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'ykb_encrypt.dart';
 
 import '../db/durable_sync_queue.dart';
-import '../db/settings.dart';
 import '../services/auth_service.dart';
 
 /// 发起请求的基础函数，整合了请求头设置及全局登录状态的处理
@@ -17,6 +16,7 @@ Future<Map<String, dynamic>> basicReq(
   String method = "POST",
   String? expectedOwner,
   Duration timeout = const Duration(seconds: 20),
+  bool promptRelogin = true,
 }) async {
   String timestamp = getTimestamp();
   SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -28,8 +28,9 @@ Future<Map<String, dynamic>> basicReq(
   }
 
   // 如果已登录则附加登录信息
+  final requestToken = loggedin ? prefs.getString('token') : null;
   if (loggedin) {
-    params['token'] = prefs.getString('token') ?? '';
+    params['token'] = requestToken ?? '';
     params['secret'] = prefs.getString('secret') ?? '';
     params['user_id'] = prefs.getString('user_id') ?? '';
   }
@@ -119,10 +120,10 @@ Future<Map<String, dynamic>> basicReq(
   }
 
   if (resp['code'] == '309' || resp['code'] == 309) {
-    // 会话过期，请重新登录
-    debugPrint('[API-RESP] Session expired (code 309), clearing user info');
-    clearUserInfo();
-    AuthService.instance.notifyTokenExpired();
+    await AuthService.instance.handleExpiredSession(
+      requestToken,
+      promptRelogin: promptRelogin,
+    );
   }
 
   return resp;
