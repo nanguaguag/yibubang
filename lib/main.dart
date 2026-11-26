@@ -20,6 +20,7 @@ import 'services/note_service.dart';
 import 'services/ykb_pull_service.dart';
 import 'services/ykb_sync_service.dart';
 import 'services/bank_subscription_service.dart';
+import 'widgets/font_controller.dart';
 import 'widgets/theme_controller.dart';
 import 'widgets/app_fullscreen_shortcut.dart';
 import 'package:flutter/foundation.dart';
@@ -91,6 +92,7 @@ Future main() async {
   await ReadingLayoutController.instance.load();
   await ShortcutConfig.load();
   await ThemeController.instance.recoverTheme();
+  await FontController.instance.load();
   debugPrint('[startup] initSettings 完成(${swStartup.elapsedMilliseconds}ms)');
   runApp(const Yibubang());
   debugPrint('[startup] runApp 完成(${swStartup.elapsedMilliseconds}ms)');
@@ -168,12 +170,18 @@ ThemeData _buildTheme(Brightness brightness) {
     seedColor: seedColor,
     brightness: brightness,
   );
-  final String? fontFamily = _windowsFontLoaded
-      ? 'NotoSansSC'
-      : (!kIsWeb && Platform.isWindows ? 'Microsoft YaHei UI' : null);
+  final String? fontFamily =
+      FontController.instance.family ??
+      (_windowsFontLoaded
+          ? 'NotoSansSC'
+          : (!kIsWeb && Platform.isWindows ? 'Microsoft YaHei UI' : null));
   return ThemeData(
     useMaterial3: true,
     fontFamily: fontFamily,
+    fontFamilyFallback: [
+      if (!kIsWeb && Platform.isWindows && _windowsFontLoaded) 'NotoSansSC',
+      ...FontController.instance.fallback,
+    ],
     // 统一页面转场为 Material 3，去除 iOS 风格滑入
     pageTransitionsTheme: const PageTransitionsTheme(
       builders: {
@@ -245,7 +253,10 @@ class Yibubang extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: ThemeController.instance,
+      listenable: Listenable.merge([
+        ThemeController.instance,
+        FontController.instance,
+      ]),
       builder: (context, _) {
         return MaterialApp(
           navigatorKey: rootNavigatorKey,
