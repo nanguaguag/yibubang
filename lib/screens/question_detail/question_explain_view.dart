@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import '../../models/question.dart';
 import '../../models/question_section_config.dart';
 import '../comment_page.dart';
+import 'analysis_text_with_images.dart';
 import 'question_detail_controller.dart';
 import 'question_header_view.dart';
 import 'question_label_view.dart';
@@ -117,25 +118,29 @@ class QuestionExplainView extends StatelessWidget {
                 );
                 break;
               case 'restore':
-                if (question.restore != null && question.restore!.isNotEmpty) {
+                if ((question.restore?.isNotEmpty ?? false) ||
+                    (question.restoreImg?.isNotEmpty ?? false)) {
                   sectionWidgets.add(
                     _buildAnalysisSection(
                       context,
                       '考点还原',
                       Icons.location_on_outlined,
-                      question.restore!,
+                      question.restore ?? '',
+                      question.restoreImg,
                     ),
                   );
                 }
                 break;
               case 'explain':
-                if (question.explain != null && question.explain!.isNotEmpty) {
+                if ((question.explain?.isNotEmpty ?? false) ||
+                    (question.explainImg?.isNotEmpty ?? false)) {
                   sectionWidgets.add(
                     _buildAnalysisSection(
                       context,
                       '答案解析',
                       Icons.lightbulb_outlined,
-                      question.explain!,
+                      question.explain ?? '',
+                      question.explainImg,
                     ),
                   );
                 }
@@ -200,6 +205,7 @@ class QuestionExplainView extends StatelessWidget {
     String title,
     IconData icon,
     String analysisText,
+    String? storedImages,
   ) {
     const Color orangeAccent = Color(0xFFB39D6B);
     void copySection() {
@@ -248,10 +254,10 @@ class QuestionExplainView extends StatelessWidget {
               ],
             );
           },
-          child: _buildTextWithImage(
-            context,
-            analysisText,
-            'https://ykb-app-files.yikaobang.com.cn/question/restore/${question.nativeAppId}/${question.number}',
+          child: AnalysisTextWithImages(
+            text: analysisText,
+            storedImages: storedImages,
+            legacyBaseUrl: _legacyImageBaseUrl,
           ),
         ),
         const SizedBox(height: 10),
@@ -260,101 +266,16 @@ class QuestionExplainView extends StatelessWidget {
     );
   }
 
-  Widget _buildTextWithImage(BuildContext context, String text, String imgUrl) {
-    final RegExp regex = RegExp(r'(?:[0-9\u4e00-\u9fa5]+)?P\d+(?:-P\d+)?');
-    final List<String> parts = text.split(regex);
-    final List<String> imageUrls = [];
-    final List<String> matches =
-        regex.allMatches(text).map((match) => match.group(0)!).toList();
-
-    for (int i = 0; i < matches.length; i++) {
-      parts.insert(2 * i + 1, matches[i]);
-      imageUrls.insert(
-        i,
-        "$imgUrl${matches[i]}-${i + 1}.jpg?x-oss-process=style/water_mark",
-      );
+  String get _legacyImageBaseUrl {
+    final nativeAppId = question.nativeAppId?.trim();
+    final appId = nativeAppId != null && nativeAppId.isNotEmpty
+        ? nativeAppId
+        : question.appId?.trim();
+    final number = question.number?.trim();
+    if (appId == null || appId.isEmpty || number == null || number.isEmpty) {
+      return '';
     }
-
-    return Text.rich(
-      TextSpan(
-        children: List.generate(parts.length, (index) {
-          if (index.isEven) {
-            return _buildTextWithBold(parts[index]);
-          } else {
-            return WidgetSpan(
-              child: ElevatedButton(
-                style: ButtonStyle(
-                  padding: WidgetStateProperty.all<EdgeInsets>(EdgeInsets.zero),
-                  minimumSize: WidgetStateProperty.all(Size.zero),
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  backgroundColor: WidgetStateProperty.all(Colors.transparent),
-                  elevation: WidgetStateProperty.all(0),
-                ),
-                child: Wrap(
-                  alignment: WrapAlignment.center,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    Text(
-                      parts[index],
-                      style: const TextStyle(
-                        fontSize: 16,
-                        color: Colors.deepOrange,
-                      ),
-                    ),
-                    const Icon(
-                      Icons.photo,
-                      size: 18,
-                      color: Colors.deepOrange,
-                    )
-                  ],
-                ),
-                onPressed: () {
-                  showFullScreenImage(
-                    context,
-                    imageUrls,
-                    index ~/ 2,
-                  );
-                },
-              ),
-            );
-          }
-        }),
-      ),
-    );
-  }
-
-  TextSpan _buildTextWithBold(String text) {
-    final RegExp regex = RegExp(r'（[A-Z](对|错)(，为本题正确答案)?）');
-    final List<String> parts = text.split(regex);
-    final List<String> matches =
-        regex.allMatches(text).map((match) => match.group(0)!).toList();
-
-    for (int i = 0; i < matches.length; i++) {
-      parts.insert(2 * i + 1, matches[i]);
-    }
-
-    return TextSpan(
-      children: List.generate(parts.length, (index) {
-        if (index.isEven) {
-          return TextSpan(
-            text: parts[index],
-            style: const TextStyle(
-              fontSize: 16,
-              height: 1.8,
-            ),
-          );
-        } else {
-          return TextSpan(
-            text: parts[index],
-            style: const TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 16,
-              height: 1.8,
-            ),
-          );
-        }
-      }),
-    );
+    return 'https://ykb-app-files.yikaobang.com.cn/question/restore/$appId/$number';
   }
 }
 
