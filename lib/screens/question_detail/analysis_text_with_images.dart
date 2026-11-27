@@ -1,26 +1,54 @@
 import 'package:flutter/material.dart';
 
+import '../../common/adaptive_route.dart';
 import '../../models/analysis_image.dart';
+import '../../services/ai_search_client.dart';
 import '../../services/analysis_image_loader.dart';
+import '../../services/cloud_textbook_fallback_service.dart';
 import '../../services/local_textbook_service.dart';
-import 'question_header_view.dart';
+import '../../services/textbook_client.dart';
+import '../../widgets/image_view.dart';
+import '../textbook_reader_page.dart';
+import '../textbook_search_page.dart';
 
-/// 教材引用先读取真实图片，再打开画廊；旧题库仍兼容约定的图片地址。
+typedef AnalysisGalleryOpener =
+    Future<void> Function(
+      BuildContext context,
+      List<String> imageUrls,
+      int initialIndex,
+      List<FullScreenImagePageFallback> pageFallbacks,
+      Future<void> Function(
+        BuildContext viewerContext,
+        int pageIndex,
+        FullScreenImagePageFallback fallback,
+      )
+      onCloudTextbookFallback,
+    );
+
+/// 教材引用先读取真实图片，再打开画廊；图片失效或需要核对原书时支持回退云端教材。
 class AnalysisTextWithImages extends StatefulWidget {
   final String text;
   final String? storedImages;
   final String legacyBaseUrl;
+  final String? fallbackQuery;
+  final Future<String?> Function()? resolveSubjectName;
   final AnalysisImageLoader? imageLoader;
   final Future<LocalTextbookOpenResult> Function(String reference)?
   openLocalReference;
+  final TextbookGateway? textbookGateway;
+  final AnalysisGalleryOpener? openGallery;
 
   const AnalysisTextWithImages({
     super.key,
     required this.text,
     this.storedImages,
     required this.legacyBaseUrl,
+    this.fallbackQuery,
+    this.resolveSubjectName,
     this.imageLoader,
     this.openLocalReference,
+    this.textbookGateway,
+    this.openGallery,
   });
 
   @override
@@ -57,14 +85,13 @@ class _AnalysisTextWithImagesState extends State<AnalysisTextWithImages> {
     setState(() => _loadingIndex = index);
     final selected = await _loader.load(images[index]);
     if (!mounted || generation != _generation) return;
-    var localFallbackAttempted = false;
+
     if (selected.status != AnalysisImageLoadStatus.ready) {
       final pageReference = images[index].reference;
       final reference = pageReference == null
           ? null
           : _localTextbookReference(pageReference, index);
       if (reference != null) {
-        localFallbackAttempted = true;
         final result =
             await (widget.openLocalReference ??
                 LocalTextbookService().openReference)(reference);
@@ -74,37 +101,155 @@ class _AnalysisTextWithImagesState extends State<AnalysisTextWithImages> {
           return;
         }
       }
-      setState(() => _loadingIndex = null);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            !localFallbackAttempted
-                ? '图片加载失败，请检查网络连接'
-                : (selected.status == AnalysisImageLoadStatus.missing
-                      ? '在线图片不存在；无法打开本地教材 PDF'
-                      : '图片暂时无法加载；无法打开本地教材 PDF'),
+    }
+
+    final galleryUrls = <String>[];
+    final pageFallbacks = <FullScreenImagePageFallback>[];
+    for (var i = 0; i < images.length; i++) {
+      final result = i == index ? selected : null;
+      final resolvedUrl = result?.status == AnalysisImageLoadStatus.ready
+          ? result!.url!
+          : (images[i].urls.isNotEmpty ? images[i].urls.first : '');
+      final failed = result != null &&
+          result.status != AnalysisImageLoadStatus.ready;
+      final failureMessage = switch (result?.status) {
+        AnalysisImageLoadStatus.missing => '原教材图片已失效或已被移除',
+        AnalysisImageLoadStatus.unavailable => '图片加载失败，请检查网络连接',
+        _ => null,
+      };
+      galleryUrls.add(resolvedUrl);
+      pageFallbacks.add(
+        FullScreenImagePageFallback(
+          reference: images[i].reference,
+          searchQuery: CloudTextbookFallbackService.extractSearchQuery(
+            widget.text,
+            i,
+            fallbackText: widget.fallbackQuery,
           ),
+          bookHint: CloudTextbookFallbackService.extractBookHint(
+            images[i].reference,
+          ),
+          initiallyFailed: failed,
+          failureMessage: failureMessage,
+        ),
+      );
+    }
+
+    setState(() => _loadingIndex = null);
+    final opener = widget.openGallery ?? _defaultOpenGallery;
+    await opener(
+      context,
+      galleryUrls,
+      index,
+      pageFallbacks,
+      _openCloudTextbook,
+    );
+  }
+
+  Future<void> _defaultOpenGallery(
+    BuildContext context,
+    List<String> imageUrls,
+    int initialIndex,
+    List<FullScreenImagePageFallback> pageFallbacks,
+    Future<void> Function(
+      BuildContext viewerContext,
+      int pageIndex,
+      FullScreenImagePageFallback fallback,
+    )
+    onCloudTextbookFallback,
+  ) {
+    return Navigator.push<void>(
+      context,
+      adaptivePageRoute(
+        builder: (_) => FullScreenImageView(
+          imageUrls: imageUrls,
+          initialIndex: initialIndex,
+          pageFallbacks: pageFallbacks,
+          onCloudTextbookFallback: onCloudTextbookFallback,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openCloudTextbook(
+    BuildContext viewerContext,
+    int pageIndex,
+    FullScreenImagePageFallback fallback,
+  ) async {
+    final subjectName = await widget.resolveSubjectName?.call();
+    if (!viewerContext.mounted) return;
+    final query = (fallback.searchQuery ?? '').trim().isNotEmpty
+        ? fallback.searchQuery!.trim()
+        : CloudTextbookFallbackService.cleanFallbackText(
+            widget.fallbackQuery ?? '',
+          );
+
+    if (query.isEmpty) {
+      await Navigator.of(viewerContext).push(
+        adaptivePageRoute(
+          builder: (_) => TextbookSearchPage(gateway: widget.textbookGateway),
         ),
       );
       return;
     }
 
-    final otherResults = await Future.wait([
-      for (var i = 0; i < images.length; i++)
-        if (i != index) _loader.load(images[i]),
-    ]).timeout(const Duration(seconds: 2), onTimeout: () => const []);
-    if (!mounted || generation != _generation) return;
-    final urls = <String>{selected.url!};
-    for (final result in otherResults) {
-      if (result.status == AnalysisImageLoadStatus.ready) urls.add(result.url!);
+    try {
+      final outcome = await CloudTextbookFallbackService().search(
+        query: query,
+        subjectName: subjectName,
+        bookHint: fallback.bookHint,
+        gateway: widget.textbookGateway,
+      );
+      if (!viewerContext.mounted) return;
+
+      final first = outcome.firstCitation;
+      if (first != null) {
+        await Navigator.of(viewerContext).push(
+          adaptivePageRoute(
+            builder: (_) => TextbookReaderPage(
+              citation: first,
+              gateway: widget.textbookGateway,
+              searchHits: outcome.hits,
+              searchQuery: outcome.query,
+            ),
+          ),
+        );
+        return;
+      }
+
+      final matchedBookIds = outcome.matchedBooks
+          .map((b) => b['book_id'] as String? ?? '')
+          .where((id) => id.isNotEmpty)
+          .toSet();
+      ScaffoldMessenger.of(viewerContext).showSnackBar(
+        SnackBar(
+          content: const Text('未在云端教材中检索到匹配内容'),
+          action: SnackBarAction(
+            label: '手动搜索',
+            onPressed: () {
+              if (!viewerContext.mounted) return;
+              Navigator.of(viewerContext).push(
+                adaptivePageRoute(
+                  builder: (_) => TextbookSearchPage(
+                    gateway: widget.textbookGateway,
+                    initialQuery: outcome.query,
+                    initialBookIds: matchedBookIds,
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!viewerContext.mounted) return;
+      final message = error is AiSearchException
+          ? error.message
+          : '云端教材检索失败：$error';
+      ScaffoldMessenger.of(viewerContext).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
     }
-    final galleryUrls = urls.toList();
-    setState(() => _loadingIndex = null);
-    showFullScreenImage(
-      context,
-      galleryUrls,
-      galleryUrls.indexOf(selected.url!),
-    );
   }
 
   String? _localTextbookReference(String pageReference, int index) {
@@ -174,13 +319,7 @@ class _AnalysisTextWithImagesState extends State<AnalysisTextWithImages> {
     for (final match in analysisImageReferencePattern.allMatches(widget.text)) {
       spans.add(_textWithBold(widget.text.substring(end, match.start)));
       final reference = match.group(0)!;
-      if (images[index].urls.isEmpty &&
-          _localTextbookReference(images[index].reference ?? '', index) ==
-              null) {
-        spans.add(_textWithBold(reference));
-      } else {
-        spans.add(WidgetSpan(child: _imageButton(images, index, reference)));
-      }
+      spans.add(WidgetSpan(child: _imageButton(images, index, reference)));
       end = match.end;
       index++;
     }

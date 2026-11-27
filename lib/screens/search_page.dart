@@ -258,6 +258,7 @@ class _QuestionSearchPageState extends State<QuestionSearchPage> {
             userQuestions: [userQuestion],
             questionIndex: 0,
             bankId: result.bankId,
+            enableChapterSwitch: false,
           ),
         ),
       );

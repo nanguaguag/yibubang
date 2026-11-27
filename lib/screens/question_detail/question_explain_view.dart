@@ -122,8 +122,10 @@ class QuestionExplainView extends StatelessWidget {
                 );
                 break;
               case 'restore':
-                if ((question.restore?.isNotEmpty ?? false) ||
-                    (question.restoreImg?.isNotEmpty ?? false)) {
+                if ((question.restore != null &&
+                        question.restore!.isNotEmpty) ||
+                    (question.restoreImg != null &&
+                        question.restoreImg!.isNotEmpty)) {
                   sectionWidgets.add(
                     _buildAnalysisSection(
                       context,
@@ -136,8 +138,10 @@ class QuestionExplainView extends StatelessWidget {
                 }
                 break;
               case 'explain':
-                if ((question.explain?.isNotEmpty ?? false) ||
-                    (question.explainImg?.isNotEmpty ?? false)) {
+                if ((question.explain != null &&
+                        question.explain!.isNotEmpty) ||
+                    (question.explainImg != null &&
+                        question.explainImg!.isNotEmpty)) {
                   sectionWidgets.add(
                     _buildAnalysisSection(
                       context,
@@ -269,6 +273,8 @@ class QuestionExplainView extends StatelessWidget {
             text: analysisText,
             storedImages: storedImages,
             legacyBaseUrl: _legacyImageBaseUrl,
+            fallbackQuery: _fallbackSearchQuery,
+            resolveSubjectName: () => controller.resolveSubjectName(question),
           ),
         ),
         const SizedBox(height: 10),
@@ -288,6 +294,12 @@ class QuestionExplainView extends StatelessWidget {
       return '';
     }
     return 'https://ykb-app-files.yikaobang.com.cn/question/restore/$appId/$number';
+  }
+
+  String get _fallbackSearchQuery {
+    final explain = question.explain?.trim() ?? '';
+    if (explain.isNotEmpty) return explain;
+    return question.title?.trim() ?? '';
   }
 }
 

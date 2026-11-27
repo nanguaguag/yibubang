@@ -12,11 +12,15 @@ class TextbookReaderPage extends StatefulWidget {
   final AiCitation citation;
   final TextbookGateway? gateway;
   final BaseCacheManager? cacheManager;
+  final List<TextbookHit>? searchHits;
+  final String? searchQuery;
   const TextbookReaderPage({
     super.key,
     required this.citation,
     this.gateway,
     this.cacheManager,
+    this.searchHits,
+    this.searchQuery,
   });
   @override
   State<TextbookReaderPage> createState() => _TextbookReaderPageState();
@@ -31,21 +35,104 @@ class _TextbookReaderPageState extends State<TextbookReaderPage> {
     ),
   );
   late final TextbookGateway gateway;
-  late final PageController pager;
+  late PageController pager;
+  late AiCitation _citation;
   late int current;
   final readerFocus = FocusNode(debugLabel: 'textbook reader');
   final Map<int, Future<File>> pages = {};
-  AiCitation get citation => widget.citation;
+  AiCitation get citation => _citation;
   BaseCacheManager get pageCache => widget.cacheManager ?? cache;
   @override
   void initState() {
     super.initState();
     gateway = widget.gateway ?? TextbookClient();
+    _citation = widget.citation;
     current = citation.pdfPage.clamp(
       1,
       citation.pageCount > 0 ? citation.pageCount : 1,
     );
     pager = PageController(initialPage: current - 1);
+  }
+
+  void _switchCitation(AiCitation nextCitation) {
+    final nextPage = nextCitation.pdfPage.clamp(
+      1,
+      nextCitation.pageCount > 0 ? nextCitation.pageCount : 1,
+    );
+    if (nextCitation.bookId == _citation.bookId &&
+        nextCitation.sourceVersion == _citation.sourceVersion) {
+      setState(() {
+        _citation = nextCitation;
+        current = nextPage;
+      });
+      pager.jumpToPage(nextPage - 1);
+      return;
+    }
+    final oldPager = pager;
+    setState(() {
+      pages.clear();
+      _citation = nextCitation;
+      current = nextPage;
+      pager = PageController(initialPage: nextPage - 1);
+    });
+    oldPager.dispose();
+  }
+
+  Future<void> _showSearchHitsSheet() async {
+    final hits = widget.searchHits;
+    if (hits == null || hits.length <= 1) return;
+    final selected = await showModalBottomSheet<AiCitation>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+              child: Text(
+                '匹配到 ${hits.length} 条云端教材结果',
+                style: Theme.of(sheetContext).textTheme.titleMedium,
+              ),
+            ),
+            Flexible(
+              child: ListView.separated(
+                shrinkWrap: true,
+                itemCount: hits.length,
+                separatorBuilder: (_, _) => const Divider(height: 1),
+                itemBuilder: (_, index) {
+                  final hit = hits[index];
+                  final c = hit.citation;
+                  final isCurrent =
+                      c.bookId == citation.bookId && c.pdfPage == current;
+                  return ListTile(
+                    selected: isCurrent,
+                    title: Text(
+                      '《${c.bookTitle.isEmpty ? c.title : c.bookTitle}》 · PDF 第 ${c.pdfPage} 页',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: hit.snippet.isNotEmpty
+                        ? Text(
+                            hit.snippet,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          )
+                        : null,
+                    trailing: isCurrent ? const Icon(Icons.check_rounded) : null,
+                    onTap: () => Navigator.of(sheetContext).pop(c),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (mounted && selected != null) {
+      _switchCitation(selected);
+    }
   }
 
   Future<File> _load(int page) => pages.putIfAbsent(page, () async {
@@ -158,6 +245,12 @@ class _TextbookReaderPageState extends State<TextbookReaderPage> {
           citation.bookTitle.isEmpty ? citation.title : citation.bookTitle,
         ),
         actions: [
+          if (widget.searchHits != null && widget.searchHits!.length > 1)
+            IconButton(
+              tooltip: '切换检索结果',
+              onPressed: _showSearchHitsSheet,
+              icon: const Icon(Icons.format_list_bulleted_rounded),
+            ),
           IconButton(
             tooltip: '跳转页码',
             onPressed: _jump,

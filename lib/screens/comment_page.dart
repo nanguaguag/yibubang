@@ -428,27 +428,29 @@ class _CommentPageState extends State<CommentPage>
             ),
           ],
         ),
-        const SizedBox(height: 6),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: [
-              _buildTabBtn('最热', 1),
-              const SizedBox(width: 8),
-              _buildTabBtn('最新', 0),
-              const SizedBox(width: 8),
-              _buildTabBtn(
-                _myPraised.isEmpty ? '我的点赞' : '我的点赞 (${_myPraised.length})',
-                2,
-              ),
-              const SizedBox(width: 8),
-              _buildTabBtn(
-                _myComments.isEmpty ? '我的评论' : '我的评论 (${_myComments.length})',
-                3,
-              ),
-            ],
+        if (_loggedIn == true) ...[
+          const SizedBox(height: 6),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _buildTabBtn('最热', 1),
+                const SizedBox(width: 8),
+                _buildTabBtn('最新', 0),
+                const SizedBox(width: 8),
+                _buildTabBtn(
+                  _myPraised.isEmpty ? '我的点赞' : '我的点赞 (${_myPraised.length})',
+                  2,
+                ),
+                const SizedBox(width: 8),
+                _buildTabBtn(
+                  _myComments.isEmpty ? '我的评论' : '我的评论 (${_myComments.length})',
+                  3,
+                ),
+              ],
+            ),
           ),
-        ),
+        ],
       ],
     );
   }
@@ -514,7 +516,7 @@ class _CommentPageState extends State<CommentPage>
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _buildHeader(context),
-        if (_loggedIn == false && (_tab == 0 || _tab == 1))
+        if (_loggedIn == false)
           _buildGuest()
         else ...[
           if (comments.isEmpty && !_loading)

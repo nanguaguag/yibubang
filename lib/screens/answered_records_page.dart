@@ -96,6 +96,7 @@ class _AnsweredRecordsPageState extends State<AnsweredRecordsPage> {
           userQuestions: userQuestions,
           questionIndex: targetIndex >= 0 ? targetIndex : 0,
           bankId: targetItem.bankId,
+          enableChapterSwitch: false,
         ),
       ),
     );

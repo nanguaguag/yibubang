@@ -58,6 +58,7 @@ Future<bool> openQuestionDetailPage(
           questionIndex: 0,
           bankId: result.bankId,
           defaultShowCutContent: defaultShowCutContent,
+          enableChapterSwitch: false,
         ),
       ),
     );

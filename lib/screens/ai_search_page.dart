@@ -467,6 +467,7 @@ class _AiSearchPageState extends State<AiSearchPage>
             userQuestions: [user],
             questionIndex: 0,
             bankId: result.bankId,
+            enableChapterSwitch: false,
           ),
         ),
       );

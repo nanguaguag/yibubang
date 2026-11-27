@@ -1,6 +1,24 @@
 # 跨会话交接
 
-## 最新交接：2026-11-24 做题记录全量数据导入导出加固与 macOS 自动更新替换重启
+## 最新交接：2026-11-27 基于 PR #28 完成考点还原/解析云端教材回退
+
+- **用户授权与操作目标**：
+  1. 排查 `id=1236056`（P29）与 `id=1473582`（P13）图片加载差异原因；
+  2. 在 PR #28 基础上完成跨平台云端教材回退：正常加载时入口隐藏在右上角，加载失败时在失败页下方展示搜索入口；按科目模糊匹配教材并用去标注后的原文在线检索，直接打开首条结果至教材浏览器并支持左右翻页。
+- **排查结论与完成项**：
+  1. **问题根因确认**：`1236056` 的 `BK16111XZ002P29-1.jpg` 在医考帮阿里云 OSS 返回 HTTP 404 `<Code>NoSuchKey</Code>`（资源不存在/已删除），同章 `1236058` / `1236060` 及 `1473582`（`P13`）返回 HTTP 200。
+  2. **PR #28 基础集成 (`lib/models/analysis_image.dart`, `lib/services/analysis_image_loader.dart`, `lib/services/local_textbook_service.dart`, `lib/screens/question_detail/question_explain_view.dart`)**：保留现有 `ReadingContent` 布局与 PR #28 的配图候选解析、状态分级及 Windows 本地回退。
+  3. **云端教材模糊匹配与检索服务 (`lib/services/cloud_textbook_fallback_service.dart`, `lib/screens/question_detail/question_detail_controller.dart`)**：实现科目模糊匹配（如 `诊断学` → `《诊断学》`、`《口腔颌面医学影像诊断学》`）、引用原文抽取与答题标注清理，以及 `resolveSubjectName`。
+  4. **全屏看图双入口、教材浏览器联动与交互细节优化 (`lib/widgets/image_view.dart`, `lib/screens/question_detail/analysis_text_with_images.dart`, `lib/screens/textbook_reader_page.dart`, `lib/screens/textbook_search_page.dart`, `lib/screens/comment_page.dart`, `lib/screens/question_detail_page.dart`)**：
+     - 正常图右上角菜单隐藏入口、失败页下方显示主搜索按钮，点击检索时全屏居中显示加载动画并直接跳转 `TextbookReaderPage` 左右翻页；移除打开画廊前对同题其余引用的阻塞等待；
+     - 未登录时评论区隐藏「最热 / 最新 / 我的点赞 / 我的评论」标签栏；
+     - 为非章节刷题入口（我的错题、我的收藏、每日复习、搜题、做题记录）设置 `enableChapterSwitch: false`，消除错误显示「返回上一章 / 进入下一章」并禁用上/下一题按钮。
+- **质量门禁与验证**：
+  - `dart analyze lib/ test/` & 全量 `flutter test --no-pub` 执行验证。
+- **未完成项 / 下一次第一步**：
+  - 代码保留在本地工作区（遵守 `AGENTS.md` 未自动 `git commit`），待用户检阅确认与真机核验。
+
+## 前次交接：2026-11-24 做题记录全量数据导入导出加固与 macOS 自动更新替换重启
 
 - **用户授权与操作目标**：
   1. 修复 macOS 端下载更新后无法自动替换 `/Applications/` 里的 App 并重启的问题；

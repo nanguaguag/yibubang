@@ -10,7 +10,15 @@ import '../widgets/textbook_thumbnail.dart';
 class TextbookSearchPage extends StatefulWidget {
   final TextbookGateway? gateway;
   final Future<void> Function(BuildContext, AiCitation)? openPage;
-  const TextbookSearchPage({super.key, this.gateway, this.openPage});
+  final String? initialQuery;
+  final Set<String>? initialBookIds;
+  const TextbookSearchPage({
+    super.key,
+    this.gateway,
+    this.openPage,
+    this.initialQuery,
+    this.initialBookIds,
+  });
 
   @override
   State<TextbookSearchPage> createState() => _TextbookSearchPageState();
@@ -35,6 +43,12 @@ class _TextbookSearchPageState extends State<TextbookSearchPage>
   void initState() {
     super.initState();
     gateway = widget.gateway ?? TextbookClient();
+    if (widget.initialBookIds != null) {
+      selectedBookIds = Set<String>.from(widget.initialBookIds!);
+    }
+    if (widget.initialQuery != null && widget.initialQuery!.trim().isNotEmpty) {
+      input.text = widget.initialQuery!.trim();
+    }
     _loadBooks();
   }
 
