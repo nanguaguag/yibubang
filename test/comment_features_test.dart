@@ -16,6 +16,7 @@ import 'package:yibubang/models/spaced_review_item.dart';
 import 'package:yibubang/repositories/question_search_repository.dart';
 import 'package:yibubang/repositories/spaced_review_repository.dart';
 import 'package:yibubang/screens/about_page.dart';
+import 'package:yibubang/screens/comment_page.dart';
 import 'package:yibubang/screens/my_notes_page.dart';
 import 'package:yibubang/screens/user_questions_list_page.dart';
 import 'package:yibubang/services/comment_service.dart';
@@ -500,6 +501,36 @@ void main() {
 
       // 结束后全局状态自动恢复为 false
       expect(CommentService.instance.isBatchSyncing, isFalse);
+    });
+
+    testWidgets('未登录时评论区隐藏最热/最新/我的点赞/我的评论标签并展示登录引导', (tester) async {
+      SharedPreferences.setMockInitialValues({'loggedin': false});
+      final q = Question(id: '1236056', appId: '40', userAnswer: '');
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: CommentPage(question: q),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      for (var i = 0;
+          i < 100 &&
+              find.text('您还没登录，无法在线加载医考帮评论哦～').evaluate().isEmpty;
+          i++) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 10)),
+        );
+        await tester.pump();
+      }
+
+      expect(find.text('您还没登录，无法在线加载医考帮评论哦～'), findsOneWidget);
+      expect(find.text('最热'), findsNothing);
+      expect(find.text('最新'), findsNothing);
+      expect(find.textContaining('我的点赞'), findsNothing);
+      expect(find.textContaining('我的评论'), findsNothing);
     });
   });
 }

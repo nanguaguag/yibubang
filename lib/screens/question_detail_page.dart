@@ -47,6 +47,7 @@ class QuestionDetailPage extends StatefulWidget {
   final int questionIndex;
   final String? bankId;
   final bool defaultShowCutContent;
+  final bool enableChapterSwitch;
 
   const QuestionDetailPage({
     super.key,
@@ -56,6 +57,7 @@ class QuestionDetailPage extends StatefulWidget {
     required this.questionIndex,
     this.bankId,
     this.defaultShowCutContent = false,
+    this.enableChapterSwitch = true,
   });
 
   @override
@@ -121,7 +123,9 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
       defaultShowCutContent: widget.defaultShowCutContent,
     );
     _controller.init();
-    _loadSiblingChapters();
+    if (widget.enableChapterSwitch) {
+      _loadSiblingChapters();
+    }
   }
 
   @override
@@ -211,6 +215,7 @@ class _QuestionDetailPageState extends State<QuestionDetailPage> {
 
   /// 监听 PageView 边缘滑动手势（支持首题右滑进上一章、末题左滑进下一章）
   bool _handleScrollNotification(ScrollNotification notification) {
+    if (!widget.enableChapterSwitch) return false;
     if (notification.metrics.axis != Axis.horizontal) return false;
     if (_isSwitchingChapter) return false;
 

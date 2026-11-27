@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../common/shortcut_config.dart';
 import '../../models/chapter.dart';
 import '../../db/database_helper.dart';
+import '../../db/question_bank_manager.dart';
 import '../../models/question.dart';
 import '../../services/ykb_sync_service.dart';
 
@@ -242,6 +243,95 @@ class QuestionDetailController extends ChangeNotifier
   final ValueNotifier<int> currentPageNotifier = ValueNotifier<int>(0);
   final ValueNotifier<int> modeNotifier = ValueNotifier<int>(0);
   final ValueNotifier<double> fontScaleNotifier = ValueNotifier<double>(1.0);
+  final Map<String, String> _subjectNameCache = {};
+
+  /// 解析当前题目所属科目名称（只读查询题库 Subject 表），用于云端教材模糊匹配。
+  Future<String?> resolveSubjectName(Question question) async {
+    final subjectId = _nonEmptyText(question.chapterParentId) ??
+        _nonEmptyText(chapter.subjectId);
+    final bankKey = _nonEmptyText(question.sourceBankId) ??
+        _nonEmptyText(bankId) ??
+        '';
+    final cacheKey = '$bankKey|$subjectId|${question.id}';
+    if (_subjectNameCache.containsKey(cacheKey)) {
+      return _subjectNameCache[cacheKey];
+    }
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final targetBankId = _nonEmptyText(question.sourceBankId) ??
+          _nonEmptyText(bankId) ??
+          _nonEmptyText(prefs.getString('activeBankId'));
+
+      String? resolvedSubjectId = subjectId;
+      if (resolvedSubjectId == null) {
+        try {
+          final userDb = await UserDBHelper().database;
+          final relRows = await userDb.query(
+            'QuestionRelations',
+            columns: ['subject_id'],
+            where: 'question_id = ?',
+            whereArgs: [question.id],
+            limit: 1,
+          );
+          if (relRows.isNotEmpty) {
+            resolvedSubjectId = _nonEmptyText(
+              relRows.first['subject_id']?.toString(),
+            );
+          }
+        } catch (_) {}
+      }
+
+      if (targetBankId != null) {
+        final bankDb = await QuestionBankDatabaseManager().openBank(
+          targetBankId,
+        );
+        if (resolvedSubjectId != null) {
+          final rows = await bankDb.query(
+            'Subject',
+            columns: ['name'],
+            where: 'id = ?',
+            whereArgs: [resolvedSubjectId],
+            limit: 1,
+          );
+          if (rows.isNotEmpty) {
+            final name = _nonEmptyText(rows.first['name']?.toString());
+            if (name != null) {
+              _subjectNameCache[cacheKey] = name;
+              return name;
+            }
+          }
+        }
+
+        final iqRows = await bankDb.rawQuery(
+          'SELECT s.name FROM IdentityQuestion iq '
+          'JOIN Subject s ON iq.subject_id = s.id '
+          'WHERE iq.question_id = ? LIMIT 1',
+          [question.id],
+        );
+        if (iqRows.isNotEmpty) {
+          final name = _nonEmptyText(iqRows.first['name']?.toString());
+          if (name != null) {
+            _subjectNameCache[cacheKey] = name;
+            return name;
+          }
+        }
+      }
+    } catch (_) {}
+
+    final fallback = _nonEmptyText(chapter.name);
+    if (fallback != null &&
+        fallback != '记忆曲线原题' &&
+        !fallback.endsWith('记录')) {
+      return fallback;
+    }
+    return null;
+  }
+
+  static String? _nonEmptyText(String? value) {
+    final trimmed = value?.trim();
+    return (trimmed != null && trimmed.isNotEmpty) ? trimmed : null;
+  }
 
   QuestionDetailController({
     required this.chapter,

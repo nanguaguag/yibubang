@@ -1,5 +1,21 @@
 # 当前开发状态
 
+## 2026-11-27 考点还原/解析教材图片失效回退云端教材（完成）
+
+1. **PR #28 核心机制集成与问题定位**：
+   - 集成 PR #28 的真实配图优先解析（`lib/models/analysis_image.dart`）、图片状态分级加载（`lib/services/analysis_image_loader.dart`，区分 404/410 永久缺失与临时网络失败）以及 Windows 本地教材回退（`lib/services/local_textbook_service.dart`）；
+   - 实测核验题目 `id=1236056`（`BK16111XZ002`）与 `id=1473582`（`BK16RWLXC004`）：两题在题库 SQLite 中 `restore_img` 均为空，客户端拼接的 `.../question/restore/40/BK16111XZ002P29-1.jpg` 在阿里云 OSS（`ykb-app-files.oss-cn-beijing.aliyuncs.com`）返回 HTTP 404 `NoSuchKey`（对象已被删除或未上传），而 `BK16RWLXC004P13-1.jpg` 返回 HTTP 200。
+2. **云端教材模糊匹配、文本检索与跨版本页码对齐 (`lib/services/cloud_textbook_fallback_service.dart`)**：
+   - 自动抽取当前点击教材引用后面的原书文本并剥离 `（A对）` / `（B错）` 等答题标注、引号与省略号，避免 8/9/10 版教材页码漂移导致定位错页；
+   - 按引用自带书名或题目所属科目（只读查询题库 `Subject` / `IdentityQuestion` 表）模糊匹配云端 70 本教材目录（如 `诊断学` 匹配 `《诊断学》` 与 `《口腔颌面医学影像诊断学》`），单书直搜、多书全库检索后按匹配集合过滤并在未命中时回退至主匹配教材。
+3. **双入口全屏图库与教材浏览器联动 (`lib/widgets/image_view.dart`, `lib/screens/question_detail/analysis_text_with_images.dart`, `lib/screens/question_detail/question_explain_view.dart`, `lib/screens/textbook_reader_page.dart`, `lib/screens/textbook_search_page.dart`)**：
+   - 图片正常加载时，在 `FullScreenImageView` 右上角菜单隐藏「在医不帮云端教材中查看」入口；
+   - 图片加载失败时，展示失败页并在失败信息正下方展示「在医不帮云端教材中查看」按钮及「重新加载」；点击云端教材入口时全屏居中展示加载遮罩；
+   - 点击后直接跳转复用 `TextbookReaderPage` 打开检索命中的首条教材页面，支持左右滑动翻页与缩放，多条命中时可在右上角切换结果；打开画廊不再阻塞等待同题其他引用图片预载。
+4. **未登录评论区与单题列表切章边界修复 (`lib/screens/comment_page.dart`, `lib/screens/question_detail_page.dart`, `lib/common/question_navigation.dart` 等)**：
+   - 未登录状态下评论区隐藏「最热、最新、我的点赞、我的评论」标签栏并直接展示登录引导；
+   - `QuestionDetailPage` 新增 `enableChapterSwitch`（默认 `true`），对从「我的错题 / 我的收藏 / 每日复习 / 搜索 / 做题记录」等非章节刷题入口进入的单题或过滤列表设为 `false`，禁用误触「返回上一章 / 进入下一章」及桌面端上/下一题按钮。
+
 ## 2026-11-24 做题记录全量数据导入导出加固与 macOS 自动更新替换重启（完成）
 
 1. **做题记录与个人数据导出导入全量闭环 ([lib/db/record_sync_service.dart](../../lib/db/record_sync_service.dart) / [lib/screens/settings_page.dart](../../lib/screens/settings_page.dart))**：

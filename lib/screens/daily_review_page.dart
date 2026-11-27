@@ -339,6 +339,7 @@ class _DailyReviewPageState extends State<DailyReviewPage> {
           userQuestions: [uq],
           questionIndex: 0,
           bankId: item.bankId,
+          enableChapterSwitch: false,
         ),
       ),
     );
