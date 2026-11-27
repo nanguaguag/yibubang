@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:yibubang/common/shortcut_config.dart';
 import 'package:yibubang/models/daily_review_session.dart';
 import 'package:yibubang/models/question.dart';
 import 'package:yibubang/models/spaced_review_item.dart';
@@ -241,6 +243,53 @@ void main() {
   });
 
   group('DailyReviewPage Interactive Flow Tests', () {
+    testWidgets('数字键按阶段选择选项或评分，字母键使用题库选项键', (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      await ShortcutConfig.load();
+      final question = Question(
+        id: 'review-shortcuts',
+        title: '多选键位测试',
+        type: '2',
+        answer: 'BD',
+        userAnswer: '',
+        option: '[{"key":"D","title":"选项丁"},{"key":"B","title":"选项乙"}]',
+      );
+      final session = DailyReviewSession(
+        plan: const ReviewPlan(id: 'review-shortcuts', name: '键位计划'),
+        date: DateTime.now(),
+        dueQueue: [],
+        newQueue: [
+          DailyReviewQueueItem(
+            questionId: question.id,
+            question: question,
+            isNew: true,
+          ),
+        ],
+      );
+      final service = _FakeDailyReviewService(session: session);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: DailyReviewPage(service: service, initialSession: session),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyD);
+      await tester.pump();
+      expect(find.text('提交答案 (已选 1 项)'), findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.numpad2);
+      await tester.pump();
+      expect(find.text('提交答案 (已选 2 项)'), findsOneWidget);
+      expect(service.submissionCount, 0);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(find.text('困难'), findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.numpad2);
+      await tester.pumpAndSettle();
+      expect(service.lastSubmittedRating, ReviewRating.hard);
+      expect(service.submissionCount, 1);
+    });
+
     testWidgets(
       'answers multiple-choice question, displays feedback, rating bar and celebrates',
       (tester) async {
@@ -294,8 +343,8 @@ void main() {
         // 评分条此时未作答不展示
         expect(find.text('重来'), findsNothing);
 
-        // 2. 点击正确答案 B
-        await tester.tap(find.text('牙菌斑生物膜'));
+        // 2. 字母键选择正确答案 B
+        await tester.sendKeyEvent(LogicalKeyboardKey.keyB);
         await tester.pumpAndSettle();
 
         // 3. 验证选项反馈高亮、解析展开以及 4 档评级栏出现
@@ -308,7 +357,7 @@ void main() {
 
         // 写入未完成时双击评分只能提交一次，不能提前推进或结算。
         fakeService.submissionGate = Completer<void>();
-        await tester.tap(find.text('良好'));
+        await tester.sendKeyEvent(LogicalKeyboardKey.digit3);
         await tester.pump();
         await tester.tap(find.text('良好'));
         await tester.pump();
@@ -408,6 +457,11 @@ void main() {
       'reviews flashcard with 3D flip card and self-eval rating bar',
       (tester) async {
         SharedPreferences.setMockInitialValues({'flashcard_3d_flip': true});
+        await ShortcutConfig.assignBinding(
+          ShortcutAction.reviewGood,
+          const KeyBinding(LogicalKeyboardKey.keyG),
+        );
+        addTearDown(ShortcutConfig.resetAll);
         const plan = ReviewPlan(
           id: 'plan_flashcard',
           name: '闪卡自测计划',
@@ -462,8 +516,10 @@ void main() {
         // 自评按钮在未翻转前不应出现
         expect(find.text('良好'), findsNothing);
 
-        // 2. 点击卡片进行 3D 物理翻转
-        await tester.tap(find.text(flashcard.front));
+        // 2. 评分键不会跳过正面，Space 翻开闪卡。
+        await tester.sendKeyEvent(LogicalKeyboardKey.digit3);
+        expect(fakeService.submissionCount, 0);
+        await tester.sendKeyEvent(LogicalKeyboardKey.space);
         await tester.pumpAndSettle();
 
         // 3. 翻转至背面：展示背面答案及滑出自评按钮
@@ -475,8 +531,8 @@ void main() {
         expect(find.text('良好'), findsOneWidget);
         expect(find.text('简单'), findsOneWidget);
 
-        // 4. 用户点击 "良好" 自评评级
-        await tester.tap(find.text('良好'));
+        // 4. 使用自定义快捷键自评。
+        await tester.sendKeyEvent(LogicalKeyboardKey.keyG);
         await tester.pumpAndSettle();
 
         // 5. 校验 Service 提交结果

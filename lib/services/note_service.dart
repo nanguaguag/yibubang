@@ -12,7 +12,6 @@ import '../common/request.dart';
 import '../common/ykb_encrypt.dart';
 import '../db/database_helper.dart';
 import '../db/durable_sync_queue.dart';
-import '../db/settings.dart';
 import '../models/note.dart';
 import '../models/question.dart';
 import 'auth_service.dart';
@@ -336,8 +335,7 @@ class NoteService {
       final code = data['code']?.toString() ?? '';
       if (code == '309') {
         debugPrint('[NoteService] uploadImage session expired (309)');
-        clearUserInfo();
-        AuthService.instance.notifyTokenExpired();
+        await AuthService.instance.handleExpiredSession(loggedIn ? token : null);
         throw const FormatException('309_TOKEN_EXPIRED');
       }
       if (code == '200' && data['data'] != null) {

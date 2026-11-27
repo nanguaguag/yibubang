@@ -5,10 +5,17 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:yibubang/common/shortcut_config.dart';
 import 'package:yibubang/models/chapter.dart';
 import 'package:yibubang/models/question.dart';
+import 'package:yibubang/models/question_section_config.dart';
 import 'package:yibubang/screens/question_detail_page.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUp(() async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    await ShortcutConfig.load();
+    await ShortcutConfig.resetAll();
+  });
 
   List<Question> buildQuestions() {
     const String options =
@@ -59,7 +66,10 @@ void main() {
     ];
   }
 
-  Future<void> pumpPage(WidgetTester tester) async {
+  Future<void> pumpPage(
+    WidgetTester tester, {
+    List<UserQuestion>? userQuestions,
+  }) async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     await tester.pumpWidget(
       MaterialApp(
@@ -73,7 +83,7 @@ void main() {
             total: 2,
           ),
           questions: buildQuestions(),
-          userQuestions: buildUserQuestions(),
+          userQuestions: userQuestions ?? buildUserQuestions(),
           questionIndex: 0,
         ),
       ),
@@ -92,6 +102,53 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
     await tester.pumpAndSettle();
     expect(find.text('第一题（多选）'), findsOneWidget);
+  });
+
+  testWidgets('Space validation consumes a blank multi-select action', (
+    WidgetTester tester,
+  ) async {
+    await pumpPage(tester);
+    expect(find.text('第一题（多选）'), findsOneWidget);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.space);
+    await tester.pumpAndSettle();
+    expect(find.text('多选题要选择多个选项哦~'), findsOneWidget);
+    expect(find.text('第一题（多选）'), findsOneWidget);
+  });
+
+  testWidgets('Space advances after a judged question without repeat paging', (
+    WidgetTester tester,
+  ) async {
+    final sections = QuestionSectionConfig.getDefaultSections();
+    for (final section in sections) {
+      section.enabled = false;
+    }
+    await QuestionSectionConfig.saveConfig(sections);
+    addTearDown(QuestionSectionConfig.resetToDefault);
+    final userQuestions = buildUserQuestions();
+    userQuestions[0].status = 1;
+    userQuestions[0].userAnswer = 'AB';
+    await pumpPage(tester, userQuestions: userQuestions);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.space);
+    await tester.pumpAndSettle();
+    await tester.sendKeyRepeatEvent(LogicalKeyboardKey.space);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.space);
+    await tester.pumpAndSettle();
+    expect(find.text('第二题（多选）'), findsOneWidget);
+    expect(find.text('多选题要选择多个选项哦~'), findsNothing);
+  });
+
+  testWidgets('Space can prioritize next question for direct browsing', (
+    WidgetTester tester,
+  ) async {
+    await pumpPage(tester);
+    await ShortcutConfig.moveAction(
+      ShortcutAction.nextQuestion,
+      -ShortcutConfig.actionsByPriority.indexOf(ShortcutAction.nextQuestion),
+    );
+    await tester.sendKeyEvent(LogicalKeyboardKey.space);
+    await tester.pumpAndSettle();
+    expect(find.text('第二题（多选）'), findsOneWidget);
   });
 
   testWidgets('字母 / 数字选项键切换多选题勾选状态', (WidgetTester tester) async {

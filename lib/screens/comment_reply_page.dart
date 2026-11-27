@@ -3,7 +3,6 @@ import 'package:yibubang/common/ykb_encrypt.dart';
 import '../models/question.dart';
 import '../models/comment.dart';
 import '../common/request.dart';
-import '../db/settings.dart';
 
 import 'comment_page.dart';
 
@@ -63,9 +62,7 @@ class _CommentReplyPageState extends State<CommentReplyPage> {
       'id': widget.comment.id,
       'app_id': widget.question.appId,
     });
-    if (response['code'] == 309) {
-      // 登录过期，重新登录
-      clearUserInfo();
+    if (response['code']?.toString() == '309') {
       return CommentData.fromJson({
         'time_line': [],
       });

@@ -29,9 +29,11 @@ void main() {
     ]);
     expect(keysOf(ShortcutAction.nextQuestion), <LogicalKeyboardKey>[
       LogicalKeyboardKey.arrowRight,
+      LogicalKeyboardKey.space,
     ]);
     expect(keysOf(ShortcutAction.submitAnswer), <LogicalKeyboardKey>[
       LogicalKeyboardKey.enter,
+      LogicalKeyboardKey.space,
     ]);
     expect(keysOf(ShortcutAction.scrollPageDown), <LogicalKeyboardKey>[
       LogicalKeyboardKey.pageDown,
@@ -111,7 +113,7 @@ void main() {
     expect(keysOf(ShortcutAction.toggleCut), isEmpty);
   });
 
-  test('绑定冲突时自动从旧动作移除，恢复默认后还原', () async {
+  test('同键保留多个动作，优先级可调整和恢复', () async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     await ShortcutConfig.assignBinding(
       ShortcutAction.toggleCut,
@@ -121,13 +123,33 @@ void main() {
     expect(keysOf(ShortcutAction.toggleCut), <LogicalKeyboardKey>[
       LogicalKeyboardKey.arrowRight,
     ]);
-    // 与「下一题」的默认键位冲突，旧绑定被移除
-    expect(keysOf(ShortcutAction.nextQuestion), isEmpty);
+    expect(
+      keysOf(ShortcutAction.nextQuestion),
+      contains(LogicalKeyboardKey.arrowRight),
+    );
+    expect(
+      ShortcutConfig.actionsSharing(
+        const KeyBinding(LogicalKeyboardKey.arrowRight),
+      ),
+      containsAll([ShortcutAction.nextQuestion, ShortcutAction.toggleCut]),
+    );
+    final before = ShortcutConfig.actionsByPriority.indexOf(
+      ShortcutAction.nextQuestion,
+    );
+    await ShortcutConfig.moveAction(ShortcutAction.nextQuestion, -before);
+    expect(ShortcutConfig.actionsByPriority.first, ShortcutAction.nextQuestion);
+    final prefs = await SharedPreferences.getInstance();
+    expect(
+      prefs.getStringList('shortcut_action_priority_v1')!.first,
+      'next_question',
+    );
 
     await ShortcutConfig.resetAll();
     expect(keysOf(ShortcutAction.toggleCut), isEmpty);
     expect(keysOf(ShortcutAction.nextQuestion), <LogicalKeyboardKey>[
       LogicalKeyboardKey.arrowRight,
+      LogicalKeyboardKey.space,
     ]);
+    expect(ShortcutConfig.actionsByPriority.first, ShortcutAction.submitAnswer);
   });
 }
